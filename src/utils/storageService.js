@@ -107,13 +107,15 @@ const saveConfig = (key, data) => {
     // Chunking for large data
     const chunkSize = 500 * 1024;
     const chunks = Math.ceil(jsonData.length / chunkSize);
-    // Clear old chunks
+    // Clear old chunks (collect keys first to avoid mutation during iteration)
+    const chunksToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const existingKey = localStorage.key(i);
       if (existingKey && existingKey.startsWith(`${key}_chunk_`)) {
-        localStorage.removeItem(existingKey);
+        chunksToRemove.push(existingKey);
       }
     }
+    chunksToRemove.forEach(k => localStorage.removeItem(k));
     localStorage.setItem(`${key}_meta`, JSON.stringify({ chunks, totalSize: jsonData.length }));
     for (let i = 0; i < chunks; i++) {
       const start = i * chunkSize;

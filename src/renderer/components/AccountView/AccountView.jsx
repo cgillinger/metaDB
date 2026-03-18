@@ -414,7 +414,7 @@ const AccountView = ({ data, selectedFields }) => {
 
   const handleCopyValue = useCallback((value, field, rowId = 'total') => {
     if (value === undefined || value === null) return;
-    const rawValue = String(value).replace(/\s+/g, '').replace(/\D/g, '');
+    const rawValue = String(value).replace(/\s+/g, '').replace(/[^\d.,]/g, '');
     navigator.clipboard.writeText(rawValue)
       .then(() => {
         setCopyStatus({ field, rowId, copied: true });

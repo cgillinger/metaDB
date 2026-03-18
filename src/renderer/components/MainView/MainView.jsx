@@ -39,7 +39,7 @@ const POST_VIEW_AVAILABLE_FIELDS = {
 
 const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'views': 'Visningar',
-  'reach': 'Räckvidd (genomsnitt)',
+  'average_reach': 'Räckvidd (genomsnitt)',
   'engagement': 'Totalt engagemang',
   'interactions': 'Interaktioner (gilla+komm+dela)',
   'likes': 'Gilla-markeringar / Reaktioner',

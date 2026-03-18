@@ -240,7 +240,7 @@ const PostTypeView = ({ data, selectedFields }) => {
     if (field === 'percentage') {
       rawValue = String(value.toFixed(1));
     } else if (typeof value === 'number' || (typeof value === 'string' && !isNaN(value.replace(/\s+/g, '')))) {
-      rawValue = String(value).replace(/\s+/g, '').replace(/\D/g, '');
+      rawValue = String(value).replace(/\s+/g, '').replace(/[^\d.,]/g, '');
     } else {
       rawValue = String(value);
     }
