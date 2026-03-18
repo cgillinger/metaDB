@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 36% 96%; /* Ljusgrå bakgrund */
+    --foreground: 222.2 84% 4.9%; /* Mörk text */
+    
+    --primary: 217 89% 61%; /* Facebook blå */
+    --primary-foreground: 0 0% 100%; /* Vit text på blå bakgrund */
+
+    --secondary: 216 33% 89%; /* Ljusblå/grå */
+    --secondary-foreground: 222.2 47.4% 11.2%; /* Mörk text */
+
+    --muted: 215 32% 85%; /* Ljusare grå */
+    --muted-foreground: 215.4 16.3% 46.9%; /* Mörkare text */
+
+    --border: 214 15% 82%;
+    --input: 214 15% 82%;
+    --ring: 217 89% 61%;
+
+    --radius: 0.75rem;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* 🌟 KOMPOSITIONER FÖR DESIGN */
+@layer components {
+  
+  /* 🌍 Global container för centrering och layout */
+  .container {
+    @apply max-w-6xl mx-auto px-6;
+  }
+
+  .section {
+    @apply mb-12;
+  }
+
+  .section-title {
+    @apply text-2xl font-bold text-gray-800 mb-4;
+  }
+
+  /* 🏷 KORTSTIL - Används för dashboards, grafer och information */
+  .card {
+    @apply bg-white shadow-xl rounded-lg p-6 border border-gray-200;
+  }
+
+  /* 📊 TABELLSTIL - Modern och ren Facebook-inspirerad tabell */
+  .table {
+    @apply min-w-full bg-white shadow-md rounded-xl;
+  }
+
+  .table thead {
+    @apply bg-primary text-white;
+  }
+
+  .table th {
+    @apply px-6 py-3 text-left text-sm font-semibold;
+  }
+
+  .table td {
+    @apply px-6 py-4 border-gray-200 border text-gray-800;
+  }
+
+  .table tr:nth-child(even) {
+    @apply bg-gray-50;
+  }
+
+  .table tr:hover {
+    @apply bg-gray-100;
+  }
+
+  /* 🔘 KNAPPAR - Primär, Sekundär, Outline */
+  .btn {
+    @apply px-4 py-2 rounded-lg font-semibold transition duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-white hover:bg-blue-700 active:bg-blue-800;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
+  }
+
+  .btn-outline {
+    @apply border border-gray-300 text-gray-800 hover:bg-gray-100;
+  }
+
+  /* 📝 INPUT-FÄLT & DROPDOWN */
+  .input {
+    @apply w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary;
+  }
+
+  .select {
+    @apply w-full px-4 py-2 rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-primary;
+  }
+
+  /* 📌 FLEXBOX FÖR RUBRIKER OCH META BRANDING */
+  .header {
+    @apply flex justify-between items-center mb-6;
+  }
+
+  .header-title {
+    @apply text-2xl font-bold text-gray-800;
+  }
+
+  .header-subtitle {
+    @apply text-gray-500 text-sm mt-1;
+  }
+
+  .meta-brand {
+    @apply flex items-center gap-2 text-primary;
+  }
+
+  /* 📂 LISTOR & FILTER */
+  .filter-box {
+    @apply flex gap-4 bg-white shadow-md p-4 rounded-lg;
+  }
+
+  .filter-item {
+    @apply bg-gray-200 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-300;
+  }
+
+  /* ⚡ HOVER-EFFEKTER */
+  .hover-effect {
+    @apply transition-all duration-200 ease-in-out;
+  }
+
+  /* 🖥 RESPONSIVITET */
+  @media (max-width: 768px) {
+    .container {
+      @apply px-4;
+    }
+  }
+}
