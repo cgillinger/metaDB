@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 96%;
+    --foreground: 222.2 84% 4.9%;
+
+    --primary: 220 70% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 216 33% 89%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 215 32% 85%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 15% 82%;
+    --input: 214 15% 82%;
+    --ring: 220 70% 50%;
+
+    --radius: 0.75rem;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .container {
+    @apply max-w-6xl mx-auto px-6;
+  }
+
+  .card {
+    @apply bg-white shadow-xl rounded-lg p-6 border border-gray-200;
+  }
+
+  .table {
+    @apply min-w-full bg-white shadow-md rounded-xl;
+  }
+
+  .table thead {
+    @apply bg-primary text-white;
+  }
+
+  .table th {
+    @apply px-6 py-3 text-left text-sm font-semibold;
+  }
+
+  .table td {
+    @apply px-6 py-4 border-gray-200 border text-gray-800;
+  }
+
+  .table tr:nth-child(even) {
+    @apply bg-gray-50;
+  }
+
+  .table tr:hover {
+    @apply bg-gray-100;
+  }
+
+  .btn {
+    @apply px-4 py-2 rounded-lg font-semibold transition duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-white hover:bg-blue-700 active:bg-blue-800;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
+  }
+
+  .input {
+    @apply w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary;
+  }
+
+  @media (max-width: 768px) {
+    .container {
+      @apply px-4;
+    }
+  }
+}
