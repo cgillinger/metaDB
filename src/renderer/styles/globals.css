@@ -1,0 +1,209 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%; /* Ljusgrå bakgrund med minimal blå ton */
+    --foreground: 240 6% 10%; /* Nästan svart text med minimal lila ton */
+    
+    --primary: 330 86% 56%; /* Instagram cerise/magenta */
+    --primary-foreground: 0 0% 100%; /* Vit text på magenta bakgrund */
+
+    --secondary: 272 36% 57%; /* Instagram lila */
+    --secondary-foreground: 0 0% 100%; /* Vit text på lila */
+
+    --accent: 36 94% 57%; /* Instagram gul/orange */
+    --accent-foreground: 0 0% 100%; /* Vit text på orange */
+
+    --muted: 240 10% 94%; /* Ljusare grå med lila ton */
+    --muted-foreground: 240 4% 46%; /* Mörkare grå text */
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 330 86% 56%;
+
+    --radius: 0.75rem;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* 🌟 KOMPOSITIONER FÖR DESIGN */
+@layer components {
+  
+  /* 🌍 Global container för centrering och layout */
+  .container {
+    @apply max-w-6xl mx-auto px-6;
+  }
+
+  .section {
+    @apply mb-12;
+  }
+
+  .section-title {
+    @apply text-2xl font-bold text-gray-800 mb-4;
+  }
+
+  /* 🏷 KORTSTIL - Ren, modern Instagram-inspirerad design */
+  .card {
+    @apply bg-white shadow-lg rounded-2xl p-6 border border-gray-100;
+  }
+
+  /* 📊 TABELLSTIL - Instagram-inspirerad tabell */
+  .table {
+    @apply min-w-full bg-white shadow-md rounded-xl overflow-hidden;
+  }
+
+  .table thead {
+    @apply bg-gradient-to-r from-primary to-secondary text-white;
+  }
+
+  .table th {
+    @apply px-6 py-3 text-left text-sm font-semibold;
+  }
+
+  .table td {
+    @apply px-6 py-4 border-gray-100 border-b text-gray-800;
+  }
+
+  .table tr:nth-child(even) {
+    @apply bg-gray-50;
+  }
+
+  .table tr:hover {
+    @apply bg-muted transition-colors duration-150;
+  }
+
+  /* 🔘 KNAPPAR - Primär, Sekundär, Outline */
+  .btn {
+    @apply px-4 py-2 rounded-lg font-semibold transition duration-200 shadow-sm;
+  }
+
+  .btn-primary {
+    @apply bg-gradient-to-r from-primary to-secondary text-white hover:shadow-md active:opacity-90;
+  }
+
+  .btn-secondary {
+    @apply bg-secondary text-white hover:bg-opacity-90 active:bg-opacity-100;
+  }
+
+  .btn-accent {
+    @apply bg-accent text-white hover:bg-opacity-90 active:bg-opacity-100;
+  }
+
+  .btn-outline {
+    @apply border border-gray-300 text-gray-800 hover:bg-gray-100;
+  }
+
+  /* 📝 INPUT-FÄLT & DROPDOWN */
+  .input {
+    @apply w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary focus:border-transparent;
+  }
+
+  .select {
+    @apply w-full px-4 py-2 rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-primary focus:border-transparent;
+  }
+
+  /* 📌 FLEXBOX FÖR RUBRIKER OCH INSTAGRAM BRANDING */
+  .header {
+    @apply flex justify-between items-center mb-6;
+  }
+
+  .header-title {
+    @apply text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+  }
+
+  .header-subtitle {
+    @apply text-gray-500 text-sm mt-1;
+  }
+
+  .instagram-brand {
+    @apply flex items-center gap-2;
+  }
+
+  /* 📊 STATISTIK KORT */
+  .stat-card {
+    @apply bg-white rounded-xl shadow-md p-4 border border-gray-100;
+  }
+
+  .stat-title {
+    @apply text-sm text-gray-500 font-medium;
+  }
+
+  .stat-value {
+    @apply text-2xl font-bold mt-1 text-gray-800;
+  }
+
+  .stat-trend {
+    @apply text-xs mt-2 flex items-center;
+  }
+
+  .stat-trend-up {
+    @apply text-green-600;
+  }
+
+  .stat-trend-down {
+    @apply text-red-600;
+  }
+
+  /* 📂 LISTOR & FILTER */
+  .filter-box {
+    @apply flex gap-4 bg-white shadow-md p-4 rounded-xl;
+  }
+
+  .filter-item {
+    @apply bg-gray-100 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-200 transition-colors;
+  }
+
+  .filter-item.active {
+    @apply bg-primary text-white;
+  }
+
+  /* 🔄 LOADER & STATUS */
+  .loader {
+    @apply flex justify-center items-center p-4;
+  }
+
+  .loader-spinner {
+    @apply h-8 w-8 rounded-full border-4 border-gray-200 border-t-primary animate-spin;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .status-badge-success {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .status-badge-warning {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+
+  .status-badge-error {
+    @apply bg-red-100 text-red-800;
+  }
+
+  /* ⚡ HOVER-EFFEKTER */
+  .hover-effect {
+    @apply transition-all duration-200 ease-in-out;
+  }
+
+  .hover-scale {
+    @apply transition-transform duration-200 hover:scale-105;
+  }
+
+  /* 🖥 RESPONSIVITET */
+  @media (max-width: 768px) {
+    .container {
+      @apply px-4;
+    }
+    
+    .filter-box {
+      @apply flex-wrap;
+    }
+  }
+}
