@@ -288,6 +288,39 @@ export async function processCSVData(csvContent, shouldMergeWithExisting = false
             perPost.push(mappedRow);
           });
 
+          // Detect collab posts: accounts with very few posts compared to majority.
+          // A collab post appears as a "foreign" account_id among the main accounts.
+          const accountPostCounts = {};
+          for (const post of perPost) {
+            const aid = post.account_id;
+            if (!aid) continue;
+            accountPostCounts[aid] = (accountPostCounts[aid] || 0) + 1;
+          }
+
+          // Only flag accounts with a single post as potential collab.
+          // A threshold of 1 avoids false positives on real accounts that
+          // simply had few posts in the period (e.g. P4 regional stations).
+          const collabThreshold = 1;
+
+          const collabAccountIds = new Set();
+          for (const [aid, count] of Object.entries(accountPostCounts)) {
+            if (count <= collabThreshold && Object.keys(accountPostCounts).length > 1) {
+              collabAccountIds.add(aid);
+            }
+          }
+
+          for (const post of perPost) {
+            if (collabAccountIds.has(post.account_id)) {
+              post._isCollab = true;
+            }
+          }
+
+          for (const key in perKonto) {
+            if (collabAccountIds.has(perKonto[key].account_id)) {
+              perKonto[key]._isCollab = true;
+            }
+          }
+
           // Calculate date range
           let dateRange = { startDate: null, endDate: null };
           if (allDates.length > 0) {
