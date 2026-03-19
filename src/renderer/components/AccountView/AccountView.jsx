@@ -292,6 +292,11 @@ const summarizeByAccount = (data, selectedFields) => {
       }
     }
 
+    // Propagate _isCollab from posts to account summary
+    if (account.posts.some(p => p._isCollab)) {
+      summary._isCollab = true;
+    }
+
     summaryData.push(summary);
   }
 
