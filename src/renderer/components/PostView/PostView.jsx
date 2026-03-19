@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
+import InfoTooltip from '../ui/InfoTooltip';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Info } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import { getValue, formatValue, formatDate, DISPLAY_NAMES, ENGAGEMENT_INFO } from '@/utils/columnConfig';
@@ -60,24 +61,7 @@ const getEngagementTooltip = (data) => {
   return 'Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare.';
 };
 
-const InfoTooltip = ({ text }) => {
-  const [visible, setVisible] = React.useState(false);
-  if (!text) return null;
-  return (
-    <span className="relative inline-flex items-center ml-1">
-      <Info
-        className="h-3.5 w-3.5 text-gray-400 cursor-help"
-        onMouseEnter={() => setVisible(true)}
-        onMouseLeave={() => setVisible(false)}
-      />
-      {visible && (
-        <span className="absolute left-5 top-0 z-50 w-72 rounded bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg">
-          {text}
-        </span>
-      )}
-    </span>
-  );
-};
+
 
 // Inläggstyp-badge
 const PostTypeBadge = ({ type }) => {

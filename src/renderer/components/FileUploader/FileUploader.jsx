@@ -18,6 +18,7 @@ import { handleFileUpload, getMemoryUsageStats, clearAllData, getUploadedFilesMe
 import { processCSVData, analyzeCSVFile } from '@/utils/webDataProcessor';
 import { useColumnMapper } from './useColumnMapper';
 import { StorageIndicator } from '../StorageIndicator/StorageIndicator';
+import PlatformBadge from '../ui/PlatformBadge';
 import { calculateMemoryWithNewFile } from '@/utils/memoryUtils';
 
 const FILE_STATUS = {
@@ -381,13 +382,13 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = null, i
                       <FileWarning className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     )}
                     <div className="min-w-0">
-                      <p className="font-medium truncate">{entry.file.name}</p>
+                      <p className="font-medium truncate flex items-center gap-1.5">
+                        {entry.file.name}
+                        {entry.platform && <PlatformBadge platform={entry.platform} />}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {entry.analysis
                           ? `${entry.analysis.rows} rader · ${entry.analysis.fileSizeKB} KB`
-                          : ''}
-                        {entry.platform
-                          ? ` · ${PLATFORM_LABELS[entry.platform] || entry.platform}`
                           : ''}
                       </p>
                       {entry.duplicateInfo && entry.status === FILE_STATUS.PENDING && (

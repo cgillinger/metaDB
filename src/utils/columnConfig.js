@@ -194,14 +194,8 @@ export function getValue(dataObject, targetField) {
     }
   }
 
-  // Normalized text search as fallback
-  const normalizedTarget = normalizeText(targetField);
-  for (const [key, value] of Object.entries(dataObject)) {
-    if (normalizeText(key) === normalizedTarget) {
-      return value;
-    }
-  }
-
+  // All our data uses exact field names after CSV mapping.
+  // If we get here, the field genuinely doesn't exist.
   return null;
 }
 

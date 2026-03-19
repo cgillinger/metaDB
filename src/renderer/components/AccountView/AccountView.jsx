@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
+import InfoTooltip from '../ui/InfoTooltip';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, Info } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import {
@@ -109,24 +110,7 @@ const getEngagementTooltip = (data) => {
   return 'Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare.';
 };
 
-const InfoTooltip = ({ text }) => {
-  const [visible, setVisible] = React.useState(false);
-  if (!text) return null;
-  return (
-    <span className="relative inline-flex items-center ml-1">
-      <Info
-        className="h-3.5 w-3.5 text-gray-400 cursor-help"
-        onMouseEnter={() => setVisible(true)}
-        onMouseLeave={() => setVisible(false)}
-      />
-      {visible && (
-        <span className="absolute left-5 top-0 z-50 w-72 rounded bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg">
-          {text}
-        </span>
-      )}
-    </span>
-  );
-};
+
 
 // Lista över fält som inte ska ha totalsumma
 const FIELDS_WITHOUT_TOTALS = [
@@ -319,75 +303,41 @@ const AccountView = ({ data, selectedFields }) => {
   }, [data, selectedFields]);
 
   const totalSummary = useMemo(() => {
-    if (!Array.isArray(summaryData) || summaryData.length === 0) return {};
+    if (!Array.isArray(summaryData) || summaryData.length === 0 || !Array.isArray(data)) return {};
 
     const totals = { account_name: 'Totalt' };
+    let tLikes = 0, tComments = 0, tShares = 0, tSaves = 0, tFollows = 0;
+    let tClicks = 0, tOtherClicks = 0, tLinkClicks = 0, tViews = 0, tEngagement = 0;
 
-    let totalLikes = 0, totalComments = 0, totalShares = 0;
-    let totalSaves = 0, totalFollows = 0;
-    let totalClicks = 0, totalOtherClicks = 0, totalLinkClicks = 0;
-
-    if (Array.isArray(data)) {
-      for (const post of data) {
-        totalLikes += (getValue(post, 'likes') || 0);
-        totalComments += (getValue(post, 'comments') || 0);
-        totalShares += (getValue(post, 'shares') || 0);
-        totalSaves += (getValue(post, 'saves') || 0);
-        totalFollows += (getValue(post, 'follows') || 0);
-        totalClicks += (getValue(post, 'total_clicks') || 0);
-        totalOtherClicks += (getValue(post, 'other_clicks') || 0);
-        totalLinkClicks += (getValue(post, 'link_clicks') || 0);
-      }
-    }
-
-    if (selectedFields.includes('likes')) totals.likes = totalLikes;
-    if (selectedFields.includes('comments')) totals.comments = totalComments;
-    if (selectedFields.includes('shares')) totals.shares = totalShares;
-    if (selectedFields.includes('saves')) totals.saves = totalSaves;
-    if (selectedFields.includes('follows')) totals.follows = totalFollows;
-    if (selectedFields.includes('total_clicks')) totals.total_clicks = totalClicks;
-    if (selectedFields.includes('other_clicks')) totals.other_clicks = totalOtherClicks;
-    if (selectedFields.includes('link_clicks')) totals.link_clicks = totalLinkClicks;
-
-    if (selectedFields.includes('interactions')) {
-      totals.interactions = totalLikes + totalComments + totalShares;
-    }
-
-    if (selectedFields.includes('engagement')) {
-      let engTotal = 0;
-      if (Array.isArray(data)) {
-        for (const post of data) {
-          engTotal += (getValue(post, 'engagement') || 0);
-        }
-      }
-      totals.engagement = engTotal;
-    }
-
-    if (selectedFields.includes('post_count')) {
-      totals.post_count = Array.isArray(data) ? data.length : 0;
-    }
-
-    for (const field of selectedFields) {
-      if ([
-        'likes', 'comments', 'shares', 'saves', 'follows',
-        'total_clicks', 'other_clicks', 'link_clicks',
-        'interactions', 'engagement', 'post_count'
-      ].includes(field) || FIELDS_WITHOUT_TOTALS.includes(field)) {
-        continue;
-      }
-
-      if (field === 'views') {
-        let totalViews = 0;
-        if (Array.isArray(data)) {
-          for (const post of data) {
-            totalViews += (getValue(post, field) || 0);
-          }
-        }
-        totals[field] = totalViews;
+    for (const post of data) {
+      tLikes += (post.likes || 0);
+      tComments += (post.comments || 0);
+      tShares += (post.shares || 0);
+      tSaves += (post.saves || 0);
+      tFollows += (post.follows || 0);
+      tClicks += (post.total_clicks || 0);
+      tOtherClicks += (post.other_clicks || 0);
+      tLinkClicks += (post.link_clicks || 0);
+      tViews += (post.views || 0);
+      if (post._platform === 'facebook') {
+        tEngagement += (post.likes || 0) + (post.comments || 0) + (post.shares || 0) + (post.total_clicks || 0);
       } else {
-        totals[field] = summaryData.reduce((sum, account) => sum + (getValue(account, field) || 0), 0);
+        tEngagement += (post.likes || 0) + (post.comments || 0) + (post.shares || 0) + (post.saves || 0) + (post.follows || 0);
       }
     }
+
+    if (selectedFields.includes('likes')) totals.likes = tLikes;
+    if (selectedFields.includes('comments')) totals.comments = tComments;
+    if (selectedFields.includes('shares')) totals.shares = tShares;
+    if (selectedFields.includes('saves')) totals.saves = tSaves;
+    if (selectedFields.includes('follows')) totals.follows = tFollows;
+    if (selectedFields.includes('total_clicks')) totals.total_clicks = tClicks;
+    if (selectedFields.includes('other_clicks')) totals.other_clicks = tOtherClicks;
+    if (selectedFields.includes('link_clicks')) totals.link_clicks = tLinkClicks;
+    if (selectedFields.includes('views')) totals.views = tViews;
+    if (selectedFields.includes('interactions')) totals.interactions = tLikes + tComments + tShares;
+    if (selectedFields.includes('engagement')) totals.engagement = tEngagement;
+    if (selectedFields.includes('post_count')) totals.post_count = data.length;
 
     return totals;
   }, [summaryData, selectedFields, data]);
