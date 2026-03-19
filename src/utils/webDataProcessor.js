@@ -171,19 +171,39 @@ export async function processCSVData(csvContent, shouldMergeWithExisting = false
           const summarizableColumns = platform === 'facebook' ? FB_SUMMARIZABLE : IG_SUMMARIZABLE;
           const uniqueAccountsInFile = countUniqueAccounts(results.data);
 
-          // Handle Facebook-specific preprocessing
-          let processedData = results.data;
-          if (platform === 'facebook') {
-            processedData = results.data.map(row => {
-              if (row['Titel'] !== undefined) {
-                return { ...row, description: row['Titel'] };
-              }
-              return row;
-            });
-          }
+          // Map columns BEFORE deduplication so handleDuplicates can
+          // find post_id (raw rows use Swedish key "Publicerings-id").
+          const mappedData = results.data.map(row => {
+            const mappedRow = mapColumnNames(row, columnMappings);
+
+            // Fallback: Meta exports sometimes have empty Swedish columns
+            // but filled English columns (positions 18-20 in header).
+            // Unmapped column names are preserved by mapColumnNames.
+            if (!mappedRow.account_id || mappedRow.account_id === '') {
+              const fallbackId = mappedRow['Account ID'] || mappedRow['account_id'];
+              if (fallbackId) mappedRow.account_id = fallbackId;
+            }
+            if (!mappedRow.account_name || mappedRow.account_name === '') {
+              const fallbackName = mappedRow['Account name'] || mappedRow['account_name'];
+              if (fallbackName) mappedRow.account_name = fallbackName;
+            }
+            if (!mappedRow.account_username || mappedRow.account_username === '') {
+              const fallbackUsername = mappedRow['Account username'] || mappedRow['account_username'];
+              if (fallbackUsername) mappedRow.account_username = fallbackUsername;
+            }
+
+            mappedRow._platform = platform;
+
+            // For Facebook: ensure description from Titel
+            if (platform === 'facebook' && mappedRow.description === undefined && row['Titel'] !== undefined) {
+              mappedRow.description = row['Titel'];
+            }
+
+            return mappedRow;
+          });
 
           const { filteredData, stats } = handleDuplicates(
-            processedData,
+            mappedData,
             shouldMergeWithExisting ? existingPostData : []
           );
 
@@ -207,36 +227,10 @@ export async function processCSVData(csvContent, shouldMergeWithExisting = false
             });
           }
 
-          // Process each row
-          filteredData.forEach((row) => {
-            const postId = getValue(row, 'post_id');
+          // Process each deduplicated, mapped row
+          filteredData.forEach((mappedRow) => {
+            const postId = getValue(mappedRow, 'post_id');
             if (postId && perPost.some(p => getValue(p, 'post_id') === postId)) return;
-
-            const mappedRow = mapColumnNames(row, columnMappings);
-
-            // Fallback: Meta exports sometimes have empty Swedish columns
-            // but filled English columns (positions 18-20 in header).
-            // Raw row still has the original column names as keys.
-            if (!mappedRow.account_id || mappedRow.account_id === '') {
-              const fallbackId = row['Account ID'] || row['account_id'];
-              if (fallbackId) mappedRow.account_id = fallbackId;
-            }
-            if (!mappedRow.account_name || mappedRow.account_name === '') {
-              const fallbackName = row['Account name'] || row['account_name'];
-              if (fallbackName) mappedRow.account_name = fallbackName;
-            }
-            if (!mappedRow.account_username || mappedRow.account_username === '') {
-              const fallbackUsername = row['Account username'] || row['account_username'];
-              if (fallbackUsername) mappedRow.account_username = fallbackUsername;
-            }
-
-            // Tag with platform
-            mappedRow._platform = platform;
-
-            // For Facebook: ensure description from Titel
-            if (platform === 'facebook' && mappedRow.description === undefined && row['Titel'] !== undefined) {
-              mappedRow.description = row['Titel'];
-            }
 
             const accountID = getValue(mappedRow, 'account_id') || 'unknown';
             const accountName = getValue(mappedRow, 'account_name') || (platform === 'facebook' ? 'Okänd sida' : 'Okänt konto');
