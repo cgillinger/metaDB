@@ -19,6 +19,9 @@ import { StorageIndicator } from '../StorageIndicator/StorageIndicator';
 import { LoadedFilesInfo } from '../LoadedFilesInfo/LoadedFilesInfo';
 import { getMemoryUsageStats, getUploadedFilesMetadata } from '@/utils/storageService';
 
+const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
+const IG_ONLY_FIELDS = ['saves', 'follows'];
+
 // Unified fields for both platforms
 const POST_VIEW_AVAILABLE_FIELDS = {
   'reach': 'Räckvidd',
@@ -86,6 +89,33 @@ const ConfirmationDialog = ({ isOpen, onConfirm, onCancel, message }) => {
     </div>
   );
 };
+
+function filterFieldsByPlatform(fields, activePlatform) {
+  if (!activePlatform || activePlatform === 'mixed') return fields;
+  const filtered = {};
+  for (const [key, label] of Object.entries(fields)) {
+    if (activePlatform === 'instagram' && FB_ONLY_FIELDS.includes(key)) continue;
+    if (activePlatform === 'facebook' && IG_ONLY_FIELDS.includes(key)) continue;
+    filtered[key] = label;
+  }
+  return filtered;
+}
+
+const EngagementLegend = ({ activePlatform }) => (
+  <div className="mx-4 mb-2 p-3 bg-muted/50 border border-border rounded-md text-sm">
+    <p className="font-medium mb-1">Engagemang beräknas olika per plattform:</p>
+    {(!activePlatform || activePlatform === 'mixed' || activePlatform === 'facebook') && (
+      <p className="text-muted-foreground">
+        <span className="font-medium text-foreground">Facebook:</span> reaktioner + kommentarer + delningar + klick
+      </p>
+    )}
+    {(!activePlatform || activePlatform === 'mixed' || activePlatform === 'instagram') && (
+      <p className="text-muted-foreground">
+        <span className="font-medium text-foreground">Instagram:</span> gilla + kommentarer + delningar + sparade + följare
+      </p>
+    )}
+  </div>
+);
 
 const ValueSelector = ({ availableFields, selectedFields, onSelectionChange }) => (
   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
@@ -158,9 +188,11 @@ const MainView = ({ data, meta, onDataProcessed }) => {
   }, [data, platformFilter]);
 
   const getAvailableFields = () => {
-    if (activeView === 'account') return ACCOUNT_VIEW_AVAILABLE_FIELDS;
-    if (activeView === 'trend_analysis') return TREND_ANALYSIS_AVAILABLE_FIELDS;
-    return POST_VIEW_AVAILABLE_FIELDS;
+    let fields;
+    if (activeView === 'account') fields = ACCOUNT_VIEW_AVAILABLE_FIELDS;
+    else if (activeView === 'trend_analysis') fields = TREND_ANALYSIS_AVAILABLE_FIELDS;
+    else fields = POST_VIEW_AVAILABLE_FIELDS;
+    return filterFieldsByPlatform(fields, activePlatform);
   };
 
   useEffect(() => {
@@ -186,7 +218,7 @@ const MainView = ({ data, meta, onDataProcessed }) => {
       }
       return filtered;
     });
-  }, [activeView]);
+  }, [activeView, activePlatform]);
 
   const handleDataUploaded = (newData) => {
     onDataProcessed(newData);
@@ -302,6 +334,9 @@ const MainView = ({ data, meta, onDataProcessed }) => {
               selectedFields={selectedFields}
               onSelectionChange={setSelectedFields}
             />
+            {selectedFields.includes('engagement') && (
+              <EngagementLegend activePlatform={activePlatform} />
+            )}
           </CardContent>
         </Card>
       )}
