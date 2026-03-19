@@ -302,10 +302,25 @@ export async function processCSVData(csvContent, shouldMergeWithExisting = false
           // still avoiding false positives on real accounts with few posts.
           const collabThreshold = 2;
 
+          // Accounts whose name contains any of these terms are never flagged as collab.
+          const COLLAB_SAFE_TERMS = ['Sveriges Radio', 'P1', 'P2', 'P3', 'P4'];
+
+          // Build id → name map for safe-term lookup
+          const accountIdToName = {};
+          for (const post of perPost) {
+            if (post.account_id && post.account_name) {
+              accountIdToName[post.account_id] = post.account_name;
+            }
+          }
+
           const collabAccountIds = new Set();
           for (const [aid, count] of Object.entries(accountPostCounts)) {
             if (count <= collabThreshold && Object.keys(accountPostCounts).length > 1) {
-              collabAccountIds.add(aid);
+              const name = accountIdToName[aid] || '';
+              const isSafe = COLLAB_SAFE_TERMS.some(term =>
+                name.toLowerCase().includes(term.toLowerCase())
+              );
+              if (!isSafe) collabAccountIds.add(aid);
             }
           }
 
