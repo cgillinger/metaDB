@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, Info } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import {
   getValue,
   formatValue,
-  DISPLAY_NAMES
+  DISPLAY_NAMES,
+  ENGAGEMENT_INFO
 } from '@/utils/columnConfig';
 import { downloadFile, downloadExcel, openExternalLink } from '@/utils/storageService';
 
@@ -96,6 +97,36 @@ const ProfileIcon = ({ accountName }) => {
   );
 };
 
+
+// Tooltip för engagemang – text baseras på vilken plattform datan gäller
+const getEngagementTooltip = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const platforms = new Set(data.map(p => p._platform).filter(Boolean));
+  if (platforms.size === 1) {
+    const p = [...platforms][0];
+    return ENGAGEMENT_INFO[p] || null;
+  }
+  return 'Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare.';
+};
+
+const InfoTooltip = ({ text }) => {
+  const [visible, setVisible] = React.useState(false);
+  if (!text) return null;
+  return (
+    <span className="relative inline-flex items-center ml-1">
+      <Info
+        className="h-3.5 w-3.5 text-gray-400 cursor-help"
+        onMouseEnter={() => setVisible(true)}
+        onMouseLeave={() => setVisible(false)}
+      />
+      {visible && (
+        <span className="absolute left-5 top-0 z-50 w-72 rounded bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg">
+          {text}
+        </span>
+      )}
+    </span>
+  );
+};
 
 // Lista över fält som inte ska ha totalsumma
 const FIELDS_WITHOUT_TOTALS = [
@@ -278,6 +309,8 @@ const AccountView = ({ data, selectedFields }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [copyStatus, setCopyStatus] = useState({ field: null, rowId: null, copied: false });
+
+  const engagementTooltip = useMemo(() => getEngagementTooltip(data), [data]);
 
 
   const summaryData = useMemo(() => {
@@ -637,7 +670,9 @@ const AccountView = ({ data, selectedFields }) => {
                   onClick={() => handleSort(field)}
                 >
                   <div className="flex items-center justify-end">
-                    {getDisplayName(field)} {getSortIcon(field)}
+                    {getDisplayName(field)}
+                    {field === 'engagement' && <InfoTooltip text={engagementTooltip} />}
+                    {getSortIcon(field)}
                   </div>
                 </TableHead>
               ))}
