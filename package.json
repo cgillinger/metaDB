@@ -1,6 +1,6 @@
 {
   "name": "meta-analytics",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Meta Analytics - Facebook & Instagram Statistics",
   "scripts": {
     "dev": "vite",
