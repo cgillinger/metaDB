@@ -13,6 +13,8 @@ const fs = require('fs');
 const path = require('path');
 const Papa = require('papaparse');
 
+const { version } = require('./package.json');
+
 // ---------------------------------------------------------------------------
 // 1.  Inline copies of column config (independent of app code)
 // ---------------------------------------------------------------------------
@@ -319,6 +321,7 @@ async function main() {
     process.exit(1);
   }
 
+  console.log(`Meta Analytics v${version} — datavalideringsskript`);
   console.log(`Hittade ${csvFiles.length} CSV-filer i old_csv/\n`);
 
   // Load app modules

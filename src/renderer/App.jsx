@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { InfoIcon, AlertTriangle } from "lucide-react";
 import { getMemoryUsageStats, clearAllData, checkAndCleanupStaleData } from '@/utils/storageService';
 import { MEMORY_THRESHOLDS } from '@/utils/memoryUtils';
+import { VERSION } from '@/utils/version';
 
 function App() {
   const [processedData, setProcessedData] = useState(null);
@@ -91,7 +92,7 @@ function App() {
       </main>
       <footer className="border-t border-border">
         <div className="container py-4 text-center text-sm text-muted-foreground">
-          Meta Analytics &copy; {new Date().getFullYear()}
+          Meta Analytics v{VERSION} &copy; {new Date().getFullYear()}
         </div>
       </footer>
     </div>
