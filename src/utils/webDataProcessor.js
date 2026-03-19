@@ -214,6 +214,22 @@ export async function processCSVData(csvContent, shouldMergeWithExisting = false
 
             const mappedRow = mapColumnNames(row, columnMappings);
 
+            // Fallback: Meta exports sometimes have empty Swedish columns
+            // but filled English columns (positions 18-20 in header).
+            // Raw row still has the original column names as keys.
+            if (!mappedRow.account_id || mappedRow.account_id === '') {
+              const fallbackId = row['Account ID'] || row['account_id'];
+              if (fallbackId) mappedRow.account_id = fallbackId;
+            }
+            if (!mappedRow.account_name || mappedRow.account_name === '') {
+              const fallbackName = row['Account name'] || row['account_name'];
+              if (fallbackName) mappedRow.account_name = fallbackName;
+            }
+            if (!mappedRow.account_username || mappedRow.account_username === '') {
+              const fallbackUsername = row['Account username'] || row['account_username'];
+              if (fallbackUsername) mappedRow.account_username = fallbackUsername;
+            }
+
             // Tag with platform
             mappedRow._platform = platform;
 
