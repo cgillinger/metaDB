@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
 import InfoTooltip from '../ui/InfoTooltip';
+import CollabBadge from '../ui/CollabBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check } from 'lucide-react';
@@ -99,15 +100,24 @@ const ProfileIcon = ({ accountName }) => {
 };
 
 
-// Tooltip för engagemang – text baseras på vilken plattform datan gäller
+// Tooltip för engagemang – text baseras på vilken plattform datan gäller.
+// Inkluderar även förklaring av misstänkta samarbetskonton om sådana finns.
 const getEngagementTooltip = (data) => {
   if (!Array.isArray(data) || data.length === 0) return null;
   const platforms = new Set(data.map(p => p._platform).filter(Boolean));
+  let engagementText;
   if (platforms.size === 1) {
     const p = [...platforms][0];
-    return ENGAGEMENT_INFO[p] || null;
+    engagementText = ENGAGEMENT_INFO[p] || null;
+  } else {
+    engagementText = 'Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare.';
   }
-  return 'Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare.';
+  const hasCollab = data.some(p => p._isCollab);
+  if (hasCollab) {
+    const collabNote = 'Misstänkt samarbete ⚠: Konton med ett enda inlägg i exporten kan vara externa samarbetskonton som Metas export inkluderat automatiskt. Dessa är inte nödvändigtvis dina egna konton.';
+    return engagementText ? `${engagementText}\n\n${collabNote}` : collabNote;
+  }
+  return engagementText;
 };
 
 
@@ -660,7 +670,10 @@ const AccountView = ({ data, selectedFields }) => {
               const accountName = getValue(account, 'account_name');
 
               return (
-                <TableRow key={`${accountId}-${accountName}`}>
+                <TableRow
+                  key={`${accountId}-${accountName}`}
+                  className={account._isCollab ? 'bg-amber-50/50 opacity-75' : ''}
+                >
                   <TableCell className="text-center font-medium">
                     {(currentPage - 1) * pageSize + index + 1}
                   </TableCell>
@@ -669,6 +682,7 @@ const AccountView = ({ data, selectedFields }) => {
                       <ProfileIcon accountName={accountName} />
                       <span>{accountName || 'Unknown'}</span>
                       <PlatformBadge platform={account._platform} />
+                      {account._isCollab && <CollabBadge />}
                     </div>
                   </TableCell>
                   {selectedFields.map((field) => (

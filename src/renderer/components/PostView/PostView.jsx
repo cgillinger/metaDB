@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
 import InfoTooltip from '../ui/InfoTooltip';
+import CollabBadge from '../ui/CollabBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet } from 'lucide-react';
@@ -98,16 +99,21 @@ const PostView = ({ data, selectedFields }) => {
     return platforms.size > 1;
   }, [data]);
 
-  // Map accountName → platform (sista träff vinner om blandat)
+  // Map accountName → platform + isCollab (sista träff vinner om blandat)
   const uniqueAccounts = useMemo(() => {
     if (!data || !Array.isArray(data)) return [];
     const map = {};
     for (const post of data) {
       const name = getValue(post, 'account_name');
-      if (name) map[name] = post._platform || null;
+      if (name) {
+        map[name] = {
+          platform: post._platform || null,
+          isCollab: post._isCollab || false,
+        };
+      }
     }
     return Object.entries(map)
-      .map(([name, platform]) => ({ name, platform }))
+      .map(([name, info]) => ({ name, platform: info.platform, isCollab: info.isCollab }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [data]);
 
@@ -307,11 +313,12 @@ const PostView = ({ data, selectedFields }) => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL_ACCOUNTS}>Alla konton</SelectItem>
-              {uniqueAccounts.map(({ name, platform }) => (
+              {uniqueAccounts.map(({ name, platform, isCollab }) => (
                 <SelectItem key={name} value={name}>
                   <span className="flex items-center gap-2">
                     {name}
                     <PlatformBadge platform={platform} />
+                    {isCollab && <CollabBadge compact />}
                   </span>
                 </SelectItem>
               ))}
@@ -400,7 +407,10 @@ const PostView = ({ data, selectedFields }) => {
                     </TableCell>
                     <TableCell>{formatValue(accountName)}</TableCell>
                     <TableCell className="text-center">
-                      <PlatformBadge platform={platform} />
+                      <div className="flex items-center justify-center gap-1">
+                        <PlatformBadge platform={platform} />
+                        {post._isCollab && <CollabBadge compact />}
+                      </div>
                     </TableCell>
                     {showPostType && (
                       <TableCell className="text-center">

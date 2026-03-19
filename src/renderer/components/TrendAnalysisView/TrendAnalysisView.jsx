@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
+import CollabBadge from '../ui/CollabBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
@@ -234,6 +235,7 @@ const TrendAnalysisView = ({ data, meta }) => {
             account_id: accountId,
             account_name: accountInfo.account_name,
             _platform: dominantPlatform,
+            _isCollab: accountInfo.posts.some(p => p._isCollab),
             monthlyData: {}
           };
         }
@@ -294,6 +296,7 @@ const TrendAnalysisView = ({ data, meta }) => {
           account_id: account.account_id,
           account_name: account.account_name,
           _platform: account._platform,
+          _isCollab: account._isCollab || false,
           color: CHART_COLORS[index % CHART_COLORS.length],
           points
         };
@@ -446,6 +449,7 @@ const TrendAnalysisView = ({ data, meta }) => {
                     <span className="text-sm font-medium flex items-center gap-1.5">
                       {account.account_name}
                       <PlatformBadge platform={account._platform} />
+                      {account._isCollab && <CollabBadge compact />}
                     </span>
                   </Label>
                 ))}
@@ -505,6 +509,7 @@ const TrendAnalysisView = ({ data, meta }) => {
                         ? line.account_name.substring(0, 17) + '...'
                         : line.account_name}
                       <PlatformBadge platform={line._platform} />
+                      {line._isCollab && <CollabBadge compact />}
                     </span>
                   </div>
                 ))}

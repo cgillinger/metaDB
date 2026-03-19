@@ -28,7 +28,7 @@ const InfoTooltip = ({ text }) => {
         <Info className="h-4 w-4" />
       </button>
       {visible && (
-        <span className="absolute left-6 bottom-0 z-50 w-72 rounded-md bg-gray-900 px-3 py-2 text-xs text-white shadow-lg">
+        <span className="absolute left-6 bottom-0 z-50 w-80 rounded-md bg-gray-900 px-3 py-2 text-xs text-white shadow-lg whitespace-pre-line">
           {text}
         </span>
       )}
