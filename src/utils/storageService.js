@@ -149,21 +149,26 @@ const getConfig = (key, defaultValue = null) => {
 
 // --- 12h Auto-cleanup ---
 
+/**
+ * Check if saved data is stale (> 12h) and clean up if so.
+ * Returns true if data was cleaned up or no data exists (= nothing to restore).
+ * Returns false if fresh data exists (= should try to restore).
+ */
 export async function checkAndCleanupStaleData() {
   try {
     const lastSave = localStorage.getItem(STORAGE_KEYS.LAST_SAVE_TIMESTAMP);
-    if (!lastSave) return false;
+    if (!lastSave) return true; // No saved data — nothing to restore
 
     const hoursSinceLastSave = (Date.now() - parseInt(lastSave, 10)) / (1000 * 60 * 60);
     if (hoursSinceLastSave >= AUTO_CLEANUP_HOURS) {
       console.log(`Data is ${hoursSinceLastSave.toFixed(1)}h old (limit: ${AUTO_CLEANUP_HOURS}h). Auto-cleaning...`);
       await clearAllData();
-      return true;
+      return true; // Data was stale and cleaned
     }
-    return false;
+    return false; // Fresh data exists — should restore
   } catch (error) {
     console.warn('Error during auto-cleanup check:', error);
-    return false;
+    return true; // On error, treat as no data
   }
 }
 

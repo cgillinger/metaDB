@@ -3,7 +3,7 @@ import { FileUploader } from "./components/FileUploader";
 import MainView from "./components/MainView";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { InfoIcon, AlertTriangle } from "lucide-react";
-import { getMemoryUsageStats, clearAllData, checkAndCleanupStaleData } from '@/utils/storageService';
+import { getMemoryUsageStats, clearAllData, checkAndCleanupStaleData, getPostViewData, getAccountViewData, getUploadedFilesMetadata } from '@/utils/storageService';
 import { MEMORY_THRESHOLDS } from '@/utils/memoryUtils';
 import { VERSION } from '@/utils/version';
 
@@ -16,9 +16,26 @@ function App() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        // Check if data is older than 12h — if so, auto-clean
         const wasCleanedUp = await checkAndCleanupStaleData();
+
         if (!wasCleanedUp) {
-          await clearAllData();
+          // Data is fresh (< 12h) — try to restore it
+          const savedPosts = await getPostViewData();
+          if (savedPosts && savedPosts.length > 0) {
+            const savedAccounts = getAccountViewData();
+            const savedFiles = await getUploadedFilesMetadata();
+            setProcessedData({
+              rows: savedPosts,
+              accountViewData: savedAccounts,
+              meta: {
+                isMergedData: savedFiles.length > 1,
+                fileCount: savedFiles.length,
+                files: savedFiles
+              }
+            });
+            setShowFileUploader(false);
+          }
         }
       } catch (error) {
         console.error('Init error:', error);
