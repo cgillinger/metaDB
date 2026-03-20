@@ -5,6 +5,10 @@ import { getDb, closeDb } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import maintenanceRouter from './routes/maintenance.js';
 import importsRouter from './routes/imports.js';
+import postsRouter from './routes/posts.js';
+import accountsRouter from './routes/accounts.js';
+import postTypesRouter from './routes/postTypes.js';
+import trendsRouter from './routes/trends.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,6 +29,10 @@ app.use('/api/health', (req, res, next) => {
   maintenanceRouter(req, res, next);
 });
 app.use('/api/imports', importsRouter);
+app.use('/api/posts', postsRouter);
+app.use('/api/accounts', accountsRouter);
+app.use('/api/post-types', postTypesRouter);
+app.use('/api/trends', trendsRouter);
 app.use('/api/maintenance', maintenanceRouter);
 
 // Serve static files in production
