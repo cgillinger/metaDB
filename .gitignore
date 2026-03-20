@@ -5,3 +5,7 @@ dist/
 *.log
 .vscode/
 *:[Zz]one.Identifier
+data/analytics.db
+_old_facebook/
+_old_instagram/
+old_csv/
