@@ -1,0 +1,14 @@
+services:
+  meta-analytics:
+    build: .
+    container_name: meta-analytics
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ./data:/data
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/data/analytics.db
+      - HOST=0.0.0.0
+      - PORT=3001
+    restart: unless-stopped

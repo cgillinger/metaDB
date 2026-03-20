@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/analytics.db
+.git/
+.DS_Store
+*.log
+.vscode/
+_old_facebook/
+_old_instagram/
+old_csv/

@@ -6,6 +6,8 @@ dist/
 .vscode/
 *:[Zz]one.Identifier
 data/analytics.db
+data/analytics.db-wal
+data/analytics.db-shm
 _old_facebook/
 _old_instagram/
 old_csv/
