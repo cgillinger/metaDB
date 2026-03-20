@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { getDb, closeDb } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import maintenanceRouter from './routes/maintenance.js';
+import importsRouter from './routes/imports.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,10 +21,10 @@ console.log('Database initialized.');
 
 // API routes
 app.use('/api/health', (req, res, next) => {
-  // Forward to maintenance router's /health handler
   req.url = '/health';
   maintenanceRouter(req, res, next);
 });
+app.use('/api/imports', importsRouter);
 app.use('/api/maintenance', maintenanceRouter);
 
 // Serve static files in production

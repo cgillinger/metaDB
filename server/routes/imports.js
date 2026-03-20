@@ -1,0 +1,206 @@
+import { Router } from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import { getDb } from '../db/connection.js';
+import { parseCSV } from '../services/csvProcessor.js';
+import { redetectAllCollabs } from '../services/collabDetector.js';
+
+const router = Router();
+const upload = multer({ dest: '/tmp/meta-uploads/' });
+
+// GET /api/imports — list all imports
+router.get('/', (req, res) => {
+  const db = getDb();
+  const imports = db.prepare(`
+    SELECT id, filename, platform, month, imported_at, row_count,
+           account_count, date_range_start, date_range_end
+    FROM imports
+    ORDER BY imported_at DESC
+  `).all();
+
+  res.json(imports);
+});
+
+// GET /api/imports/coverage — which months have data
+router.get('/coverage', (req, res) => {
+  const db = getDb();
+  const coverage = db.prepare(`
+    SELECT DISTINCT month, platform, COUNT(*) AS import_count,
+           SUM(row_count) AS total_posts
+    FROM imports
+    GROUP BY month, platform
+    ORDER BY month DESC
+  `).all();
+
+  res.json(coverage);
+});
+
+// POST /api/imports — upload and process a CSV file
+router.post('/', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Ingen fil bifogades.' });
+  }
+
+  try {
+    // Read the uploaded file
+    const csvContent = fs.readFileSync(req.file.path, 'utf-8');
+
+    // Clean up temp file
+    fs.unlinkSync(req.file.path);
+
+    // Parse CSV
+    const parsed = parseCSV(csvContent, req.file.originalname);
+
+    const db = getDb();
+
+    // Insert import record and posts in a transaction
+    const result = db.transaction(() => {
+      // Create import record
+      const importResult = db.prepare(`
+        INSERT INTO imports (filename, platform, month, row_count, account_count,
+                             date_range_start, date_range_end)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        req.file.originalname,
+        parsed.platform,
+        parsed.month,
+        parsed.stats.parsedPosts,
+        parsed.stats.accountCount,
+        parsed.dateRangeStart,
+        parsed.dateRangeEnd
+      );
+
+      const importId = importResult.lastInsertRowid;
+
+      // Prepare UPSERT statement
+      const upsert = db.prepare(`
+        INSERT INTO posts (
+          import_id, post_id, account_id, account_name, account_username,
+          description, publish_time, post_type, permalink, platform,
+          views, reach, likes, comments, shares,
+          total_clicks, link_clicks, other_clicks, saves, follows,
+          interactions, engagement
+        ) VALUES (
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?
+        )
+        ON CONFLICT(post_id, platform) DO UPDATE SET
+          import_id = excluded.import_id,
+          account_id = excluded.account_id,
+          account_name = excluded.account_name,
+          account_username = excluded.account_username,
+          description = excluded.description,
+          publish_time = excluded.publish_time,
+          post_type = excluded.post_type,
+          permalink = excluded.permalink,
+          views = excluded.views,
+          reach = excluded.reach,
+          likes = excluded.likes,
+          comments = excluded.comments,
+          shares = excluded.shares,
+          total_clicks = excluded.total_clicks,
+          link_clicks = excluded.link_clicks,
+          other_clicks = excluded.other_clicks,
+          saves = excluded.saves,
+          follows = excluded.follows,
+          interactions = excluded.interactions,
+          engagement = excluded.engagement
+      `);
+
+      let inserted = 0;
+      let updated = 0;
+
+      const existsCheck = db.prepare(
+        'SELECT 1 FROM posts WHERE post_id = ? AND platform = ?'
+      );
+
+      for (const post of parsed.posts) {
+        if (!post.post_id) continue;
+
+        const exists = existsCheck.get(post.post_id, post.platform);
+
+        upsert.run(
+          importId,
+          post.post_id, post.account_id, post.account_name, post.account_username,
+          post.description, post.publish_time, post.post_type, post.permalink,
+          post.platform,
+          post.views, post.reach, post.likes, post.comments, post.shares,
+          post.total_clicks, post.link_clicks, post.other_clicks,
+          post.saves, post.follows,
+          post.interactions, post.engagement
+        );
+
+        if (exists) {
+          updated++;
+        } else {
+          inserted++;
+        }
+      }
+
+      // Update the import row_count to reflect actual inserts
+      // (some posts may have been updates of existing posts)
+      const actualPostCount = db.prepare(
+        'SELECT COUNT(*) AS count FROM posts WHERE import_id = ?'
+      ).get(importId).count;
+
+      db.prepare('UPDATE imports SET row_count = ? WHERE id = ?')
+        .run(actualPostCount, importId);
+
+      return { importId, inserted, updated, actualPostCount };
+    })();
+
+    // Re-run collab detection across all data
+    const collabResult = redetectAllCollabs();
+
+    res.status(201).json({
+      import: {
+        id: result.importId,
+        filename: req.file.originalname,
+        platform: parsed.platform,
+        month: parsed.month,
+        row_count: result.actualPostCount,
+        date_range_start: parsed.dateRangeStart,
+        date_range_end: parsed.dateRangeEnd,
+      },
+      stats: {
+        totalRowsInFile: parsed.stats.totalRows,
+        postsInserted: result.inserted,
+        postsUpdated: result.updated,
+        collabDetection: collabResult,
+      },
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE /api/imports/:id — delete import and its posts (CASCADE)
+router.delete('/:id', (req, res) => {
+  const db = getDb();
+  const id = parseInt(req.params.id, 10);
+
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'Ogiltigt import-ID.' });
+  }
+
+  const existing = db.prepare('SELECT id FROM imports WHERE id = ?').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Import hittades inte.' });
+  }
+
+  db.prepare('DELETE FROM imports WHERE id = ?').run(id);
+
+  // Re-run collab detection since account post counts have changed
+  const collabResult = redetectAllCollabs();
+
+  res.json({
+    deleted: true,
+    id,
+    collabDetection: collabResult,
+  });
+});
+
+export default router;
