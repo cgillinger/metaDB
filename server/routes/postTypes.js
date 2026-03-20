@@ -54,9 +54,31 @@ router.get('/', (req, res) => {
     ORDER BY post_count DESC
   `;
 
-  const data = db.prepare(query).all(...params);
+  const rows = db.prepare(query).all(...params);
 
-  res.json(data);
+  // Calculate total posts for percentage
+  const totalPosts = rows.reduce((sum, r) => sum + r.post_count, 0);
+
+  const postTypes = rows.map(row => ({
+    ...row,
+    // Add percentage
+    percentage: totalPosts > 0 ? (row.post_count / totalPosts) * 100 : 0,
+    // Map avg_ fields to base names for frontend convenience
+    views: row.avg_views,
+    reach: row.avg_reach,
+    likes: row.avg_likes,
+    comments: row.avg_comments,
+    shares: row.avg_shares,
+    total_clicks: row.avg_total_clicks,
+    link_clicks: row.avg_link_clicks,
+    other_clicks: row.avg_other_clicks,
+    saves: row.avg_saves,
+    follows: row.avg_follows,
+    interactions: row.avg_interactions,
+    engagement: row.avg_engagement,
+  }));
+
+  res.json({ postTypes });
 });
 
 export default router;

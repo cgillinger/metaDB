@@ -1,0 +1,101 @@
+/**
+ * API Client for Meta Analytics
+ *
+ * Replaces storageService.js — all data operations go through the Express API.
+ * Client-side export utilities (downloadFile, downloadExcel, openExternalLink)
+ * remain here as they are browser-only operations.
+ */
+
+const handleResponse = async (res) => {
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+};
+
+export const api = {
+  // Imports
+  getImports: () => fetch('/api/imports').then(handleResponse),
+  uploadCSV: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch('/api/imports', { method: 'POST', body: formData }).then(handleResponse);
+  },
+  deleteImport: (id) =>
+    fetch(`/api/imports/${id}`, { method: 'DELETE' }).then(handleResponse),
+  getCoverage: () => fetch('/api/imports/coverage').then(handleResponse),
+
+  // Posts (server-side pagination)
+  getPosts: (params) =>
+    fetch(`/api/posts?${new URLSearchParams(params)}`).then(handleResponse),
+
+  // Account aggregation (SQL-based)
+  getAccounts: (params) =>
+    fetch(`/api/accounts?${new URLSearchParams(params)}`).then(handleResponse),
+
+  // Post type aggregation
+  getPostTypes: (params) =>
+    fetch(`/api/post-types?${new URLSearchParams(params)}`).then(handleResponse),
+
+  // Trend analysis
+  getTrends: (params) =>
+    fetch(`/api/trends?${new URLSearchParams(params)}`).then(handleResponse),
+
+  // Maintenance
+  vacuum: () =>
+    fetch('/api/maintenance/vacuum', { method: 'POST' }).then(handleResponse),
+  redetectCollab: () =>
+    fetch('/api/maintenance/redetect-collab', { method: 'POST' }).then(handleResponse),
+  getStats: () => fetch('/api/maintenance/stats').then(handleResponse),
+  getHealth: () => fetch('/api/health').then(handleResponse),
+  getBackupUrl: () => '/api/maintenance/backup',
+};
+
+// --- Client-side export utilities (unchanged from storageService.js) ---
+
+export const downloadFile = (data, filename, type = 'text/csv') => {
+  const blob = new Blob([data], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    document.body.removeChild(link);
+  }, 100);
+  return { success: true, filePath: filename };
+};
+
+export const downloadExcel = async (data, filename) => {
+  try {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, 'Meta Analytics');
+    const excelData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelData], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+    }, 100);
+    return { success: true, filePath: filename };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const openExternalLink = (url) => {
+  window.open(url, '_blank', 'noopener,noreferrer');
+  return true;
+};

@@ -7,8 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
-import { getValue, formatValue, formatDate, DISPLAY_NAMES, ENGAGEMENT_INFO } from '@/utils/columnConfig';
-import { downloadFile, downloadExcel, openExternalLink } from '@/utils/storageService';
+import { formatValue, formatDate, DISPLAY_NAMES, ENGAGEMENT_INFO } from '@/utils/columnConfig';
+import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
 
 const ALL_ACCOUNTS = 'all_accounts';
 
@@ -18,7 +18,6 @@ const PAGE_SIZE_OPTIONS = [
   { value: '50', label: '50 per sida' }
 ];
 
-// Definiera specifika fält för per-inlägg-vyn - håll detta synkat med MainView.jsx
 const POST_VIEW_AVAILABLE_FIELDS = {
   'reach': 'Räckvidd',
   'views': 'Visningar',
@@ -27,10 +26,8 @@ const POST_VIEW_AVAILABLE_FIELDS = {
   'likes': 'Reaktioner/Gilla',
   'comments': 'Kommentarer',
   'shares': 'Delningar',
-  // IG-specific
   'saves': 'Sparade',
   'follows': 'Följare',
-  // FB-specific
   'total_clicks': 'Totalt antal klick',
   'link_clicks': 'Länkklick',
   'other_clicks': 'Övriga klick',
@@ -41,124 +38,115 @@ const POST_VIEW_AVAILABLE_FIELDS = {
   'post_type': 'Typ'
 };
 
-// Fält som enbart finns på Facebook
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
-
-// Fält som enbart finns på Instagram
 const IG_ONLY_FIELDS = ['saves', 'follows'];
-
-// Max längd för trunkerade beskrivningar
 const MAX_DESCRIPTION_LENGTH = 100;
 
 const getDisplayName = (field) => POST_VIEW_AVAILABLE_FIELDS[field] || DISPLAY_NAMES[field] || field;
 
-const getEngagementTooltip = (data) => {
-  if (!Array.isArray(data) || data.length === 0) return null;
-  const platforms = new Set(data.map(p => p._platform).filter(Boolean));
-  if (platforms.size === 1) {
-    const p = [...platforms][0];
-    return ENGAGEMENT_INFO[p] || null;
-  }
-  return 'Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare.';
-};
-
-
-
-// Inläggstyp-badge
 const PostTypeBadge = ({ type }) => {
   if (!type) return null;
   const colorMap = {
-    'Foton': 'bg-blue-100 text-blue-800',
-    'Bilder': 'bg-blue-100 text-blue-800',
-    'Länkar': 'bg-purple-100 text-purple-800',
-    'Videor': 'bg-red-100 text-red-800',
-    'Status': 'bg-green-100 text-green-800',
-    'Reels': 'bg-orange-100 text-orange-800',
-    'Stories': 'bg-yellow-100 text-yellow-800',
-    'default': 'bg-gray-100 text-gray-800'
+    'Foton': 'bg-blue-100 text-blue-800', 'Bilder': 'bg-blue-100 text-blue-800',
+    'Länkar': 'bg-purple-100 text-purple-800', 'Videor': 'bg-red-100 text-red-800',
+    'Status': 'bg-green-100 text-green-800', 'Reels': 'bg-orange-100 text-orange-800',
+    'Stories': 'bg-yellow-100 text-yellow-800', 'default': 'bg-gray-100 text-gray-800'
   };
-  const colorClass = colorMap[type] || colorMap.default;
-  return (
-    <span className={`px-2 py-1 text-xs font-medium rounded-full ${colorClass}`}>
-      {type}
-    </span>
-  );
+  return <span className={`px-2 py-1 text-xs font-medium rounded-full ${colorMap[type] || colorMap.default}`}>{type}</span>;
 };
 
-const PostView = ({ data, selectedFields }) => {
+const PostView = ({ selectedFields, platform }) => {
   const [sortConfig, setSortConfig] = useState({ key: 'publish_time', direction: 'desc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [selectedAccount, setSelectedAccount] = useState(ALL_ACCOUNTS);
   const [expandedDescriptions, setExpandedDescriptions] = useState({});
 
-  const engagementTooltip = useMemo(() => getEngagementTooltip(data), [data]);
-  const hasMixedData = useMemo(() => {
-    if (!Array.isArray(data)) return false;
-    const platforms = new Set(data.map(p => p._platform).filter(Boolean));
-    return platforms.size > 1;
-  }, [data]);
+  const [posts, setPosts] = useState([]);
+  const [totalPosts, setTotalPosts] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [uniqueAccounts, setUniqueAccounts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [hasMixedData, setHasMixedData] = useState(false);
 
-  // Map accountName → platform + isCollab (sista träff vinner om blandat)
-  const uniqueAccounts = useMemo(() => {
-    if (!data || !Array.isArray(data)) return [];
-    const map = {};
-    for (const post of data) {
-      const name = getValue(post, 'account_name');
-      if (name) {
-        map[name] = {
-          platform: post._platform || null,
-          isCollab: post._isCollab || false,
+  // Fetch posts from API with server-side pagination & sorting
+  useEffect(() => {
+    const fetchPosts = async () => {
+      setLoading(true);
+      try {
+        const params = {
+          page: currentPage,
+          pageSize: pageSize,
+          sort: sortConfig.key,
+          order: sortConfig.direction,
         };
+        if (platform) params.platform = platform;
+        if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
+
+        const data = await api.getPosts(params);
+        setPosts(data.data || []);
+        setTotalPosts(data.total || 0);
+        setTotalPages(data.totalPages || 0);
+      } catch (error) {
+        console.error('Fel vid hämtning av inlägg:', error);
+      } finally {
+        setLoading(false);
       }
-    }
-    return Object.entries(map)
-      .map(([name, info]) => ({ name, platform: info.platform, isCollab: info.isCollab }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [data]);
+    };
+    fetchPosts();
+  }, [currentPage, pageSize, sortConfig, platform, selectedAccount]);
+
+  // Fetch unique accounts for filter dropdown
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      try {
+        const params = { fields: 'views' };
+        if (platform) params.platform = platform;
+        const data = await api.getAccounts(params);
+        const accounts = (data.accounts || []).map(a => ({
+          name: a.account_name,
+          platform: a.platform,
+          isCollab: a.is_collab,
+        }));
+        setUniqueAccounts(accounts);
+        const platforms = new Set(accounts.map(a => a.platform));
+        setHasMixedData(platforms.size > 1);
+      } catch (error) {
+        console.error('Fel vid hämtning av konton:', error);
+      }
+    };
+    fetchAccounts();
+  }, [platform]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [data, pageSize, selectedAccount]);
+  }, [pageSize, selectedAccount, platform]);
 
   const handleSort = (key) => {
     setSortConfig(current => ({
       key,
       direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
     }));
+    setCurrentPage(1);
   };
 
   const getSortIcon = (columnKey) => {
     if (sortConfig.key !== columnKey) return <ArrowUpDown className="h-4 w-4 ml-1" />;
-    return sortConfig.direction === 'asc'
-      ? <ArrowUp className="h-4 w-4 ml-1" />
-      : <ArrowDown className="h-4 w-4 ml-1" />;
+    return sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
   };
 
   const toggleDescription = (postId) => {
-    setExpandedDescriptions(prev => ({
-      ...prev,
-      [postId]: !prev[postId]
-    }));
+    setExpandedDescriptions(prev => ({ ...prev, [postId]: !prev[postId] }));
   };
 
   const formatDescription = (description, postId) => {
     if (!description) return '-';
     const isExpanded = expandedDescriptions[postId];
-    if (description.length <= MAX_DESCRIPTION_LENGTH) {
-      return <span>{description}</span>;
-    }
+    if (description.length <= MAX_DESCRIPTION_LENGTH) return <span>{description}</span>;
     return (
       <div>
         {isExpanded ? description : `${description.substring(0, MAX_DESCRIPTION_LENGTH)}...`}
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleDescription(postId);
-          }}
-          className="ml-2 text-primary text-sm hover:underline"
-        >
+        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDescription(postId); }} className="ml-2 text-primary text-sm hover:underline">
           {isExpanded ? 'Visa mindre' : 'Läs mer'}
         </button>
       </div>
@@ -167,129 +155,100 @@ const PostView = ({ data, selectedFields }) => {
 
   const handleExternalLink = (post) => {
     try {
-      const permalink = getValue(post, 'permalink');
-      if (permalink) {
-        openExternalLink(permalink);
-        return;
-      }
-      // Fallback: bygg URL baserat på plattform
-      const platform = post._platform;
-      const postId = getValue(post, 'post_id');
-      const accountId = getValue(post, 'account_id');
+      if (post.permalink) { openExternalLink(post.permalink); return; }
+      const postId = post.post_id;
       if (!postId) return;
       let url;
-      if (platform === 'instagram') {
-        url = `https://www.instagram.com/p/${postId}/`;
-      } else if (accountId) {
-        url = `https://www.facebook.com/${accountId}/posts/${postId}`;
-      } else {
-        url = `https://www.facebook.com/${postId}`;
-      }
+      if (post.platform === 'instagram') url = `https://www.instagram.com/p/${postId}/`;
+      else if (post.account_id) url = `https://www.facebook.com/${post.account_id}/posts/${postId}`;
+      else url = `https://www.facebook.com/${postId}`;
       openExternalLink(url);
     } catch (error) {
       console.error('Failed to open external link:', error);
     }
   };
 
-  // Avgör om ett fält är N/A för ett visst inlägg
   const renderFieldValue = (post, field) => {
-    const platform = post._platform;
-    if (FB_ONLY_FIELDS.includes(field) && platform === 'instagram') {
-      return <span className="text-muted-foreground text-xs">N/A</span>;
-    }
-    if (IG_ONLY_FIELDS.includes(field) && platform === 'facebook') {
-      return <span className="text-muted-foreground text-xs">N/A</span>;
-    }
-    return formatValue(getValue(post, field));
+    const plat = post.platform;
+    if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
+    if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
+    return formatValue(post[field]);
   };
 
-  const filteredData = React.useMemo(() => {
-    if (!data || !Array.isArray(data)) return [];
-    if (selectedAccount === ALL_ACCOUNTS) return data;
-    return data.filter(post => getValue(post, 'account_name') === selectedAccount);
-  }, [data, selectedAccount]);
+  // Export fetches ALL matching posts (not just current page)
+  const handleExportToCSV = async () => {
+    try {
+      const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction };
+      if (platform) params.platform = platform;
+      if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
+      const data = await api.getPosts(params);
+      const allPosts = data.data || [];
 
-  const sortedData = React.useMemo(() => {
-    if (!sortConfig.key || !filteredData) return filteredData;
-    return [...filteredData].sort((a, b) => {
-      const aValue = getValue(a, sortConfig.key);
-      const bValue = getValue(b, sortConfig.key);
-      if (aValue === null && bValue === null) return 0;
-      if (aValue === null) return 1;
-      if (bValue === null) return -1;
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-      }
-      if (sortConfig.key === 'publish_time') {
-        const aDate = new Date(aValue);
-        const bDate = new Date(bValue);
-        if (!isNaN(aDate) && !isNaN(bDate)) {
-          return sortConfig.direction === 'asc' ? aDate - bDate : bDate - aDate;
+      const exportData = allPosts.map(post => {
+        const plat = post.platform;
+        const row = {
+          'Plattform': plat === 'facebook' ? 'Facebook' : plat === 'instagram' ? 'Instagram' : '',
+          'Kontonamn': post.account_name || '',
+          'Beskrivning': post.description || 'Ingen beskrivning',
+          'Publiceringstid': formatDate(post.publish_time),
+          'Typ': post.post_type || ''
+        };
+        for (const field of selectedFields) {
+          if (['account_name', 'description', 'publish_time', 'post_type'].includes(field)) continue;
+          const displayName = getDisplayName(field);
+          if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { row[displayName] = 'N/A'; continue; }
+          if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') { row[displayName] = 'N/A'; continue; }
+          row[displayName] = formatValue(post[field]);
         }
-      }
-      const aStr = String(aValue || '').toLowerCase();
-      const bStr = String(bValue || '').toLowerCase();
-      return sortConfig.direction === 'asc' ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
-    });
-  }, [filteredData, sortConfig]);
+        return row;
+      });
 
-  const paginatedData = React.useMemo(() => {
-    if (!sortedData) return [];
-    const startIndex = (currentPage - 1) * pageSize;
-    return sortedData.slice(startIndex, startIndex + pageSize);
-  }, [sortedData, currentPage, pageSize]);
-
-  const totalPages = Math.ceil((sortedData?.length || 0) / pageSize);
-
-  const formatDataForExport = (exportData) => {
-    if (!exportData || !Array.isArray(exportData)) return [];
-    return exportData.map(post => {
-      const platform = post._platform;
-      const row = {
-        'Plattform': platform === 'facebook' ? 'Facebook' : platform === 'instagram' ? 'Instagram' : '',
-        'Kontonamn': getValue(post, 'account_name') || '',
-        'Beskrivning': getValue(post, 'description') || 'Ingen beskrivning',
-        'Publiceringstid': formatDate(getValue(post, 'publish_time')),
-        'Typ': getValue(post, 'post_type') || ''
-      };
-      for (const field of selectedFields) {
-        if (['account_name', 'description', 'publish_time', 'post_type'].includes(field)) continue;
-        const displayName = getDisplayName(field);
-        if (FB_ONLY_FIELDS.includes(field) && platform === 'instagram') {
-          row[displayName] = 'N/A';
-          continue;
-        }
-        if (IG_ONLY_FIELDS.includes(field) && platform === 'facebook') {
-          row[displayName] = 'N/A';
-          continue;
-        }
-        row[displayName] = formatValue(getValue(post, field));
-      }
-      return row;
-    });
-  };
-
-  const handleExportToCSV = () => {
-    const exportData = formatDataForExport(sortedData);
-    if (!exportData.length) return;
-    const headers = Object.keys(exportData[0]);
-    const csvRows = [headers.join(',')];
-    exportData.forEach(row => {
-      csvRows.push(headers.map(h => `"${String(row[h] || '').replace(/"/g, '""')}"`).join(','));
-    });
-    const accountSuffix = selectedAccount !== ALL_ACCOUNTS
-      ? `-${selectedAccount.replace(/\s+/g, '-')}`
-      : '';
-    downloadFile(csvRows.join('\n'), `meta-statistik-inlagg${accountSuffix}.csv`, 'text/csv;charset=utf-8;');
+      if (!exportData.length) return;
+      const headers = Object.keys(exportData[0]);
+      const csvRows = [headers.join(',')];
+      exportData.forEach(row => {
+        csvRows.push(headers.map(h => `"${String(row[h] || '').replace(/"/g, '""')}"`).join(','));
+      });
+      const accountSuffix = selectedAccount !== ALL_ACCOUNTS ? `-${selectedAccount.replace(/\s+/g, '-')}` : '';
+      downloadFile(csvRows.join('\n'), `meta-statistik-inlagg${accountSuffix}.csv`, 'text/csv;charset=utf-8;');
+    } catch (error) {
+      console.error('Export till CSV misslyckades:', error);
+    }
   };
 
   const handleExportToExcel = async () => {
-    const exportData = formatDataForExport(sortedData);
-    if (!exportData.length) return;
-    const accountSuffix = selectedAccount !== ALL_ACCOUNTS
-      ? `-${selectedAccount.replace(/\s+/g, '-')}`
-      : '';
-    await downloadExcel(exportData, `meta-statistik-inlagg${accountSuffix}.xlsx`);
+    try {
+      const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction };
+      if (platform) params.platform = platform;
+      if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
+      const data = await api.getPosts(params);
+      const allPosts = data.data || [];
+
+      const exportData = allPosts.map(post => {
+        const plat = post.platform;
+        const row = {
+          'Plattform': plat === 'facebook' ? 'Facebook' : plat === 'instagram' ? 'Instagram' : '',
+          'Kontonamn': post.account_name || '',
+          'Beskrivning': post.description || 'Ingen beskrivning',
+          'Publiceringstid': formatDate(post.publish_time),
+          'Typ': post.post_type || ''
+        };
+        for (const field of selectedFields) {
+          if (['account_name', 'description', 'publish_time', 'post_type'].includes(field)) continue;
+          const displayName = getDisplayName(field);
+          if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { row[displayName] = 'N/A'; continue; }
+          if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') { row[displayName] = 'N/A'; continue; }
+          row[displayName] = formatValue(post[field]);
+        }
+        return row;
+      });
+
+      if (!exportData.length) return;
+      const accountSuffix = selectedAccount !== ALL_ACCOUNTS ? `-${selectedAccount.replace(/\s+/g, '-')}` : '';
+      await downloadExcel(exportData, `meta-statistik-inlagg${accountSuffix}.xlsx`);
+    } catch (error) {
+      console.error('Export till Excel misslyckades:', error);
+    }
   };
 
   if (selectedFields.length === 0) {
@@ -308,17 +267,15 @@ const PostView = ({ data, selectedFields }) => {
         <div className="flex items-center space-x-4">
           <span className="text-sm text-muted-foreground">Visa konto:</span>
           <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Välj konto" />
-            </SelectTrigger>
+            <SelectTrigger className="w-[200px]"><SelectValue placeholder="Välj konto" /></SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL_ACCOUNTS}>Alla konton</SelectItem>
-              {uniqueAccounts.map(({ name, platform, isCollab }) => (
+              {uniqueAccounts.map(({ name, platform: plat, isCollab }) => (
                 <SelectItem key={name} value={name}>
                   <span className="flex items-center gap-2">
                     {name}
-                    <PlatformBadge platform={platform} />
-                    {isCollab && <CollabBadge compact />}
+                    <PlatformBadge platform={plat} />
+                    {isCollab ? <CollabBadge compact /> : null}
                   </span>
                 </SelectItem>
               ))}
@@ -326,12 +283,8 @@ const PostView = ({ data, selectedFields }) => {
           </Select>
         </div>
         <div className="flex space-x-2">
-          <Button variant="outline" onClick={handleExportToCSV} aria-label="Exportera till CSV">
-            <FileDown className="w-4 h-4 mr-2" />CSV
-          </Button>
-          <Button variant="outline" onClick={handleExportToExcel} aria-label="Exportera till Excel">
-            <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
-          </Button>
+          <Button variant="outline" onClick={handleExportToCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
+          <Button variant="outline" onClick={handleExportToExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
         </div>
       </div>
 
@@ -349,22 +302,19 @@ const PostView = ({ data, selectedFields }) => {
               <TableHead className="w-28 cursor-pointer hover:bg-muted/50" onClick={() => handleSort('account_name')}>
                 <div className="flex items-center">{getDisplayName('account_name')} {getSortIcon('account_name')}</div>
               </TableHead>
-              {/* Plattformsbadge-kolumn alltid synlig */}
               <TableHead className="w-16 text-center">Plattform</TableHead>
-              {/* Inläggstyp om valt */}
               {showPostType && (
                 <TableHead className="w-28 cursor-pointer hover:bg-muted/50" onClick={() => handleSort('post_type')}>
                   <div className="flex items-center whitespace-nowrap">Typ {getSortIcon('post_type')}</div>
                 </TableHead>
               )}
-              {/* Valda statistikfält */}
               {selectedFields.map(field => {
                 if (['description', 'publish_time', 'account_name', 'post_type'].includes(field)) return null;
                 return (
                   <TableHead key={field} className="w-28 cursor-pointer hover:bg-muted/50" onClick={() => handleSort(field)}>
                     <div className="flex items-center justify-end">
                       {getDisplayName(field)}
-                      {field === 'engagement' && <InfoTooltip text={engagementTooltip} />}
+                      {field === 'engagement' && hasMixedData && <InfoTooltip text="Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare." />}
                       {getSortIcon(field)}
                     </div>
                   </TableHead>
@@ -374,88 +324,54 @@ const PostView = ({ data, selectedFields }) => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedData.length === 0 ? (
+            {posts.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={5 + (showPostType ? 1 : 0) + selectedFields.filter(f => !['description', 'publish_time', 'account_name', 'post_type'].includes(f)).length}
-                  className="text-center text-muted-foreground py-8"
-                >
-                  Ingen data tillgänglig för valda filter
+                <TableCell colSpan={5 + (showPostType ? 1 : 0) + selectedFields.filter(f => !['description', 'publish_time', 'account_name', 'post_type'].includes(f)).length} className="text-center text-muted-foreground py-8">
+                  {loading ? 'Laddar...' : 'Ingen data tillgänglig för valda filter'}
                 </TableCell>
               </TableRow>
-            ) : (
-              paginatedData.map((post, index) => {
-                const postId = getValue(post, 'post_id');
-                const description = getValue(post, 'description');
-                const publishTime = getValue(post, 'publish_time');
-                const accountName = getValue(post, 'account_name');
-                const postType = getValue(post, 'post_type');
-                const platform = post._platform;
-
-                return (
-                  <TableRow key={`post-${postId || index}`}>
-                    <TableCell className="text-center font-medium">
-                      {(currentPage - 1) * pageSize + index + 1}
+            ) : posts.map((post, index) => (
+              <TableRow key={`post-${post.post_id || index}`}>
+                <TableCell className="text-center font-medium">{(currentPage - 1) * pageSize + index + 1}</TableCell>
+                <TableCell className="max-w-md">
+                  <div className="text-sm text-muted-foreground">{formatDescription(post.description, post.post_id || index)}</div>
+                </TableCell>
+                <TableCell className="whitespace-nowrap">{formatDate(post.publish_time)}</TableCell>
+                <TableCell>{formatValue(post.account_name)}</TableCell>
+                <TableCell className="text-center">
+                  <div className="flex items-center justify-center gap-1">
+                    <PlatformBadge platform={post.platform} />
+                    {post.is_collab ? <CollabBadge compact /> : null}
+                  </div>
+                </TableCell>
+                {showPostType && <TableCell className="text-center"><PostTypeBadge type={post.post_type} /></TableCell>}
+                {selectedFields.map(field => {
+                  if (['description', 'publish_time', 'account_name', 'post_type'].includes(field)) return null;
+                  const showMixedIcon = field === 'engagement' && hasMixedData;
+                  const mixedTip = showMixedIcon ? (post.platform === 'facebook' ? ENGAGEMENT_INFO.facebook : ENGAGEMENT_INFO.instagram) : null;
+                  return (
+                    <TableCell key={field} className="text-right">
+                      <span className="inline-flex items-center justify-end gap-1">
+                        {renderFieldValue(post, field)}
+                        {showMixedIcon && <InfoTooltip text={mixedTip} />}
+                      </span>
                     </TableCell>
-                    <TableCell className="max-w-md">
-                      <div className="text-sm text-muted-foreground">
-                        {formatDescription(description, postId || index)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {formatDate(publishTime)}
-                    </TableCell>
-                    <TableCell>{formatValue(accountName)}</TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <PlatformBadge platform={platform} />
-                        {post._isCollab && <CollabBadge compact />}
-                      </div>
-                    </TableCell>
-                    {showPostType && (
-                      <TableCell className="text-center">
-                        <PostTypeBadge type={postType} />
-                      </TableCell>
-                    )}
-                    {selectedFields.map(field => {
-                      if (['description', 'publish_time', 'account_name', 'post_type'].includes(field)) return null;
-                      const showMixedIcon = field === 'engagement' && hasMixedData;
-                      const mixedTip = showMixedIcon
-                        ? (post._platform === 'facebook' ? ENGAGEMENT_INFO.facebook : ENGAGEMENT_INFO.instagram)
-                        : null;
-                      return (
-                        <TableCell key={field} className="text-right">
-                          <span className="inline-flex items-center justify-end gap-1">
-                            {renderFieldValue(post, field)}
-                            {showMixedIcon && <InfoTooltip text={mixedTip} />}
-                          </span>
-                        </TableCell>
-                      );
-                    })}
-                    <TableCell className="text-center">
-                      <button
-                        onClick={() => handleExternalLink(post)}
-                        className="inline-flex items-center justify-center text-primary hover:text-primary/80"
-                        title="Öppna i webbläsare"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        <span className="sr-only">Öppna inlägg</span>
-                      </button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
+                  );
+                })}
+                <TableCell className="text-center">
+                  <button onClick={() => handleExternalLink(post)} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
+                    <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna inlägg</span>
+                  </button>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
 
         <div className="flex items-center justify-between p-4 border-t">
           <div className="flex items-center space-x-2">
             <span className="text-sm text-muted-foreground">Visa</span>
-            <Select
-              value={pageSize.toString()}
-              onValueChange={size => { setPageSize(Number(size)); setCurrentPage(1); }}
-            >
+            <Select value={pageSize.toString()} onValueChange={size => { setPageSize(Number(size)); setCurrentPage(1); }}>
               <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {PAGE_SIZE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
@@ -464,16 +380,14 @@ const PostView = ({ data, selectedFields }) => {
           </div>
           <div className="flex items-center space-x-6">
             <span className="text-sm text-muted-foreground">
-              Visar {((currentPage - 1) * pageSize) + 1} till {Math.min(currentPage * pageSize, sortedData?.length || 0)} av {sortedData?.length || 0}
+              Visar {totalPosts > 0 ? ((currentPage - 1) * pageSize) + 1 : 0} till {Math.min(currentPage * pageSize, totalPosts)} av {totalPosts}
             </span>
             <div className="flex items-center space-x-2">
               <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
-                <ChevronLeft className="h-4 w-4" />
-                <span className="sr-only">Föregående sida</span>
+                <ChevronLeft className="h-4 w-4" /><span className="sr-only">Föregående</span>
               </Button>
               <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}>
-                <ChevronRight className="h-4 w-4" />
-                <span className="sr-only">Nästa sida</span>
+                <ChevronRight className="h-4 w-4" /><span className="sr-only">Nästa</span>
               </Button>
             </div>
           </div>

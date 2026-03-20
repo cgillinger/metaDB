@@ -72,9 +72,30 @@ router.get('/', (req, res) => {
     ORDER BY ${sort} ${order}
   `;
 
-  const data = db.prepare(query).all(...params);
+  const accounts = db.prepare(query).all(...params);
 
-  res.json(data);
+  // Compute totals across all returned accounts
+  const totalsQuery = `
+    SELECT
+      SUM(views) AS views,
+      CAST(ROUND(AVG(reach)) AS INTEGER) AS reach,
+      SUM(likes) AS likes,
+      SUM(comments) AS comments,
+      SUM(shares) AS shares,
+      SUM(total_clicks) AS total_clicks,
+      SUM(link_clicks) AS link_clicks,
+      SUM(other_clicks) AS other_clicks,
+      SUM(saves) AS saves,
+      SUM(follows) AS follows,
+      SUM(interactions) AS interactions,
+      SUM(engagement) AS engagement,
+      COUNT(*) AS post_count
+    FROM posts
+    ${whereClause}
+  `;
+  const totals = db.prepare(totalsQuery).get(...params) || {};
+
+  res.json({ accounts, totals });
 });
 
 export default router;

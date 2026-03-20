@@ -8,14 +8,12 @@ import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, F
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import {
-  getValue,
   formatValue,
   DISPLAY_NAMES,
   ENGAGEMENT_INFO
 } from '@/utils/columnConfig';
-import { downloadFile, downloadExcel, openExternalLink } from '@/utils/storageService';
+import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
 
-// Definiera specifika fält för per-konto-vyn - håll detta synkat med MainView.jsx
 const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'average_reach': 'Genomsnittlig räckvidd',
@@ -24,109 +22,45 @@ const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'likes': 'Reaktioner/Gilla',
   'comments': 'Kommentarer',
   'shares': 'Delningar',
-  // IG-specific
   'saves': 'Sparade',
   'follows': 'Följare',
-  // FB-specific
   'total_clicks': 'Totalt antal klick',
   'link_clicks': 'Länkklick',
   'other_clicks': 'Övriga klick',
-  // Common
   'post_count': 'Antal publiceringar',
   'posts_per_day': 'Publiceringar per dag'
 };
 
-// Fält som enbart finns på Facebook
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
-
-// Fält som enbart finns på Instagram
 const IG_ONLY_FIELDS = ['saves', 'follows'];
 
-// Färgkoder för SR-kanaler
 const CHANNEL_COLORS = {
-  'P1': '#0066cc',
-  'P2': '#ff6600',
-  'P3': '#00cc66',
-  'P4': '#cc33cc',
-  'EKOT': '#005eb8',
-  'RADIOSPORTEN': '#1c5c35',
-  'SR': '#000000',
-  'default': '#000000'
+  'P1': '#0066cc', 'P2': '#ff6600', 'P3': '#00cc66', 'P4': '#cc33cc',
+  'EKOT': '#005eb8', 'RADIOSPORTEN': '#1c5c35', 'SR': '#000000', 'default': '#000000'
 };
 
-// ProfileIcon-komponenten
 const ProfileIcon = ({ accountName }) => {
   const name = accountName || 'Okänd';
   const firstLetter = name.charAt(0).toUpperCase();
-
   let backgroundColor = CHANNEL_COLORS.default;
   let channel = '';
-
   const nameLower = name.toLowerCase();
-
-  if (nameLower.includes('ekot') || nameLower.includes('radio sweden')) {
-    backgroundColor = CHANNEL_COLORS.EKOT;
-    channel = 'E';
-  } else if (nameLower.includes('radiosporten') || nameLower.includes('radio sporten')) {
-    backgroundColor = CHANNEL_COLORS.RADIOSPORTEN;
-    channel = 'RS';
-  } else if (nameLower.includes('p1')) {
-    backgroundColor = CHANNEL_COLORS.P1;
-    channel = 'P1';
-  } else if (nameLower.includes('p2')) {
-    backgroundColor = CHANNEL_COLORS.P2;
-    channel = 'P2';
-  } else if (nameLower.includes('p3')) {
-    backgroundColor = CHANNEL_COLORS.P3;
-    channel = 'P3';
-  } else if (nameLower.includes('p4')) {
-    backgroundColor = CHANNEL_COLORS.P4;
-    channel = 'P4';
-  } else if (nameLower.includes('sveriges radio')) {
-    backgroundColor = CHANNEL_COLORS.SR;
-    channel = 'SR';
-  }
-
+  if (nameLower.includes('ekot') || nameLower.includes('radio sweden')) { backgroundColor = CHANNEL_COLORS.EKOT; channel = 'E'; }
+  else if (nameLower.includes('radiosporten') || nameLower.includes('radio sporten')) { backgroundColor = CHANNEL_COLORS.RADIOSPORTEN; channel = 'RS'; }
+  else if (nameLower.includes('p1')) { backgroundColor = CHANNEL_COLORS.P1; channel = 'P1'; }
+  else if (nameLower.includes('p2')) { backgroundColor = CHANNEL_COLORS.P2; channel = 'P2'; }
+  else if (nameLower.includes('p3')) { backgroundColor = CHANNEL_COLORS.P3; channel = 'P3'; }
+  else if (nameLower.includes('p4')) { backgroundColor = CHANNEL_COLORS.P4; channel = 'P4'; }
+  else if (nameLower.includes('sveriges radio')) { backgroundColor = CHANNEL_COLORS.SR; channel = 'SR'; }
   const displayLetter = channel || firstLetter;
-
   return (
-    <div
-      className="flex-shrink-0 w-6 h-6 rounded-sm flex items-center justify-center text-xs font-bold text-white"
-      style={{ backgroundColor }}
-    >
+    <div className="flex-shrink-0 w-6 h-6 rounded-sm flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor }}>
       {displayLetter}
     </div>
   );
 };
 
-
-// Tooltip för engagemang – text baseras på vilken plattform datan gäller.
-// Inkluderar även förklaring av misstänkta samarbetskonton om sådana finns.
-const getEngagementTooltip = (data) => {
-  if (!Array.isArray(data) || data.length === 0) return null;
-  const platforms = new Set(data.map(p => p._platform).filter(Boolean));
-  let engagementText;
-  if (platforms.size === 1) {
-    const p = [...platforms][0];
-    engagementText = ENGAGEMENT_INFO[p] || null;
-  } else {
-    engagementText = 'Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare.';
-  }
-  const hasCollab = data.some(p => p._isCollab);
-  if (hasCollab) {
-    const collabNote = 'Misstänkt samarbete ⚠: Konton med ett enda inlägg i exporten kan vara externa samarbetskonton som Metas export inkluderat automatiskt. Dessa är inte nödvändigtvis dina egna konton.';
-    return engagementText ? `${engagementText}\n\n${collabNote}` : collabNote;
-  }
-  return engagementText;
-};
-
-
-
-// Lista över fält som inte ska ha totalsumma
-const FIELDS_WITHOUT_TOTALS = [
-  'average_reach',
-  'posts_per_day'
-];
+const FIELDS_WITHOUT_TOTALS = ['average_reach', 'posts_per_day'];
 
 const PAGE_SIZE_OPTIONS = [
   { value: '10', label: '10 per sida' },
@@ -134,240 +68,51 @@ const PAGE_SIZE_OPTIONS = [
   { value: '50', label: '50 per sida' }
 ];
 
-// Funktion för att summera värden per konto (synkron version)
-// Stöder blandad FB+IG-data via _platform-fältet
-const summarizeByAccount = (data, selectedFields) => {
-  if (!Array.isArray(data) || data.length === 0 || !selectedFields) {
-    return [];
-  }
-
-  // Gruppera per konto-ID
-  const groupedByAccount = {};
-
-  for (const post of data) {
-    const accountId = getValue(post, 'account_id');
-    if (!accountId) continue;
-
-    const accountName = getValue(post, 'account_name') || 'Okänt konto';
-    const accountUsername = getValue(post, 'account_username') || '-';
-    const platform = post._platform || null;
-
-    if (!groupedByAccount[accountId]) {
-      groupedByAccount[accountId] = {
-        account_id: accountId,
-        account_name: accountName,
-        account_username: accountUsername,
-        _platform: platform,
-        posts: []
-      };
-    } else {
-      // Om kontot har inlägg från flera plattformar, markera som mixed
-      if (groupedByAccount[accountId]._platform !== platform) {
-        groupedByAccount[accountId]._platform = 'mixed';
-      }
-    }
-
-    groupedByAccount[accountId].posts.push(post);
-  }
-
-  const summaryData = [];
-
-  for (const accountId in groupedByAccount) {
-    const account = groupedByAccount[accountId];
-    const summary = {
-      account_id: account.account_id,
-      account_name: account.account_name,
-      account_username: account.account_username,
-      _platform: account._platform
-    };
-
-    // Samla in grundvärden för beräkning av sammansatta fält
-    let totalLikes = 0, totalComments = 0, totalShares = 0;
-    let totalSaves = 0, totalFollows = 0;
-    let totalClicks = 0, totalOtherClicks = 0, totalLinkClicks = 0;
-
-    for (const post of account.posts) {
-      totalLikes += (getValue(post, 'likes') || 0);
-      totalComments += (getValue(post, 'comments') || 0);
-      totalShares += (getValue(post, 'shares') || 0);
-      totalSaves += (getValue(post, 'saves') || 0);
-      totalFollows += (getValue(post, 'follows') || 0);
-      totalClicks += (getValue(post, 'total_clicks') || 0);
-      totalOtherClicks += (getValue(post, 'other_clicks') || 0);
-      totalLinkClicks += (getValue(post, 'link_clicks') || 0);
-    }
-
-    // Spara grundvärden om de är valda
-    if (selectedFields.includes('likes')) summary.likes = totalLikes;
-    if (selectedFields.includes('comments')) summary.comments = totalComments;
-    if (selectedFields.includes('shares')) summary.shares = totalShares;
-    if (selectedFields.includes('saves')) summary.saves = totalSaves;
-    if (selectedFields.includes('follows')) summary.follows = totalFollows;
-    if (selectedFields.includes('total_clicks')) summary.total_clicks = totalClicks;
-    if (selectedFields.includes('other_clicks')) summary.other_clicks = totalOtherClicks;
-    if (selectedFields.includes('link_clicks')) summary.link_clicks = totalLinkClicks;
-
-    // interactions = likes + comments + shares (alla plattformar)
-    if (selectedFields.includes('interactions')) {
-      summary.interactions = totalLikes + totalComments + totalShares;
-    }
-
-    // engagement:
-    //   FB = likes + comments + shares + total_clicks
-    //   IG = likes + comments + shares + saves + follows
-    //   mixed = likes + comments + shares (gemensam nämnare)
-    if (selectedFields.includes('engagement')) {
-      const plat = account._platform;
-      if (plat === 'facebook') {
-        summary.engagement = totalLikes + totalComments + totalShares + totalClicks;
-      } else if (plat === 'instagram') {
-        summary.engagement = totalLikes + totalComments + totalShares + totalSaves + totalFollows;
-      } else {
-        // Mixed: beräkna per inlägg och summera
-        let engagementSum = 0;
-        for (const post of account.posts) {
-          engagementSum += (getValue(post, 'engagement') || 0);
-        }
-        summary.engagement = engagementSum;
-      }
-    }
-
-    // Antal publiceringar
-    if (selectedFields.includes('post_count')) {
-      summary.post_count = account.posts.length;
-    }
-
-    // Publiceringar per dag
-    if (selectedFields.includes('posts_per_day')) {
-      if (account.posts.length === 0) {
-        summary.posts_per_day = 0;
-      } else {
-        const dates = [];
-        for (const post of account.posts) {
-          const publishTime = getValue(post, 'publish_time');
-          if (publishTime) {
-            const date = new Date(publishTime);
-            if (!isNaN(date.getTime())) {
-              dates.push(date);
-            }
-          }
-        }
-
-        if (dates.length > 0) {
-          const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
-          const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
-          const daysDiff = Math.max(1, Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24)) + 1);
-          summary.posts_per_day = Math.round((account.posts.length / daysDiff) * 10) / 10;
-        } else {
-          summary.posts_per_day = account.posts.length;
-        }
-      }
-    }
-
-    // Beräkna övriga valda fält
-    for (const field of selectedFields) {
-      if ([
-        'likes', 'comments', 'shares', 'saves', 'follows',
-        'total_clicks', 'other_clicks', 'link_clicks',
-        'interactions', 'engagement',
-        'post_count', 'posts_per_day'
-      ].includes(field)) {
-        continue;
-      }
-
-      if (field === 'average_reach') {
-        let totalReach = 0;
-        for (const post of account.posts) {
-          totalReach += (getValue(post, 'reach') || 0);
-        }
-        summary.average_reach = account.posts.length > 0
-          ? Math.round(totalReach / account.posts.length)
-          : 0;
-      } else {
-        let sum = 0;
-        for (const post of account.posts) {
-          sum += (getValue(post, field) || 0);
-        }
-        summary[field] = sum;
-      }
-    }
-
-    // Propagate _isCollab from posts to account summary
-    if (account.posts.some(p => p._isCollab)) {
-      summary._isCollab = true;
-    }
-
-    summaryData.push(summary);
-  }
-
-  return summaryData;
-};
-
-const AccountView = ({ data, selectedFields }) => {
+const AccountView = ({ selectedFields, platform }) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [copyStatus, setCopyStatus] = useState({ field: null, rowId: null, copied: false });
+  const [accountData, setAccountData] = useState([]);
+  const [totalSummary, setTotalSummary] = useState({});
+  const [loading, setLoading] = useState(false);
 
-  const engagementTooltip = useMemo(() => getEngagementTooltip(data), [data]);
-
-
-  const summaryData = useMemo(() => {
-    if (!data || !selectedFields || selectedFields.length === 0) return [];
-    return summarizeByAccount(data, selectedFields);
-  }, [data, selectedFields]);
-
-  const totalSummary = useMemo(() => {
-    if (!Array.isArray(summaryData) || summaryData.length === 0 || !Array.isArray(data)) return {};
-
-    const totals = { account_name: 'Totalt' };
-    let tLikes = 0, tComments = 0, tShares = 0, tSaves = 0, tFollows = 0;
-    let tClicks = 0, tOtherClicks = 0, tLinkClicks = 0, tViews = 0, tEngagement = 0;
-
-    for (const post of data) {
-      tLikes += (post.likes || 0);
-      tComments += (post.comments || 0);
-      tShares += (post.shares || 0);
-      tSaves += (post.saves || 0);
-      tFollows += (post.follows || 0);
-      tClicks += (post.total_clicks || 0);
-      tOtherClicks += (post.other_clicks || 0);
-      tLinkClicks += (post.link_clicks || 0);
-      tViews += (post.views || 0);
-      if (post._platform === 'facebook') {
-        tEngagement += (post.likes || 0) + (post.comments || 0) + (post.shares || 0) + (post.total_clicks || 0);
-      } else {
-        tEngagement += (post.likes || 0) + (post.comments || 0) + (post.shares || 0) + (post.saves || 0) + (post.follows || 0);
-      }
+  // Fetch account data from API
+  useEffect(() => {
+    if (!selectedFields || selectedFields.length === 0) {
+      setAccountData([]);
+      return;
     }
 
-    if (selectedFields.includes('likes')) totals.likes = tLikes;
-    if (selectedFields.includes('comments')) totals.comments = tComments;
-    if (selectedFields.includes('shares')) totals.shares = tShares;
-    if (selectedFields.includes('saves')) totals.saves = tSaves;
-    if (selectedFields.includes('follows')) totals.follows = tFollows;
-    if (selectedFields.includes('total_clicks')) totals.total_clicks = tClicks;
-    if (selectedFields.includes('other_clicks')) totals.other_clicks = tOtherClicks;
-    if (selectedFields.includes('link_clicks')) totals.link_clicks = tLinkClicks;
-    if (selectedFields.includes('views')) totals.views = tViews;
-    if (selectedFields.includes('interactions')) totals.interactions = tLikes + tComments + tShares;
-    if (selectedFields.includes('engagement')) totals.engagement = tEngagement;
-    if (selectedFields.includes('post_count')) totals.post_count = data.length;
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const params = {
+          fields: selectedFields.join(','),
+          sort: sortConfig.key || 'views',
+          order: sortConfig.direction || 'desc',
+        };
+        if (platform) params.platform = platform;
 
-    return totals;
-  }, [summaryData, selectedFields, data]);
+        const data = await api.getAccounts(params);
+        setAccountData(data.accounts || []);
+        setTotalSummary(data.totals || {});
+      } catch (error) {
+        console.error('Fel vid hämtning av kontodata:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [selectedFields, platform, sortConfig]);
 
-  // Återställ till första sidan när data eller pageSize ändras
   useEffect(() => {
     setCurrentPage(1);
-  }, [data, pageSize]);
+  }, [selectedFields, platform, pageSize]);
 
-  // Återställ kopieringsstatus efter 1,5 sekunder
   useEffect(() => {
     if (copyStatus.copied) {
-      const timer = setTimeout(() => {
-        setCopyStatus({ field: null, rowId: null, copied: false });
-      }, 1500);
+      const timer = setTimeout(() => setCopyStatus({ field: null, rowId: null, copied: false }), 1500);
       return () => clearTimeout(timer);
     }
   }, [copyStatus]);
@@ -376,36 +121,28 @@ const AccountView = ({ data, selectedFields }) => {
     if (value === undefined || value === null) return;
     const rawValue = String(value).replace(/\s+/g, '').replace(/[^\d.,]/g, '');
     navigator.clipboard.writeText(rawValue)
-      .then(() => {
-        setCopyStatus({ field, rowId, copied: true });
-      })
-      .catch(err => {
-        console.error('Kunde inte kopiera till urklipp:', err);
-      });
+      .then(() => setCopyStatus({ field, rowId, copied: true }))
+      .catch(err => console.error('Kunde inte kopiera:', err));
   }, []);
 
   const handleSort = (key) => {
-    setSortConfig((currentSort) => ({
+    setSortConfig(current => ({
       key,
-      direction: currentSort.key === key && currentSort.direction === 'asc' ? 'desc' : 'asc'
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
     }));
   };
 
   const handleExternalLink = (account) => {
     try {
-      const platform = account._platform;
-      const username = getValue(account, 'account_username');
-      const accountId = getValue(account, 'account_id');
-
+      const plat = account.platform;
+      const username = account.account_username;
+      const accountId = account.account_id;
       let url;
-      if (platform === 'instagram' && username && username !== '-') {
+      if (plat === 'instagram' && username && username !== '-') {
         url = `https://www.instagram.com/${username}/`;
       } else if (accountId && accountId !== '-') {
         url = `https://www.facebook.com/${accountId}`;
-      } else {
-        return;
-      }
-
+      } else return;
       openExternalLink(url);
     } catch (error) {
       console.error('Failed to open external link:', error);
@@ -414,111 +151,79 @@ const AccountView = ({ data, selectedFields }) => {
 
   const getSortIcon = (columnKey) => {
     if (sortConfig.key !== columnKey) return <ArrowUpDown className="h-4 w-4 ml-1" />;
-    return sortConfig.direction === 'asc' ?
-      <ArrowUp className="h-4 w-4 ml-1" /> :
-      <ArrowDown className="h-4 w-4 ml-1" />;
+    return sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
   };
 
-  const getDisplayName = (field) => {
-    return ACCOUNT_VIEW_AVAILABLE_FIELDS[field] || DISPLAY_NAMES[field] || field;
-  };
+  const getDisplayName = (field) => ACCOUNT_VIEW_AVAILABLE_FIELDS[field] || DISPLAY_NAMES[field] || field;
 
   const CopyButton = ({ value, field, rowId = 'total' }) => {
     const isCopied = copyStatus.copied && copyStatus.field === field && copyStatus.rowId === rowId;
     return (
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          handleCopyValue(value, field, rowId);
-        }}
+        onClick={(e) => { e.stopPropagation(); handleCopyValue(value, field, rowId); }}
         className="ml-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:text-primary"
         title="Kopiera till urklipp"
       >
-        {isCopied ? (
-          <Check className="h-4 w-4 text-green-500" />
-        ) : (
-          <Copy className="h-4 w-4" />
-        )}
+        {isCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
       </button>
     );
   };
 
-  const sortedData = React.useMemo(() => {
-    if (!sortConfig.key || !Array.isArray(summaryData)) return summaryData;
-
-    return [...summaryData].sort((a, b) => {
-      const aValue = getValue(a, sortConfig.key);
-      const bValue = getValue(b, sortConfig.key);
-
-      if (aValue === null && bValue === null) return 0;
-      if (aValue === null) return 1;
-      if (bValue === null) return -1;
-
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-      }
-
-      const aStr = String(aValue).toLowerCase();
-      const bStr = String(bValue).toLowerCase();
-      return sortConfig.direction === 'asc' ?
-        aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
-    });
-  }, [summaryData, sortConfig]);
-
-  const paginatedData = React.useMemo(() => {
-    if (!sortedData) return [];
+  // Client-side pagination of already-sorted server data
+  const paginatedData = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize;
-    return sortedData.slice(startIndex, startIndex + pageSize);
-  }, [sortedData, currentPage, pageSize]);
+    return accountData.slice(startIndex, startIndex + pageSize);
+  }, [accountData, currentPage, pageSize]);
 
-  const totalPages = Math.ceil((sortedData?.length || 0) / pageSize);
+  const totalPages = Math.ceil(accountData.length / pageSize);
 
-  // Formatera data för export
+  const getFieldValue = (account, field) => {
+    // Map average_reach → reach from API
+    if (field === 'average_reach') return account.reach;
+    return account[field];
+  };
+
+  const renderCellContent = (account, field) => {
+    const plat = account.platform;
+    if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
+    if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
+    return formatValue(getFieldValue(account, field));
+  };
+
+  const getCellValue = (account, field) => {
+    const plat = account.platform;
+    if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return null;
+    if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return null;
+    return getFieldValue(account, field);
+  };
+
+  // Format data for export
   const formatDataForExport = (exportData) => {
     return exportData.map(account => {
-      const platform = account._platform;
+      const plat = account.platform;
       const formatted = {
-        'Kontonamn': getValue(account, 'account_name') || 'Unknown',
-        'Plattform': platform === 'facebook' ? 'Facebook' : platform === 'instagram' ? 'Instagram' : 'Blandad'
+        'Kontonamn': account.account_name || 'Unknown',
+        'Plattform': plat === 'facebook' ? 'Facebook' : plat === 'instagram' ? 'Instagram' : 'Blandad'
       };
-
-      const username = getValue(account, 'account_username');
-      const accountId = getValue(account, 'account_id');
-      if (platform === 'instagram' && username && username !== '-') {
-        formatted['Instagram URL'] = `https://www.instagram.com/${username}/`;
-      } else if (accountId) {
-        formatted['Facebook URL'] = `https://www.facebook.com/${accountId}`;
+      if (plat === 'instagram' && account.account_username && account.account_username !== '-') {
+        formatted['Instagram URL'] = `https://www.instagram.com/${account.account_username}/`;
+      } else if (account.account_id) {
+        formatted['Facebook URL'] = `https://www.facebook.com/${account.account_id}`;
       }
-
       for (const field of selectedFields) {
         const displayName = getDisplayName(field);
-        const value = getValue(account, field);
-
-        // FB-specifika fält för IG-konton visas som N/A
-        if (FB_ONLY_FIELDS.includes(field) && platform === 'instagram') {
-          formatted[displayName] = 'N/A';
-          continue;
-        }
-        // IG-specifika fält för FB-konton visas som N/A
-        if (IG_ONLY_FIELDS.includes(field) && platform === 'facebook') {
-          formatted[displayName] = 'N/A';
-          continue;
-        }
-
-        formatted[displayName] = formatValue(value);
+        if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { formatted[displayName] = 'N/A'; continue; }
+        if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') { formatted[displayName] = 'N/A'; continue; }
+        formatted[displayName] = formatValue(getFieldValue(account, field));
       }
-
       return formatted;
     });
   };
 
   const handleExportToExcel = async () => {
     try {
-      const exportData = formatDataForExport(sortedData);
-      const result = await downloadExcel(exportData, 'meta-statistik-konton.xlsx');
-      if (result.success) {
-        console.log('Export till Excel lyckades:', result.filePath);
-      }
+      const exportData = formatDataForExport(accountData);
+      await downloadExcel(exportData, 'meta-statistik-konton.xlsx');
     } catch (error) {
       console.error('Export till Excel misslyckades:', error);
     }
@@ -526,71 +231,36 @@ const AccountView = ({ data, selectedFields }) => {
 
   const handleExportToCSV = () => {
     try {
-      const exportData = formatDataForExport(sortedData);
+      const exportData = formatDataForExport(accountData);
       if (!exportData || exportData.length === 0) return;
-
       const headers = Object.keys(exportData[0]);
       const rows = exportData.map(row =>
         headers.map(h => {
           const val = row[h];
           if (val === null || val === undefined) return '';
           const str = String(val);
-          return str.includes(',') || str.includes('"') || str.includes('\n')
-            ? `"${str.replace(/"/g, '""')}"`
-            : str;
+          return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str.replace(/"/g, '""')}"` : str;
         }).join(',')
       );
-
       const csvContent = [headers.join(','), ...rows].join('\n');
-      const result = downloadFile(csvContent, 'meta-statistik-konton.csv', 'text/csv;charset=utf-8;');
-      if (result.success) {
-        console.log('Export till CSV lyckades:', result.filePath);
-      }
+      downloadFile(csvContent, 'meta-statistik-konton.csv', 'text/csv;charset=utf-8;');
     } catch (error) {
       console.error('Export till CSV misslyckades:', error);
     }
   };
 
-  // Avgör om ett fält ska visa N/A för ett visst konto
-  const getCellValue = (account, field) => {
-    const platform = account._platform;
-    if (FB_ONLY_FIELDS.includes(field) && platform === 'instagram') {
-      return null; // Renderas som N/A
-    }
-    if (IG_ONLY_FIELDS.includes(field) && platform === 'facebook') {
-      return null; // Renderas som N/A
-    }
-    return getValue(account, field);
-  };
-
-  const renderCellContent = (account, field) => {
-    const platform = account._platform;
-    if (FB_ONLY_FIELDS.includes(field) && platform === 'instagram') {
-      return <span className="text-muted-foreground text-xs">N/A</span>;
-    }
-    if (IG_ONLY_FIELDS.includes(field) && platform === 'facebook') {
-      return <span className="text-muted-foreground text-xs">N/A</span>;
-    }
-    return formatValue(getValue(account, field));
-  };
-
-  // Om inga fält är valda, visa meddelande
   if (selectedFields.length === 0) {
     return (
       <Card className="p-6">
-        <p className="text-center text-muted-foreground">
-          Välj värden att visa i tabellen ovan
-        </p>
+        <p className="text-center text-muted-foreground">Välj värden att visa i tabellen ovan</p>
       </Card>
     );
   }
 
-  if (!Array.isArray(sortedData) || sortedData.length === 0) {
+  if (!loading && accountData.length === 0) {
     return (
       <Card className="p-6">
-        <p className="text-center text-muted-foreground">
-          Ingen data tillgänglig för vald period
-        </p>
+        <p className="text-center text-muted-foreground">Ingen data tillgänglig för vald period</p>
       </Card>
     );
   }
@@ -598,52 +268,27 @@ const AccountView = ({ data, selectedFields }) => {
   return (
     <Card className="p-4">
       <div className="flex justify-end space-x-2 mb-4">
-        <Button
-          variant="outline"
-          onClick={handleExportToCSV}
-          aria-label="Exportera till CSV"
-        >
-          <FileDown className="w-4 h-4 mr-2" />
-          CSV
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleExportToExcel}
-          aria-label="Exportera till Excel"
-        >
-          <FileSpreadsheet className="w-4 h-4 mr-2" />
-          Excel
-        </Button>
+        <Button variant="outline" onClick={handleExportToCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
+        <Button variant="outline" onClick={handleExportToExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
       </div>
       <div className="rounded-md border bg-white">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-10 text-center">#</TableHead>
-              <TableHead
-                className="cursor-pointer hover:bg-muted/50"
-                onClick={() => handleSort('account_name')}
-              >
-                <div className="flex items-center">
-                  Kontonamn {getSortIcon('account_name')}
-                </div>
+              <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort('account_name')}>
+                <div className="flex items-center">Kontonamn {getSortIcon('account_name')}</div>
               </TableHead>
               {selectedFields.map(field => (
-                <TableHead
-                  key={field}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => handleSort(field)}
-                >
+                <TableHead key={field} className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort(field === 'average_reach' ? 'reach' : field)}>
                   <div className="flex items-center justify-end">
                     {getDisplayName(field)}
-                    {field === 'engagement' && <InfoTooltip text={engagementTooltip} />}
-                    {getSortIcon(field)}
+                    {field === 'engagement' && <InfoTooltip text="Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare." />}
+                    {getSortIcon(field === 'average_reach' ? 'reach' : field)}
                   </div>
                 </TableHead>
               ))}
-              <TableHead className="w-12 text-center">
-                Länk
-              </TableHead>
+              <TableHead className="w-12 text-center">Länk</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -654,118 +299,73 @@ const AccountView = ({ data, selectedFields }) => {
                 <Calculator className="w-4 h-4 mr-2 text-primary" />
                 <span className="text-primary">Totalt</span>
               </TableCell>
-              {selectedFields.map((field) => (
+              {selectedFields.map(field => (
                 <TableCell key={field} className="text-right font-semibold text-primary">
                   {!FIELDS_WITHOUT_TOTALS.includes(field) ? (
                     <div className="flex items-center justify-end group">
-                      <span>{formatValue(totalSummary[field])}</span>
-                      <CopyButton value={totalSummary[field]} field={field} rowId="total" />
+                      <span>{formatValue(field === 'average_reach' ? totalSummary.reach : totalSummary[field])}</span>
+                      <CopyButton value={field === 'average_reach' ? totalSummary.reach : totalSummary[field]} field={field} rowId="total" />
                     </div>
-                  ) : (
-                    ''
-                  )}
+                  ) : ''}
                 </TableCell>
               ))}
               <TableCell></TableCell>
             </TableRow>
 
-            {/* Datarader */}
-            {paginatedData.map((account, index) => {
-              const accountId = getValue(account, 'account_id');
-              const accountName = getValue(account, 'account_name');
-
-              return (
-                <TableRow
-                  key={`${accountId}-${accountName}`}
-                  className={account._isCollab ? 'bg-amber-50/50 opacity-75' : ''}
-                >
-                  <TableCell className="text-center font-medium">
-                    {(currentPage - 1) * pageSize + index + 1}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center space-x-2">
-                      <ProfileIcon accountName={accountName} />
-                      <span>{accountName || 'Unknown'}</span>
-                      <PlatformBadge platform={account._platform} />
-                      {account._isCollab && <CollabBadge />}
+            {paginatedData.map((account, index) => (
+              <TableRow
+                key={`${account.account_id}-${account.account_name}`}
+                className={account.is_collab ? 'bg-amber-50/50 opacity-75' : ''}
+              >
+                <TableCell className="text-center font-medium">{(currentPage - 1) * pageSize + index + 1}</TableCell>
+                <TableCell className="font-medium">
+                  <div className="flex items-center space-x-2">
+                    <ProfileIcon accountName={account.account_name} />
+                    <span>{account.account_name || 'Unknown'}</span>
+                    <PlatformBadge platform={account.platform} />
+                    {account.is_collab ? <CollabBadge /> : null}
+                  </div>
+                </TableCell>
+                {selectedFields.map(field => (
+                  <TableCell key={field} className="text-right">
+                    <div className="flex items-center justify-end group">
+                      <span>{renderCellContent(account, field)}</span>
+                      {getCellValue(account, field) !== null && (
+                        <CopyButton value={getFieldValue(account, field)} field={field} rowId={`${account.account_id}-${field}`} />
+                      )}
                     </div>
                   </TableCell>
-                  {selectedFields.map((field) => (
-                    <TableCell key={field} className="text-right">
-                      <div className="flex items-center justify-end group">
-                        <span>{renderCellContent(account, field)}</span>
-                        {getCellValue(account, field) !== null && (
-                          <CopyButton
-                            value={getValue(account, field)}
-                            field={field}
-                            rowId={`${accountId}-${field}`}
-                          />
-                        )}
-                      </div>
-                    </TableCell>
-                  ))}
-                  <TableCell className="text-center">
-                    <button
-                      onClick={() => handleExternalLink(account)}
-                      className="inline-flex items-center justify-center text-primary hover:text-primary/80"
-                      title="Öppna i webbläsare"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      <span className="sr-only">Öppna konto</span>
-                    </button>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+                ))}
+                <TableCell className="text-center">
+                  <button onClick={() => handleExternalLink(account)} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
+                    <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna konto</span>
+                  </button>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
 
         <div className="flex items-center justify-between p-4 border-t">
           <div className="flex items-center space-x-2">
             <span className="text-sm text-muted-foreground">Visa</span>
-            <Select
-              value={pageSize.toString()}
-              onValueChange={(newSize) => {
-                setPageSize(Number(newSize));
-                setCurrentPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[100px]">
-                <SelectValue />
-              </SelectTrigger>
+            <Select value={pageSize.toString()} onValueChange={(newSize) => { setPageSize(Number(newSize)); setCurrentPage(1); }}>
+              <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {PAGE_SIZE_OPTIONS.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
+                {PAGE_SIZE_OPTIONS.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-
           <div className="flex items-center space-x-6">
             <span className="text-sm text-muted-foreground">
-              Visar {((currentPage - 1) * pageSize) + 1} till {Math.min(currentPage * pageSize, sortedData?.length || 0)} av {sortedData?.length || 0}
+              Visar {((currentPage - 1) * pageSize) + 1} till {Math.min(currentPage * pageSize, accountData.length)} av {accountData.length}
             </span>
-
             <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-                <span className="sr-only">Föregående sida</span>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                <ChevronLeft className="h-4 w-4" /><span className="sr-only">Föregående</span>
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-              >
-                <ChevronRight className="h-4 w-4" />
-                <span className="sr-only">Nästa sida</span>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}>
+                <ChevronRight className="h-4 w-4" /><span className="sr-only">Nästa</span>
               </Button>
             </div>
           </div>

@@ -7,22 +7,19 @@ import { Button } from '../ui/button';
 import {
   CalendarIcon,
   Plus,
-  RefreshCw,
-  TrendingUp
+  TrendingUp,
+  Database
 } from 'lucide-react';
 import AccountView from '../AccountView';
 import PostView from '../PostView';
 import PostTypeView from '../PostTypeView';
 import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
-import { FileUploader } from '../FileUploader';
-import { StorageIndicator } from '../StorageIndicator/StorageIndicator';
-import { LoadedFilesInfo } from '../LoadedFilesInfo/LoadedFilesInfo';
-import { getMemoryUsageStats, getUploadedFilesMetadata } from '@/utils/storageService';
+import ImportManager from '../ImportManager/ImportManager';
+import { api } from '@/utils/apiClient';
 
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
 const IG_ONLY_FIELDS = ['saves', 'follows'];
 
-// Unified fields for both platforms
 const POST_VIEW_AVAILABLE_FIELDS = {
   'reach': 'Räckvidd',
   'views': 'Visningar',
@@ -31,11 +28,9 @@ const POST_VIEW_AVAILABLE_FIELDS = {
   'likes': 'Gilla-markeringar / Reaktioner',
   'comments': 'Kommentarer',
   'shares': 'Delningar',
-  // Facebook-specific
   'total_clicks': 'Totalt antal klick',
   'link_clicks': 'Länkklick',
   'other_clicks': 'Övriga klick',
-  // Instagram-specific
   'saves': 'Sparade',
   'follows': 'Följare'
 };
@@ -48,11 +43,9 @@ const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'likes': 'Gilla-markeringar / Reaktioner',
   'comments': 'Kommentarer',
   'shares': 'Delningar',
-  // Facebook-specific
   'total_clicks': 'Totalt antal klick',
   'link_clicks': 'Länkklick',
   'other_clicks': 'Övriga klick',
-  // Instagram-specific
   'saves': 'Sparade',
   'follows': 'Följare',
   'post_count': 'Antal publiceringar',
@@ -69,25 +62,7 @@ const TREND_ANALYSIS_AVAILABLE_FIELDS = {
   'shares': 'Delningar',
   'total_clicks': 'Totalt antal klick',
   'saves': 'Sparade',
-  'follows': 'Följare',
-  'post_count': 'Antal publiceringar',
-  'posts_per_day': 'Publiceringar per dag'
-};
-
-const ConfirmationDialog = ({ isOpen, onConfirm, onCancel, message }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
-        <h3 className="text-lg font-medium mb-4">Bekräfta åtgärd</h3>
-        <p className="mb-6">{message}</p>
-        <div className="flex justify-end space-x-2">
-          <Button variant="outline" onClick={onCancel}>Avbryt</Button>
-          <Button onClick={onConfirm}>OK</Button>
-        </div>
-      </div>
-    </div>
-  );
+  'follows': 'Följare'
 };
 
 function filterFieldsByPlatform(fields, activePlatform) {
@@ -138,14 +113,6 @@ const ValueSelector = ({ availableFields, selectedFields, onSelectionChange }) =
   </div>
 );
 
-function detectPlatformFromData(data) {
-  if (!Array.isArray(data) || data.length === 0) return null;
-  const platforms = new Set(data.map(p => p._platform).filter(Boolean));
-  if (platforms.size === 1) return [...platforms][0];
-  if (platforms.size > 1) return 'mixed';
-  return null;
-}
-
 const PLATFORM_TITLE = {
   facebook: 'Facebook Statistik',
   instagram: 'Instagram Statistik',
@@ -153,39 +120,54 @@ const PLATFORM_TITLE = {
   null: 'Meta Statistik'
 };
 
-const MainView = ({ data, meta, onDataProcessed }) => {
+const MainView = ({ onShowUploader }) => {
   const [selectedFields, setSelectedFields] = useState([]);
   const [activeView, setActiveView] = useState('account');
-  const [platformFilter, setPlatformFilter] = useState('all'); // 'all' | 'facebook' | 'instagram'
-  const [showAddMoreData, setShowAddMoreData] = useState(false);
-  const [showNewAnalysis, setShowNewAnalysis] = useState(false);
-  const [memoryUsage, setMemoryUsage] = useState(null);
-  const [filesMetadata, setFilesMetadata] = useState([]);
-  const [showFilesPanel, setShowFilesPanel] = useState(false);
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [platformFilter, setPlatformFilter] = useState('all');
+  const [stats, setStats] = useState(null);
+  const [imports, setImports] = useState([]);
 
-  const platform = detectPlatformFromData(data);
-  const hasDateRange = meta?.dateRange?.startDate && meta?.dateRange?.endDate;
-
-  const platformCounts = useMemo(() => {
-    if (!Array.isArray(data)) return { facebook: 0, instagram: 0 };
-    return {
-      facebook: data.filter(p => p._platform === 'facebook').length,
-      instagram: data.filter(p => p._platform === 'instagram').length,
+  // Fetch stats and imports on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [statsData, importsData] = await Promise.all([
+          api.getStats(),
+          api.getImports(),
+        ]);
+        setStats(statsData);
+        setImports(importsData);
+      } catch (error) {
+        console.error('Fel vid laddning:', error);
+      }
     };
-  }, [data]);
+    loadData();
+  }, []);
 
-  const hasMixedPlatforms = platformCounts.facebook > 0 && platformCounts.instagram > 0;
+  // Detect platform from imports
+  const platformInfo = useMemo(() => {
+    const platforms = new Set(imports.map(i => i.platform));
+    const hasFacebook = platforms.has('facebook');
+    const hasInstagram = platforms.has('instagram');
+    const hasMixed = hasFacebook && hasInstagram;
 
-  // Aktiv plattform för färgtema: Instagram-filter eller enbart Instagram-data → rosa tema
-  const activePlatform = hasMixedPlatforms
+    let detected = null;
+    if (hasMixed) detected = 'mixed';
+    else if (hasFacebook) detected = 'facebook';
+    else if (hasInstagram) detected = 'instagram';
+
+    const fbPosts = imports.filter(i => i.platform === 'facebook').reduce((s, i) => s + i.row_count, 0);
+    const igPosts = imports.filter(i => i.platform === 'instagram').reduce((s, i) => s + i.row_count, 0);
+
+    return { detected, hasMixed, fbPosts, igPosts };
+  }, [imports]);
+
+  const activePlatform = platformInfo.hasMixed
     ? (platformFilter !== 'all' ? platformFilter : null)
-    : platform;
+    : platformInfo.detected;
 
-  const filteredData = useMemo(() => {
-    if (!data || platformFilter === 'all') return data;
-    return data.filter(post => post._platform === platformFilter);
-  }, [data, platformFilter]);
+  // The platform filter value to pass to API (undefined = no filter)
+  const apiPlatform = platformFilter !== 'all' ? platformFilter : undefined;
 
   const getAvailableFields = () => {
     let fields;
@@ -196,136 +178,48 @@ const MainView = ({ data, meta, onDataProcessed }) => {
   };
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const memory = await getMemoryUsageStats();
-        setMemoryUsage(memory);
-        const files = await getUploadedFilesMetadata();
-        setFilesMetadata(files);
-      } catch (error) {
-        console.error('Fel vid laddning:', error);
-      }
-    };
-    loadData();
-  }, []);
-
-  useEffect(() => {
     const availableFields = Object.keys(getAvailableFields());
     setSelectedFields(prev => {
       const filtered = prev.filter(field => availableFields.includes(field));
       if (filtered.length === prev.length && filtered.every((f, i) => f === prev[i])) {
-        return prev; // Samma referens = ingen re-render
+        return prev;
       }
       return filtered;
     });
   }, [activeView, activePlatform]);
 
-  const handleDataUploaded = (newData) => {
-    onDataProcessed(newData);
-    setShowAddMoreData(false);
-    setShowNewAnalysis(false);
-    const refresh = async () => {
-      try {
-        const memory = await getMemoryUsageStats();
-        setMemoryUsage(memory);
-        const files = await getUploadedFilesMetadata();
-        setFilesMetadata(files);
-      } catch (error) {
-        console.error('Fel vid uppdatering:', error);
-      }
-    };
-    refresh();
-  };
-
-  const handleClearAll = () => {
-    window.location.reload();
-  };
-
-  const handleMemoryUpdate = (stats) => {
-    setMemoryUsage(stats);
-  };
-
-  const handleFileMetadataUpdate = async () => {
+  const handleImportsChanged = async () => {
     try {
-      const files = await getUploadedFilesMetadata();
-      setFilesMetadata(files);
-      const memory = await getMemoryUsageStats();
-      setMemoryUsage(memory);
+      const [statsData, importsData] = await Promise.all([
+        api.getStats(),
+        api.getImports(),
+      ]);
+      setStats(statsData);
+      setImports(importsData);
     } catch (error) {
-      console.error('Fel vid uppdatering av filmetadata:', error);
+      console.error('Fel vid uppdatering:', error);
     }
   };
 
-  const handleNewAnalysis = () => {
-    setResetDialogOpen(true);
-  };
-
-  if (showAddMoreData) {
-    return (
-      <FileUploader
-        onDataProcessed={handleDataUploaded}
-        onCancel={() => setShowAddMoreData(false)}
-        existingData={data}
-      />
-    );
-  }
-
-  if (showNewAnalysis) {
-    return (
-      <FileUploader
-        onDataProcessed={handleDataUploaded}
-        onCancel={() => setShowNewAnalysis(false)}
-        isNewAnalysis={true}
-      />
-    );
-  }
+  const hasDateRange = stats?.earliest && stats?.latest;
 
   return (
     <div className="space-y-6" data-platform={activePlatform || undefined}>
-      <ConfirmationDialog
-        isOpen={resetDialogOpen}
-        onConfirm={() => { setResetDialogOpen(false); setShowNewAnalysis(true); }}
-        onCancel={() => setResetDialogOpen(false)}
-        message="Detta rensar all befintlig data och börjar om från början. Fortsätta?"
-      />
-
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">{PLATFORM_TITLE[platform]}</h2>
+        <h2 className="text-xl font-semibold">{PLATFORM_TITLE[platformInfo.detected]}</h2>
         <div className="flex items-center space-x-2">
-          <StorageIndicator compact onUpdate={handleMemoryUpdate} />
           <Button
-            onClick={() => setShowAddMoreData(true)}
+            onClick={onShowUploader}
             variant="outline"
             size="sm"
-            disabled={memoryUsage && !memoryUsage.canAddMoreData}
-            title={memoryUsage && !memoryUsage.canAddMoreData ? 'Minnet är fullt' : 'Lägg till fler CSV-filer'}
           >
             <Plus className="w-4 h-4 mr-1" />
             Lägg till data
           </Button>
-          <Button onClick={handleNewAnalysis} variant="outline" size="sm">
-            <RefreshCw className="w-4 h-4 mr-1" />
-            Återställ
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowFilesPanel(!showFilesPanel)}
-          >
-            {filesMetadata.length} fil{filesMetadata.length !== 1 ? 'er' : ''}
-          </Button>
         </div>
       </div>
 
-      {showFilesPanel && (
-        <LoadedFilesInfo
-          onRefresh={handleFileMetadataUpdate}
-          onClearAll={handleClearAll}
-          canClearData={true}
-        />
-      )}
-
-      {activeView !== 'trend_analysis' && (
+      {activeView !== 'trend_analysis' && activeView !== 'imports' && (
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
@@ -341,13 +235,13 @@ const MainView = ({ data, meta, onDataProcessed }) => {
         </Card>
       )}
 
-      {hasMixedPlatforms && (
+      {platformInfo.hasMixed && (
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500 mr-1">Plattform:</span>
           {[
-            { value: 'all', label: `Alla (${platformCounts.facebook + platformCounts.instagram})` },
-            { value: 'facebook', label: `Facebook (${platformCounts.facebook})` },
-            { value: 'instagram', label: `Instagram (${platformCounts.instagram})` },
+            { value: 'all', label: `Alla (${platformInfo.fbPosts + platformInfo.igPosts})` },
+            { value: 'facebook', label: `Facebook (${platformInfo.fbPosts})` },
+            { value: 'instagram', label: `Instagram (${platformInfo.igPosts})` },
           ].map(({ value, label }) => (
             <button
               key={value}
@@ -373,31 +267,39 @@ const MainView = ({ data, meta, onDataProcessed }) => {
             <TrendingUp className="w-4 h-4 mr-1" />
             Trendanalys
           </TabsTrigger>
+          <TabsTrigger value="imports">
+            <Database className="w-4 h-4 mr-1" />
+            Databas
+          </TabsTrigger>
         </TabsList>
 
-        {hasDateRange && (
+        {hasDateRange && activeView !== 'imports' && (
           <div className="mt-4 p-2 border border-gray-200 rounded-md bg-gray-50 flex items-center">
             <CalendarIcon className="h-4 w-4 mr-2 text-gray-500" />
             <span className="text-sm text-gray-700">
-              Period: {meta.dateRange.startDate} – {meta.dateRange.endDate}
+              Period: {stats.earliest?.slice(0, 10)} – {stats.latest?.slice(0, 10)}
             </span>
           </div>
         )}
 
         <TabsContent value="account">
-          <AccountView data={filteredData} selectedFields={selectedFields} />
+          <AccountView selectedFields={selectedFields} platform={apiPlatform} />
         </TabsContent>
 
         <TabsContent value="post">
-          <PostView data={filteredData} selectedFields={selectedFields} />
+          <PostView selectedFields={selectedFields} platform={apiPlatform} />
         </TabsContent>
 
         <TabsContent value="post_type">
-          <PostTypeView data={filteredData} selectedFields={selectedFields} />
+          <PostTypeView selectedFields={selectedFields} platform={apiPlatform} />
         </TabsContent>
 
         <TabsContent value="trend_analysis">
-          <TrendAnalysisView data={filteredData} meta={meta} />
+          <TrendAnalysisView platform={apiPlatform} />
+        </TabsContent>
+
+        <TabsContent value="imports">
+          <ImportManager onImportsChanged={handleImportsChanged} />
         </TabsContent>
       </Tabs>
     </div>

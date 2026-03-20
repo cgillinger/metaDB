@@ -24,15 +24,28 @@ router.get('/', (req, res) => {
 // GET /api/imports/coverage — which months have data
 router.get('/coverage', (req, res) => {
   const db = getDb();
-  const coverage = db.prepare(`
-    SELECT DISTINCT month, platform, COUNT(*) AS import_count,
-           SUM(row_count) AS total_posts
-    FROM imports
-    GROUP BY month, platform
-    ORDER BY month DESC
+
+  // Get post counts per month from actual posts table (more accurate than imports)
+  const rows = db.prepare(`
+    SELECT
+      strftime('%Y-%m', publish_time) AS month,
+      COUNT(*) AS post_count,
+      SUM(CASE WHEN platform = 'facebook' THEN 1 ELSE 0 END) AS fb_count,
+      SUM(CASE WHEN platform = 'instagram' THEN 1 ELSE 0 END) AS ig_count
+    FROM posts
+    WHERE publish_time IS NOT NULL
+    GROUP BY strftime('%Y-%m', publish_time)
+    ORDER BY month ASC
   `).all();
 
-  res.json(coverage);
+  const months = rows.map(r => ({
+    month: r.month,
+    post_count: r.post_count,
+    has_facebook: r.fb_count > 0,
+    has_instagram: r.ig_count > 0,
+  }));
+
+  res.json({ months });
 });
 
 // POST /api/imports — upload and process a CSV file

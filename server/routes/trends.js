@@ -3,21 +3,21 @@ import { getDb } from '../db/connection.js';
 
 const router = Router();
 
-// Allowed metrics for trend queries
 const ALLOWED_METRICS = new Set([
-  'views', 'reach', 'likes', 'comments', 'shares',
+  'views', 'reach', 'average_reach', 'likes', 'comments', 'shares',
   'total_clicks', 'link_clicks', 'other_clicks',
-  'saves', 'follows', 'interactions', 'engagement'
+  'saves', 'follows', 'interactions', 'engagement',
+  'post_count', 'posts_per_day'
 ]);
 
 // GET /api/trends?metric=interactions&accounts=id1,id2&granularity=month&platform=facebook
 router.get('/', (req, res) => {
   const db = getDb();
 
-  const metric = ALLOWED_METRICS.has(req.query.metric) ? req.query.metric : 'interactions';
+  let metric = ALLOWED_METRICS.has(req.query.metric) ? req.query.metric : 'interactions';
   const granularity = req.query.granularity === 'week' ? 'week' : 'month';
 
-  const conditions = [];
+  const conditions = ['publish_time IS NOT NULL'];
   const params = [];
 
   if (req.query.platform) {
@@ -37,64 +37,86 @@ router.get('/', (req, res) => {
     conditions.push('is_collab = 0');
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
-  // Determine time grouping
-  let timeExpr;
-  if (granularity === 'week') {
-    timeExpr = "strftime('%Y-W%W', publish_time)";
+  const timeExpr = granularity === 'week'
+    ? "strftime('%Y-W%W', publish_time)"
+    : "strftime('%Y-%m', publish_time)";
+
+  // Determine SQL aggregation based on metric
+  let valueExpr;
+  if (metric === 'reach' || metric === 'average_reach') {
+    valueExpr = 'CAST(ROUND(AVG(reach)) AS INTEGER)';
+  } else if (metric === 'post_count') {
+    valueExpr = 'COUNT(*)';
+  } else if (metric === 'posts_per_day') {
+    // Will compute in JS based on period
+    valueExpr = 'COUNT(*)';
   } else {
-    timeExpr = "strftime('%Y-%m', publish_time)";
+    valueExpr = `SUM(${metric})`;
   }
-
-  // For reach, use AVG; for everything else, SUM
-  const aggregation = metric === 'reach'
-    ? `CAST(ROUND(AVG(${metric})) AS INTEGER)`
-    : `SUM(${metric})`;
 
   const query = `
     SELECT
       ${timeExpr} AS period,
       account_id,
       account_name,
-      ${aggregation} AS value,
+      platform,
+      MAX(is_collab) AS is_collab,
+      ${valueExpr} AS value,
       COUNT(*) AS post_count
     FROM posts
     ${whereClause}
-    AND publish_time IS NOT NULL
     GROUP BY ${timeExpr}, account_id
     ORDER BY period ASC, account_name ASC
   `;
 
-  // Fix WHERE/AND: if whereClause is empty, the "AND" is invalid
-  const fixedQuery = whereClause
-    ? query
-    : query.replace('AND publish_time IS NOT NULL', 'WHERE publish_time IS NOT NULL');
+  const rows = db.prepare(query).all(...params);
 
-  const rows = db.prepare(fixedQuery).all(...params);
-
-  // Group by account for easier frontend consumption
+  // Collect all unique months
+  const monthSet = new Set();
   const byAccount = {};
+
   for (const row of rows) {
-    const key = row.account_id || row.account_name;
+    monthSet.add(row.period);
+    const key = row.account_id;
     if (!byAccount[key]) {
       byAccount[key] = {
         account_id: row.account_id,
         account_name: row.account_name,
-        data: [],
+        platform: row.platform,
+        is_collab: !!row.is_collab,
+        dataMap: {},
       };
     }
-    byAccount[key].data.push({
-      period: row.period,
-      value: row.value,
-      post_count: row.post_count,
-    });
+
+    let value = row.value;
+    // For posts_per_day: count / days in month
+    if (metric === 'posts_per_day' && row.period) {
+      const [year, month] = row.period.split('-').map(Number);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      value = Math.round((row.post_count / daysInMonth) * 10) / 10;
+    }
+
+    byAccount[key].dataMap[row.period] = value;
   }
+
+  const months = Array.from(monthSet).sort();
+
+  // Build series with aligned data arrays
+  const series = Object.values(byAccount).map(account => ({
+    account_id: account.account_id,
+    account_name: account.account_name,
+    platform: account.platform,
+    is_collab: account.is_collab,
+    data: months.map(m => account.dataMap[m] || 0),
+  }));
 
   res.json({
     metric,
     granularity,
-    accounts: Object.values(byAccount),
+    months,
+    series,
   });
 });
 
