@@ -7,6 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
+import { Switch } from '../ui/switch';
+import { Label } from '../ui/label';
 import {
   formatValue,
   DISPLAY_NAMES,
@@ -86,6 +88,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
   const [totalSummary, setTotalSummary] = useState({});
   const [reachByAccount, setReachByAccount] = useState({});
   const [reachMonths, setReachMonths] = useState([]);
+  const [showReachOnlyAccounts, setShowReachOnlyAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Fetch account data from API
@@ -103,6 +106,9 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
           ...periodParams,
         };
         if (platform) params.platform = platform;
+        if (showReachOnlyAccounts && selectedFields.includes('account_reach')) {
+          params.includeReachOnly = 'true';
+        }
 
         const data = await api.getAccounts(params);
         setAccountData(data.accounts || []);
@@ -116,7 +122,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
       }
     };
     fetchData();
-  }, [selectedFields, platform, periodParams]);
+  }, [selectedFields, platform, periodParams, showReachOnlyAccounts]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -331,9 +337,25 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
 
   return (
     <Card className="p-4">
-      <div className="flex justify-end space-x-2 mb-4">
-        <Button variant="outline" onClick={handleExportToCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
-        <Button variant="outline" onClick={handleExportToExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          {selectedFields.includes('account_reach') && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-reach-only"
+                checked={showReachOnlyAccounts}
+                onCheckedChange={setShowReachOnlyAccounts}
+              />
+              <Label htmlFor="show-reach-only" className="text-sm">
+                Visa konton utan publiceringar (bara räckvidd)
+              </Label>
+            </div>
+          )}
+        </div>
+        <div className="flex space-x-2">
+          <Button variant="outline" onClick={handleExportToCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
+          <Button variant="outline" onClick={handleExportToExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+        </div>
       </div>
       <div className="rounded-md border bg-white">
         <Table>
@@ -411,7 +433,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
             {paginatedData.map((account, index) => (
               <TableRow
                 key={`${account.account_id}-${account.account_name}`}
-                className={account.is_collab ? 'bg-amber-50/50 opacity-75' : ''}
+                className={account._reachOnly ? 'bg-gray-50/50 opacity-60' : account.is_collab ? 'bg-amber-50/50 opacity-75' : ''}
               >
                 <TableCell className="text-center font-medium">{(currentPage - 1) * pageSize + index + 1}</TableCell>
                 <TableCell className="font-medium">

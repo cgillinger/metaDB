@@ -19,7 +19,7 @@ import PeriodSelector from '../PeriodSelector';
 import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
 
-const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
+const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'account_reach'];
 const IG_ONLY_FIELDS = ['saves', 'follows'];
 
 const POST_VIEW_AVAILABLE_FIELDS = {
@@ -40,6 +40,7 @@ const POST_VIEW_AVAILABLE_FIELDS = {
 const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'average_reach': 'Räckvidd (genomsnitt)',
+  'account_reach': 'Kontoräckvidd (API)',
   'engagement': 'Totalt engagemang',
   'interactions': 'Interaktioner (gilla+komm+dela)',
   'likes': 'Gilla-markeringar / Reaktioner',
@@ -111,7 +112,7 @@ const ValueSelector = ({ availableFields, selectedFields, onSelectionChange }) =
         />
         <Label htmlFor={key} className="flex items-center gap-1.5">
           {label}
-          {['total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
+          {['total_clicks', 'link_clicks', 'other_clicks', 'account_reach'].includes(key) && <PlatformBadge platform="facebook" />}
           {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
         </Label>
       </div>
