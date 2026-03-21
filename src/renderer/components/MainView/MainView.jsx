@@ -5,7 +5,6 @@ import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
 import { Button } from '../ui/button';
 import {
-  CalendarIcon,
   Plus,
   TrendingUp,
   Database
@@ -15,6 +14,7 @@ import PostView from '../PostView';
 import PostTypeView from '../PostTypeView';
 import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
 import ImportManager from '../ImportManager/ImportManager';
+import PeriodSelector from '../PeriodSelector';
 import { api } from '@/utils/apiClient';
 
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
@@ -127,16 +127,32 @@ const MainView = ({ onShowUploader }) => {
   const [stats, setStats] = useState(null);
   const [imports, setImports] = useState([]);
 
-  // Fetch stats and imports on mount
+  // Period selection
+  const [periodMode, setPeriodMode] = useState('months');
+  const [selectedMonths, setSelectedMonths] = useState([]);
+  const [customRange, setCustomRange] = useState({ from: '', to: '' });
+  const [coverageData, setCoverageData] = useState([]);
+
+  // Fetch stats, imports and coverage on mount
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [statsData, importsData] = await Promise.all([
+        const [statsData, importsData, coverageResult] = await Promise.all([
           api.getStats(),
           api.getImports(),
+          api.getCoverage().catch(() => ({ months: [] })),
         ]);
         setStats(statsData);
         setImports(importsData);
+
+        const months = coverageResult.months || [];
+        setCoverageData(months);
+
+        // Default: select latest month
+        if (months.length > 0 && selectedMonths.length === 0) {
+          const sorted = [...months].sort((a, b) => b.month.localeCompare(a.month));
+          setSelectedMonths([sorted[0].month]);
+        }
       } catch (error) {
         console.error('Fel vid laddning:', error);
       }
@@ -190,18 +206,28 @@ const MainView = ({ onShowUploader }) => {
 
   const handleImportsChanged = async () => {
     try {
-      const [statsData, importsData] = await Promise.all([
+      const [statsData, importsData, coverageResult] = await Promise.all([
         api.getStats(),
         api.getImports(),
+        api.getCoverage().catch(() => ({ months: [] })),
       ]);
       setStats(statsData);
       setImports(importsData);
+      setCoverageData(coverageResult.months || []);
     } catch (error) {
       console.error('Fel vid uppdatering:', error);
     }
   };
 
-  const hasDateRange = stats?.earliest && stats?.latest;
+  const periodParams = useMemo(() => {
+    if (periodMode === 'custom' && customRange.from && customRange.to) {
+      return { dateFrom: customRange.from, dateTo: customRange.to };
+    }
+    if (periodMode === 'months' && selectedMonths.length > 0) {
+      return { months: selectedMonths.join(',') };
+    }
+    return {};
+  }, [periodMode, selectedMonths, customRange]);
 
   return (
     <div className="space-y-6" data-platform={activePlatform || undefined}>
@@ -258,6 +284,18 @@ const MainView = ({ onShowUploader }) => {
         </div>
       )}
 
+      {activeView !== 'imports' && coverageData.length > 0 && (
+        <PeriodSelector
+          availableMonths={coverageData}
+          selectedMonths={selectedMonths}
+          onMonthsChange={setSelectedMonths}
+          customRange={customRange}
+          onCustomRangeChange={setCustomRange}
+          mode={periodMode}
+          onModeChange={setPeriodMode}
+        />
+      )}
+
       <Tabs value={activeView} onValueChange={setActiveView}>
         <TabsList>
           <TabsTrigger value="account">Per konto</TabsTrigger>
@@ -273,29 +311,20 @@ const MainView = ({ onShowUploader }) => {
           </TabsTrigger>
         </TabsList>
 
-        {hasDateRange && activeView !== 'imports' && (
-          <div className="mt-4 p-2 border border-gray-200 rounded-md bg-gray-50 flex items-center">
-            <CalendarIcon className="h-4 w-4 mr-2 text-gray-500" />
-            <span className="text-sm text-gray-700">
-              Period: {stats.earliest?.slice(0, 10)} – {stats.latest?.slice(0, 10)}
-            </span>
-          </div>
-        )}
-
         <TabsContent value="account">
-          <AccountView selectedFields={selectedFields} platform={apiPlatform} />
+          <AccountView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="post">
-          <PostView selectedFields={selectedFields} platform={apiPlatform} />
+          <PostView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="post_type">
-          <PostTypeView selectedFields={selectedFields} platform={apiPlatform} />
+          <PostTypeView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="trend_analysis">
-          <TrendAnalysisView platform={apiPlatform} />
+          <TrendAnalysisView platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="imports">

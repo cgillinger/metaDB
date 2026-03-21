@@ -72,7 +72,7 @@ const createSmoothPath = (points) => {
 
 const getMonthName = (month) => MONTH_NAMES_SV[month - 1] || String(month);
 
-const TrendAnalysisView = ({ platform }) => {
+const TrendAnalysisView = ({ platform, periodParams = {} }) => {
   const [selectedMetric, setSelectedMetric] = useState('interactions');
   const [selectedAccounts, setSelectedAccounts] = useState([]);
   const [hoveredDataPoint, setHoveredDataPoint] = useState(null);
@@ -99,7 +99,7 @@ const TrendAnalysisView = ({ platform }) => {
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
-        const params = { fields: 'views' };
+        const params = { fields: 'views', ...periodParams };
         if (platform) params.platform = platform;
         const data = await api.getAccounts(params);
         setAccountList((data.accounts || []).map(a => ({
@@ -113,7 +113,7 @@ const TrendAnalysisView = ({ platform }) => {
       }
     };
     fetchAccounts();
-  }, [platform]);
+  }, [platform, periodParams]);
 
   // Fetch trend data when metric or accounts change
   useEffect(() => {
@@ -128,6 +128,7 @@ const TrendAnalysisView = ({ platform }) => {
           metric: selectedMetric,
           accounts: selectedAccounts.join(','),
           granularity: 'month',
+          ...periodParams,
         };
         if (platform) params.platform = platform;
         const data = await api.getTrends(params);
@@ -139,7 +140,7 @@ const TrendAnalysisView = ({ platform }) => {
       }
     };
     fetchTrends();
-  }, [selectedMetric, selectedAccounts, platform]);
+  }, [selectedMetric, selectedAccounts, platform, periodParams]);
 
   // Build chart lines from trend data
   const { months, chartLines } = useMemo(() => {
