@@ -8,7 +8,7 @@ const ALLOWED_METRICS = new Set([
   'views', 'reach', 'average_reach', 'likes', 'comments', 'shares',
   'total_clicks', 'link_clicks', 'other_clicks',
   'saves', 'follows', 'interactions', 'engagement',
-  'post_count', 'posts_per_day'
+  'post_count', 'posts_per_day', 'account_reach'
 ]);
 
 // GET /api/trends?metric=interactions&accounts=id1,id2&granularity=month&platform=facebook
@@ -17,6 +17,76 @@ router.get('/', (req, res) => {
 
   let metric = ALLOWED_METRICS.has(req.query.metric) ? req.query.metric : 'interactions';
   const granularity = req.query.granularity === 'week' ? 'week' : 'month';
+
+  // account_reach comes from a separate table and cannot be summed/split
+  if (metric === 'account_reach') {
+    const reachConditions = [];
+    const reachParams = [];
+
+    // Period filtering: extract months for account_reach table
+    if (req.query.months) {
+      const monthList = req.query.months.split(',').map(m => m.trim()).filter(Boolean);
+      reachConditions.push(`ar.month IN (${monthList.map(() => '?').join(',')})`);
+      reachParams.push(...monthList);
+    } else if (req.query.dateFrom && req.query.dateTo) {
+      const startMonth = req.query.dateFrom.slice(0, 7);
+      const endMonth = req.query.dateTo.slice(0, 7);
+      reachConditions.push('ar.month >= ? AND ar.month <= ?');
+      reachParams.push(startMonth, endMonth);
+    }
+
+    // Filter by accounts (match via account_name from posts table)
+    if (req.query.accounts) {
+      const accountIds = req.query.accounts.split(',').map(s => s.trim()).filter(Boolean);
+      if (accountIds.length > 0) {
+        const placeholders = accountIds.map(() => '?').join(',');
+        reachConditions.push(`ar.account_name IN (SELECT DISTINCT account_name FROM posts WHERE account_id IN (${placeholders}))`);
+        reachParams.push(...accountIds);
+      }
+    }
+
+    const reachWhere = reachConditions.length > 0 ? `WHERE ${reachConditions.join(' AND ')}` : '';
+    const reachQuery = `
+      SELECT
+        ar.month AS period,
+        ar.account_name,
+        ar.reach AS value
+      FROM account_reach ar
+      ${reachWhere}
+      ORDER BY ar.month ASC, ar.account_name ASC
+    `;
+
+    const rows = db.prepare(reachQuery).all(...reachParams);
+
+    const monthSet = new Set();
+    const byAccount = {};
+
+    for (const row of rows) {
+      monthSet.add(row.period);
+      const key = row.account_name;
+      if (!byAccount[key]) {
+        byAccount[key] = {
+          account_id: row.account_name,
+          account_name: row.account_name,
+          platform: 'facebook',
+          is_collab: false,
+          dataMap: {},
+        };
+      }
+      byAccount[key].dataMap[row.period] = row.reach;
+    }
+
+    const months = Array.from(monthSet).sort();
+    const series = Object.values(byAccount).map(account => ({
+      account_id: account.account_id,
+      account_name: account.account_name,
+      platform: account.platform,
+      is_collab: account.is_collab,
+      data: months.map(m => account.dataMap[m] || 0),
+    }));
+
+    return res.json({ metric, granularity: 'month', months, series });
+  }
 
   const conditions = ['publish_time IS NOT NULL'];
   const params = [];

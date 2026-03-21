@@ -58,6 +58,7 @@ const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
 const TREND_ANALYSIS_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'reach': 'Räckvidd',
+  'account_reach': 'Kontoräckvidd (API)',
   'engagement': 'Totalt engagemang',
   'interactions': 'Interaktioner',
   'likes': 'Gilla-markeringar / Reaktioner',
