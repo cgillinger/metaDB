@@ -73,7 +73,7 @@ router.get('/', (req, res) => {
           dataMap: {},
         };
       }
-      byAccount[key].dataMap[row.period] = row.reach;
+      byAccount[key].dataMap[row.period] = row.value;
     }
 
     const months = Array.from(monthSet).sort();
