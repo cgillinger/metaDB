@@ -74,7 +74,7 @@ router.get('/', (req, res) => {
       END AS posts_per_day
     FROM posts
     ${whereClause}
-    GROUP BY account_id, platform
+    GROUP BY account_name, platform
     ORDER BY ${sort} ${order}
   `;
 
@@ -162,7 +162,7 @@ router.get('/', (req, res) => {
       SELECT DISTINCT ar.account_name
       FROM account_reach ar
       WHERE ar.month IN (${reachPlaceholders})
-      AND ar.account_name NOT LIKE 'srholder%'
+      AND LOWER(ar.account_name) NOT LIKE 'srholder%'
     `).all(...reachMonthsAvailable);
 
     for (const row of reachOnlyAccounts) {
