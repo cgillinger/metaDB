@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Calendar, SlidersHorizontal } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Calendar, SlidersHorizontal, ChevronRight } from 'lucide-react';
 
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun',
                          'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
@@ -31,7 +31,6 @@ const PeriodSelector = ({
       if (!groups[year]) groups[year] = [];
       groups[year].push(m);
     }
-    // Sort months within each year
     for (const year of Object.keys(groups)) {
       groups[year].sort((a, b) => a.month.localeCompare(b.month));
     }
@@ -39,6 +38,28 @@ const PeriodSelector = ({
   }, [availableMonths]);
 
   const years = useMemo(() => Object.keys(monthsByYear).sort(), [monthsByYear]);
+  const latestYear = years[years.length - 1];
+
+  // Track which years are expanded. Latest year is always expanded by default.
+  const [expandedYears, setExpandedYears] = useState(new Set());
+
+  const isYearExpanded = (year) => {
+    if (year === latestYear) return true;
+    // Also expand if any month in this year is selected
+    const yearMonths = monthsByYear[year] || [];
+    if (yearMonths.some(m => selectedMonths.includes(m.month))) return true;
+    return expandedYears.has(year);
+  };
+
+  const toggleYear = (year) => {
+    if (year === latestYear) return; // Latest year always stays open
+    setExpandedYears(prev => {
+      const next = new Set(prev);
+      if (next.has(year)) next.delete(year);
+      else next.add(year);
+      return next;
+    });
+  };
 
   // Selected month keys as a sorted set
   const selectedSet = useMemo(() => new Set(selectedMonths), [selectedMonths]);
@@ -55,10 +76,8 @@ const PeriodSelector = ({
       const max = sortedSelected[sortedSelected.length - 1];
       const isAtEnd = monthKey === min || monthKey === max;
       if (isAtEnd) {
-        // Shrink from end
         onMonthsChange(sortedSelected.filter(m => m !== monthKey));
       } else {
-        // Middle month clicked — reset to just this month
         onMonthsChange([monthKey]);
       }
     } else {
@@ -69,23 +88,19 @@ const PeriodSelector = ({
       const min = sortedSelected[0];
       const max = sortedSelected[sortedSelected.length - 1];
 
-      // Check adjacency in the sorted available months list
       const clickedIdx = sortedAvailableKeys.indexOf(monthKey);
       const minIdx = sortedAvailableKeys.indexOf(min);
       const maxIdx = sortedAvailableKeys.indexOf(max);
 
-      // Adjacent means directly next to current range in the available months sequence
       const isAdjacentBefore = clickedIdx === minIdx - 1;
       const isAdjacentAfter = clickedIdx === maxIdx + 1;
 
       if (isAdjacentBefore || isAdjacentAfter) {
-        // Extend selection to include all available months in the new range
         const newMin = isAdjacentBefore ? clickedIdx : minIdx;
         const newMax = isAdjacentAfter ? clickedIdx : maxIdx;
         const newSelection = sortedAvailableKeys.slice(newMin, newMax + 1);
         onMonthsChange(newSelection);
       } else {
-        // Non-adjacent — start fresh
         onMonthsChange([monthKey]);
       }
     }
@@ -98,6 +113,18 @@ const PeriodSelector = ({
     if (d.has_instagram) return 'bg-pink-600 text-white';
     if (d.has_facebook) return 'bg-blue-600 text-white';
     return 'bg-primary text-primary-foreground';
+  };
+
+  // Summary text for a collapsed year
+  const getYearSummary = (year) => {
+    const months = monthsByYear[year] || [];
+    const totalPosts = months.reduce((s, m) => s + m.post_count, 0);
+    const reachCount = months.filter(m => m.has_reach).length;
+    const parts = [];
+    if (totalPosts > 0) parts.push(`${totalPosts.toLocaleString('sv-SE')} inlägg`);
+    if (reachCount > 0) parts.push(`${months.length} mån räckvidd`);
+    if (parts.length === 0) parts.push(`${months.length} månader`);
+    return parts.join(', ');
   };
 
   if (!availableMonths || availableMonths.length === 0) return null;
@@ -139,38 +166,64 @@ const PeriodSelector = ({
       {/* Month mode */}
       {mode === 'months' && (
         <div className="space-y-2">
-          {years.map(year => (
-            <div key={year} className="space-y-1">
-              {years.length > 1 && (
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{year}</div>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {monthsByYear[year].map(monthData => {
-                  const monthKey = monthData.month;
-                  const monthNum = parseInt(monthKey.slice(5, 7), 10);
-                  const name = MONTH_NAMES_SV[monthNum - 1];
-                  const isSelected = selectedSet.has(monthKey);
+          {years.map(year => {
+            const expanded = isYearExpanded(year);
+            const isLatest = year === latestYear;
 
-                  return (
-                    <button
-                      key={monthKey}
-                      onClick={() => handleMonthClick(monthKey)}
-                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
-                        isSelected
-                          ? `${getActiveClass(monthKey)} border-transparent`
-                          : 'bg-white text-gray-600 border-gray-300 hover:border-primary/60 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span className="block">{name}</span>
-                      <span className={`block text-xs ${isSelected ? 'opacity-80' : 'text-gray-400'}`}>
-                        {monthData.post_count.toLocaleString('sv-SE')}
+            return (
+              <div key={year} className="space-y-1">
+                {years.length > 1 && (
+                  <button
+                    onClick={() => toggleYear(year)}
+                    className={`flex items-center gap-1 text-xs font-semibold uppercase tracking-wide transition-colors ${
+                      isLatest
+                        ? 'text-gray-500 cursor-default'
+                        : 'text-gray-500 hover:text-gray-700 cursor-pointer'
+                    }`}
+                  >
+                    {!isLatest && (
+                      <ChevronRight className={`h-3 w-3 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                    )}
+                    {year}
+                    {!expanded && (
+                      <span className="font-normal normal-case tracking-normal text-gray-400 ml-1">
+                        ({getYearSummary(year)})
                       </span>
-                    </button>
-                  );
-                })}
+                    )}
+                  </button>
+                )}
+                {expanded && (
+                  <div className="flex flex-wrap gap-2">
+                    {monthsByYear[year].map(monthData => {
+                      const monthKey = monthData.month;
+                      const monthNum = parseInt(monthKey.slice(5, 7), 10);
+                      const name = MONTH_NAMES_SV[monthNum - 1];
+                      const isSelected = selectedSet.has(monthKey);
+                      const count = monthData.post_count;
+                      const reachOnly = count === 0 && monthData.has_reach;
+
+                      return (
+                        <button
+                          key={monthKey}
+                          onClick={() => handleMonthClick(monthKey)}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                            isSelected
+                              ? `${getActiveClass(monthKey)} border-transparent`
+                              : 'bg-white text-gray-600 border-gray-300 hover:border-primary/60 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className="block">{name}</span>
+                          <span className={`block text-xs ${isSelected ? 'opacity-80' : 'text-gray-400'}`}>
+                            {reachOnly ? 'räckvidd' : count.toLocaleString('sv-SE')}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

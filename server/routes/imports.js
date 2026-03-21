@@ -38,19 +38,13 @@ router.get('/coverage', (req, res) => {
     ORDER BY month ASC
   `).all();
 
-  // Also include months that only have account_reach data (no posts)
-  let reachOnlyMonths = [];
+  // Get all months that have account_reach data
+  let reachMonthSet = new Set();
   try {
-    reachOnlyMonths = db.prepare(`
-      SELECT DISTINCT month
-      FROM account_reach
-      WHERE month NOT IN (
-        SELECT DISTINCT strftime('%Y-%m', publish_time)
-        FROM posts
-        WHERE publish_time IS NOT NULL
-      )
-      ORDER BY month ASC
+    const reachRows = db.prepare(`
+      SELECT DISTINCT month FROM account_reach ORDER BY month ASC
     `).all();
+    for (const r of reachRows) reachMonthSet.add(r.month);
   } catch (e) {
     // account_reach table may not exist yet
   }
@@ -60,16 +54,21 @@ router.get('/coverage', (req, res) => {
     post_count: r.post_count,
     has_facebook: r.fb_count > 0,
     has_instagram: r.ig_count > 0,
+    has_reach: reachMonthSet.has(r.month),
   }));
 
   // Add reach-only months (no posts, but have account reach data)
-  for (const r of reachOnlyMonths) {
-    months.push({
-      month: r.month,
-      post_count: 0,
-      has_facebook: true,
-      has_instagram: false,
-    });
+  const postMonthSet = new Set(postRows.map(r => r.month));
+  for (const reachMonth of reachMonthSet) {
+    if (!postMonthSet.has(reachMonth)) {
+      months.push({
+        month: reachMonth,
+        post_count: 0,
+        has_facebook: true,
+        has_instagram: false,
+        has_reach: true,
+      });
+    }
   }
 
   // Sort all months chronologically
