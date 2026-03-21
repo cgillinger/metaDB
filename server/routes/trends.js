@@ -11,10 +11,11 @@ const ALLOWED_METRICS = new Set([
   'post_count', 'posts_per_day', 'account_reach'
 ]);
 
-// Parse composite keys "name::platform" into {name, platform} pairs
+// Parse composite keys "name::platform" into {name, platform} pairs.
+// Keys are separated by "||" to avoid conflicts with commas in account names.
 function parseAccountKeys(keysParam) {
   if (!keysParam) return [];
-  return keysParam.split(',').map(k => k.trim()).filter(Boolean).map(key => {
+  return keysParam.split('||').map(k => k.trim()).filter(Boolean).map(key => {
     const idx = key.lastIndexOf('::');
     if (idx === -1) return { name: key, platform: null };
     return { name: key.slice(0, idx), platform: key.slice(idx + 2) };
@@ -36,7 +37,7 @@ function buildAccountFilter(pairs, tableAlias = '') {
   return { sql: `(${conditions.join(' OR ')})`, params };
 }
 
-// GET /api/trends?metric=interactions&accountKeys=name1::facebook,name2::instagram&granularity=month
+// GET /api/trends?metric=interactions&accountKeys=name1::facebook||name2::instagram&granularity=month
 router.get('/', (req, res) => {
   const db = getDb();
 

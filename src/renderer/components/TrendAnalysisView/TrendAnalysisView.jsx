@@ -135,7 +135,7 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
         // Send composite keys to backend
         const params = {
           metric: selectedMetric,
-          accountKeys: selectedAccounts.join(','),
+          accountKeys: selectedAccounts.join('||'),
           granularity: 'month',
           // account_reach always shows all imported months — skip period params
           ...(selectedMetric !== 'account_reach' ? periodParams : {}),
