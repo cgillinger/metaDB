@@ -25,8 +25,8 @@ router.get('/', (req, res) => {
 router.get('/coverage', (req, res) => {
   const db = getDb();
 
-  // Get post counts per month from actual posts table (more accurate than imports)
-  const rows = db.prepare(`
+  // Get post counts per month from actual posts table
+  const postRows = db.prepare(`
     SELECT
       strftime('%Y-%m', publish_time) AS month,
       COUNT(*) AS post_count,
@@ -38,12 +38,42 @@ router.get('/coverage', (req, res) => {
     ORDER BY month ASC
   `).all();
 
-  const months = rows.map(r => ({
+  // Also include months that only have account_reach data (no posts)
+  let reachOnlyMonths = [];
+  try {
+    reachOnlyMonths = db.prepare(`
+      SELECT DISTINCT month
+      FROM account_reach
+      WHERE month NOT IN (
+        SELECT DISTINCT strftime('%Y-%m', publish_time)
+        FROM posts
+        WHERE publish_time IS NOT NULL
+      )
+      ORDER BY month ASC
+    `).all();
+  } catch (e) {
+    // account_reach table may not exist yet
+  }
+
+  const months = postRows.map(r => ({
     month: r.month,
     post_count: r.post_count,
     has_facebook: r.fb_count > 0,
     has_instagram: r.ig_count > 0,
   }));
+
+  // Add reach-only months (no posts, but have account reach data)
+  for (const r of reachOnlyMonths) {
+    months.push({
+      month: r.month,
+      post_count: 0,
+      has_facebook: true,
+      has_instagram: false,
+    });
+  }
+
+  // Sort all months chronologically
+  months.sort((a, b) => a.month.localeCompare(b.month));
 
   res.json({ months });
 });
