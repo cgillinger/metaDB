@@ -48,9 +48,14 @@ const PostTypeBadge = ({ type }) => {
   if (!type) return null;
   const colorMap = {
     'Foton': 'bg-blue-100 text-blue-800', 'Bilder': 'bg-blue-100 text-blue-800',
+    'Photos': 'bg-blue-100 text-blue-800',
     'Länkar': 'bg-purple-100 text-purple-800', 'Videor': 'bg-red-100 text-red-800',
-    'Status': 'bg-green-100 text-green-800', 'Reels': 'bg-orange-100 text-orange-800',
-    'Stories': 'bg-yellow-100 text-yellow-800', 'default': 'bg-gray-100 text-gray-800'
+    'Status': 'bg-green-100 text-green-800', 'Text': 'bg-green-100 text-green-800',
+    'Reels': 'bg-orange-100 text-orange-800', 'Live': 'bg-red-100 text-red-800',
+    'Stories': 'bg-yellow-100 text-yellow-800',
+    'IG image': 'bg-blue-100 text-blue-800', 'IG reel': 'bg-orange-100 text-orange-800',
+    'IG carousel': 'bg-indigo-100 text-indigo-800',
+    'default': 'bg-gray-100 text-gray-800'
   };
   return <span className={`px-2 py-1 text-xs font-medium rounded-full ${colorMap[type] || colorMap.default}`}>{type}</span>;
 };
