@@ -12,6 +12,7 @@ import {
   X,
   RefreshCw
 } from 'lucide-react';
+import Papa from 'papaparse';
 import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
 
@@ -29,19 +30,39 @@ export function FileUploader({ onImportComplete, onCancel }) {
   const [batchResult, setBatchResult] = useState(null);
   const fileInputRef = useRef(null);
 
-  const addFiles = useCallback((newFiles) => {
+  const addFiles = useCallback(async (newFiles) => {
     const csvFiles = Array.from(newFiles).filter(
       f => f.type === 'text/csv' || f.name.endsWith('.csv')
     );
     if (csvFiles.length === 0) return;
 
-    const fileEntries = csvFiles.map(file => ({
-      id: `${file.name}-${Date.now()}-${Math.random()}`,
-      file,
-      status: FILE_STATUS.PENDING,
-      error: null,
-      result: null,
-    }));
+    const fileEntries = [];
+
+    for (const file of csvFiles) {
+      // Read first 4KB to detect file type
+      const preview = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = Papa.parse(e.target.result, { header: true, preview: 1 });
+          resolve(result.meta?.fields || []);
+        };
+        reader.readAsText(file.slice(0, 4096));
+      });
+
+      const isReach = preview.includes('Page') &&
+                      preview.includes('Page ID') &&
+                      preview.includes('Reach');
+
+      fileEntries.push({
+        id: `${file.name}-${Date.now()}-${Math.random()}`,
+        file,
+        status: FILE_STATUS.PENDING,
+        error: null,
+        result: null,
+        fileType: isReach ? 'reach' : 'posts',
+        reachMonth: '',
+      });
+    }
 
     setFiles(prev => [...prev, ...fileEntries]);
   }, []);
@@ -107,7 +128,15 @@ export function FileUploader({ onImportComplete, onCancel }) {
       ));
 
       try {
-        const result = await api.uploadCSV(entry.file);
+        let result;
+        if (entry.fileType === 'reach') {
+          if (!entry.reachMonth) {
+            throw new Error('Ange vilken månad räckviddsfilen gäller.');
+          }
+          result = await api.uploadReachCSV(entry.file, entry.reachMonth);
+        } else {
+          result = await api.uploadCSV(entry.file);
+        }
         succeeded++;
         setFiles(prev => prev.map(f =>
           f.id === entry.id ? {
@@ -245,12 +274,35 @@ export function FileUploader({ onImportComplete, onCancel }) {
                       <p className="font-medium truncate flex items-center gap-1.5">
                         {entry.file.name}
                         {entry.platform && <PlatformBadge platform={entry.platform} />}
+                        {entry.fileType === 'reach' && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 border border-green-300">
+                            Kontoräckvidd
+                          </span>
+                        )}
                       </p>
                       {entry.result && (
                         <p className="text-xs text-green-600">
                           {entry.result.stats?.postsInserted || 0} nya,{' '}
                           {entry.result.stats?.postsUpdated || 0} uppdaterade
                         </p>
+                      )}
+                      {entry.fileType === 'reach' && entry.status === FILE_STATUS.PENDING && (
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Månad:</span>
+                          <input
+                            type="month"
+                            value={entry.reachMonth}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setFiles(prev => prev.map(f =>
+                                f.id === entry.id ? { ...f, reachMonth: e.target.value } : f
+                              ));
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="border border-input rounded px-2 py-0.5 text-xs"
+                            required
+                          />
+                        </div>
                       )}
                       {entry.error && (
                         <p className="text-xs text-red-600">{entry.error}</p>

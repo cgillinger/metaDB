@@ -101,7 +101,86 @@ router.get('/', (req, res) => {
   `;
   const totals = db.prepare(totalsQuery).get(...params) || {};
 
-  res.json({ accounts, totals });
+  // Fetch account-level reach data if available
+  let reachData = [];
+
+  // Extract which months are being requested
+  let reachMonths = [];
+  if (req.query.months) {
+    reachMonths = req.query.months.split(',').map(m => m.trim());
+  } else if (req.query.dateFrom && req.query.dateTo) {
+    const start = req.query.dateFrom.slice(0, 7);
+    const end = req.query.dateTo.slice(0, 7);
+    let current = start;
+    while (current <= end) {
+      reachMonths.push(current);
+      const [y, m] = current.split('-').map(Number);
+      const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+      current = next;
+    }
+  }
+
+  if (reachMonths.length > 0) {
+    const placeholders = reachMonths.map(() => '?').join(',');
+    reachData = db.prepare(`
+      SELECT account_name, month, reach
+      FROM account_reach
+      WHERE month IN (${placeholders})
+      ORDER BY account_name, month
+    `).all(...reachMonths);
+  } else {
+    // No period filter — get all reach data
+    reachData = db.prepare(`
+      SELECT account_name, month, reach
+      FROM account_reach
+      ORDER BY account_name, month
+    `).all();
+  }
+
+  // Group reach by account_name → { month: reach }
+  const reachByAccount = {};
+  for (const row of reachData) {
+    if (!reachByAccount[row.account_name]) {
+      reachByAccount[row.account_name] = {};
+    }
+    reachByAccount[row.account_name][row.month] = row.reach;
+  }
+
+  // Available reach months (only months that actually have data)
+  const reachMonthsAvailable = [...new Set(reachData.map(r => r.month))].sort();
+
+  // Include reach-only accounts (accounts in account_reach but not in posts)
+  if (req.query.includeReachOnly === 'true' && reachMonthsAvailable.length > 0) {
+    const reachPlaceholders = reachMonthsAvailable.map(() => '?').join(',');
+    const reachOnlyAccounts = db.prepare(`
+      SELECT DISTINCT ar.account_name
+      FROM account_reach ar
+      WHERE ar.month IN (${reachPlaceholders})
+      AND ar.account_name NOT IN (
+        SELECT DISTINCT account_name FROM posts
+        ${whereClause}
+      )
+      AND ar.account_name NOT LIKE 'srholder%'
+    `).all(...reachMonthsAvailable, ...params);
+
+    for (const row of reachOnlyAccounts) {
+      accounts.push({
+        account_id: null,
+        account_name: row.account_name,
+        account_username: null,
+        platform: 'facebook',
+        is_collab: 0,
+        post_count: 0,
+        views: 0, reach: 0, likes: 0, comments: 0, shares: 0,
+        total_clicks: 0, link_clicks: 0, other_clicks: 0,
+        saves: 0, follows: 0, interactions: 0, engagement: 0,
+        posts_per_day: 0,
+        _reachOnly: true,
+      });
+    }
+  }
+
+  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable });
 });
 
 export default router;

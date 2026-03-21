@@ -32,6 +32,7 @@ const ImportManager = ({ onImportsChanged }) => {
   const [imports, setImports] = useState([]);
   const [stats, setStats] = useState(null);
   const [coverage, setCoverage] = useState(null);
+  const [reachMonths, setReachMonths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [vacuuming, setVacuuming] = useState(false);
@@ -39,14 +40,16 @@ const ImportManager = ({ onImportsChanged }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [importsData, statsData, coverageData] = await Promise.all([
+      const [importsData, statsData, coverageData, reachMonthsData] = await Promise.all([
         api.getImports(),
         api.getStats(),
         api.getCoverage().catch(() => null),
+        api.getReachMonths().catch(() => ({ months: [] })),
       ]);
       setImports(importsData);
       setStats(statsData);
       setCoverage(coverageData);
+      setReachMonths(reachMonthsData.months || []);
     } catch (error) {
       console.error('Fel vid hämtning av importdata:', error);
     } finally {
@@ -170,6 +173,38 @@ const ImportManager = ({ onImportsChanged }) => {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Reach data */}
+      {reachMonths.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Kontoräckvidd (Facebook API)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {reachMonths.map(month => (
+                <div key={month} className="flex items-center gap-1 px-3 py-1.5 rounded border bg-blue-50 border-blue-200 text-blue-800 text-sm font-medium">
+                  {month}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Radera räckviddsdata för ${month}?`)) {
+                        api.deleteReachMonth(month).then(fetchData);
+                      }
+                    }}
+                    className="ml-1 hover:text-red-600"
+                    title="Radera"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Räckviddsdata importerad från Metas Graph API. Gäller bara Facebook.
+            </p>
           </CardContent>
         </Card>
       )}

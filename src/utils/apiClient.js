@@ -50,6 +50,17 @@ export const api = {
   getStats: () => fetch('/api/maintenance/stats').then(handleResponse),
   getHealth: () => fetch('/api/health').then(handleResponse),
   getBackupUrl: () => '/api/maintenance/backup',
+
+  // Reach imports
+  uploadReachCSV: (file, month) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('month', month);
+    return fetch('/api/reach', { method: 'POST', body: formData }).then(handleResponse);
+  },
+  getReachMonths: () => fetch('/api/reach/months').then(handleResponse),
+  deleteReachMonth: (month) =>
+    fetch(`/api/reach/${month}`, { method: 'DELETE' }).then(handleResponse),
 };
 
 // --- Client-side export utilities (unchanged from storageService.js) ---
