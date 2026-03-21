@@ -128,7 +128,8 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
           metric: selectedMetric,
           accounts: selectedAccounts.join(','),
           granularity: 'month',
-          ...periodParams,
+          // account_reach always shows all imported months — skip period params
+          ...(selectedMetric !== 'account_reach' ? periodParams : {}),
         };
         if (platform) params.platform = platform;
         const data = await api.getTrends(params);

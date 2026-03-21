@@ -18,22 +18,11 @@ router.get('/', (req, res) => {
   let metric = ALLOWED_METRICS.has(req.query.metric) ? req.query.metric : 'interactions';
   const granularity = req.query.granularity === 'week' ? 'week' : 'month';
 
-  // account_reach comes from a separate table and cannot be summed/split
+  // account_reach comes from a separate table and cannot be summed/split.
+  // Always returns ALL imported months — period selection is ignored.
   if (metric === 'account_reach') {
     const reachConditions = [];
     const reachParams = [];
-
-    // Period filtering: extract months for account_reach table
-    if (req.query.months) {
-      const monthList = req.query.months.split(',').map(m => m.trim()).filter(Boolean);
-      reachConditions.push(`ar.month IN (${monthList.map(() => '?').join(',')})`);
-      reachParams.push(...monthList);
-    } else if (req.query.dateFrom && req.query.dateTo) {
-      const startMonth = req.query.dateFrom.slice(0, 7);
-      const endMonth = req.query.dateTo.slice(0, 7);
-      reachConditions.push('ar.month >= ? AND ar.month <= ?');
-      reachParams.push(startMonth, endMonth);
-    }
 
     // Filter by accounts (match via account_name from posts table, Facebook only)
     if (req.query.accounts) {

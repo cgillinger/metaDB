@@ -211,8 +211,9 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
 
         if (sortConfig.key.startsWith('reach_')) {
           const month = sortConfig.key.replace('reach_', '');
-          aVal = reachByAccount[a.account_name]?.[month] ?? -1;
-          bVal = reachByAccount[b.account_name]?.[month] ?? -1;
+          // Account reach is Facebook-only
+          aVal = a.platform === 'facebook' ? (reachByAccount[a.account_name]?.[month] ?? -1) : -1;
+          bVal = b.platform === 'facebook' ? (reachByAccount[b.account_name]?.[month] ?? -1) : -1;
         } else if (sortConfig.key === 'account_name') {
           aVal = (a.account_name || '').toLowerCase();
           bVal = (b.account_name || '').toLowerCase();
@@ -280,7 +281,8 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
       if (selectedFields.includes('account_reach')) {
         for (const month of reachMonths) {
           const headerName = formatReachColumnHeader(month);
-          const reachMap = reachByAccount[account.account_name];
+          // Account reach is Facebook-only — show dash for other platforms
+          const reachMap = plat === 'facebook' ? reachByAccount[account.account_name] : undefined;
           formatted[headerName] = reachMap?.[month] !== undefined
             ? formatValue(reachMap[month])
             : '—';
