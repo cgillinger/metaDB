@@ -455,7 +455,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
                   </TableCell>
                 ))}
                 {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => {
-                  const reachMap = reachByAccount[account.account_name];
+                  const reachMap = account.platform === 'facebook' ? reachByAccount[account.account_name] : undefined;
                   const reachValue = reachMap ? reachMap[month] : undefined;
 
                   return (

@@ -35,12 +35,12 @@ router.get('/', (req, res) => {
       reachParams.push(startMonth, endMonth);
     }
 
-    // Filter by accounts (match via account_name from posts table)
+    // Filter by accounts (match via account_name from posts table, Facebook only)
     if (req.query.accounts) {
       const accountIds = req.query.accounts.split(',').map(s => s.trim()).filter(Boolean);
       if (accountIds.length > 0) {
         const placeholders = accountIds.map(() => '?').join(',');
-        reachConditions.push(`ar.account_name IN (SELECT DISTINCT account_name FROM posts WHERE account_id IN (${placeholders}))`);
+        reachConditions.push(`ar.account_name IN (SELECT DISTINCT account_name FROM posts WHERE account_id IN (${placeholders}) AND platform = 'facebook')`);
         reachParams.push(...accountIds);
       }
     }
