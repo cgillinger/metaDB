@@ -99,7 +99,7 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
-        const params = { fields: 'views', ...periodParams };
+        const params = { fields: 'views', ...periodParams, includeReachOnly: 'true' };
         if (platform) params.platform = platform;
         const data = await api.getAccounts(params);
         setAccountList((data.accounts || []).map(a => ({
@@ -126,7 +126,7 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
       try {
         const params = {
           metric: selectedMetric,
-          accounts: selectedAccounts.join(','),
+          accountNames: selectedAccounts.join(','),
           granularity: 'month',
           // account_reach always shows all imported months — skip period params
           ...(selectedMetric !== 'account_reach' ? periodParams : {}),
@@ -179,24 +179,24 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
   // When metric changes to account_reach, remove non-FB accounts from selection
   useEffect(() => {
     if (selectedMetric === 'account_reach') {
-      const fbIds = new Set(accountList.filter(a => a.platform === 'facebook').map(a => a.account_id));
-      setSelectedAccounts(prev => prev.filter(id => fbIds.has(id)));
+      const fbNames = new Set(accountList.filter(a => a.platform === 'facebook').map(a => a.account_name));
+      setSelectedAccounts(prev => prev.filter(name => fbNames.has(name)));
     }
   }, [selectedMetric, accountList]);
 
-  const handleAccountToggle = (accountId) => {
+  const handleAccountToggle = (accountName) => {
     setSelectedAccounts(current =>
-      current.includes(accountId) ? current.filter(id => id !== accountId) : [...current, accountId]
+      current.includes(accountName) ? current.filter(n => n !== accountName) : [...current, accountName]
     );
   };
 
   const handleToggleAllAccounts = () => {
-    const allIds = filteredAccountList.map(a => a.account_id);
-    const allSelected = allIds.length > 0 && allIds.every(id => selectedAccounts.includes(id));
-    setSelectedAccounts(allSelected ? [] : allIds);
+    const allNames = filteredAccountList.map(a => a.account_name);
+    const allSelected = allNames.length > 0 && allNames.every(name => selectedAccounts.includes(name));
+    setSelectedAccounts(allSelected ? [] : allNames);
   };
 
-  const allAccountsSelected = filteredAccountList.length > 0 && filteredAccountList.every(a => selectedAccounts.includes(a.account_id));
+  const allAccountsSelected = filteredAccountList.length > 0 && filteredAccountList.every(a => selectedAccounts.includes(a.account_name));
 
   const handleMouseMove = (event, point) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -239,8 +239,8 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
               </div>
               <div className="max-h-48 overflow-y-auto border rounded-md p-3 space-y-2 bg-gray-50">
                 {filteredAccountList.map(account => (
-                  <Label key={account.account_id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-2 rounded">
-                    <input type="checkbox" checked={selectedAccounts.includes(account.account_id)} onChange={() => handleAccountToggle(account.account_id)} className="h-4 w-4 accent-blue-600" />
+                  <Label key={account.account_name} className="flex items-center gap-2 cursor-pointer hover:bg-white p-2 rounded">
+                    <input type="checkbox" checked={selectedAccounts.includes(account.account_name)} onChange={() => handleAccountToggle(account.account_name)} className="h-4 w-4 accent-blue-600" />
                     <span className="text-sm font-medium flex items-center gap-1.5">
                       {account.account_name}
                       <PlatformBadge platform={account.platform} />

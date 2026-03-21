@@ -24,13 +24,13 @@ router.get('/', (req, res) => {
     const reachConditions = [];
     const reachParams = [];
 
-    // Filter by accounts (match via account_name from posts table, Facebook only)
-    if (req.query.accounts) {
-      const accountIds = req.query.accounts.split(',').map(s => s.trim()).filter(Boolean);
-      if (accountIds.length > 0) {
-        const placeholders = accountIds.map(() => '?').join(',');
-        reachConditions.push(`ar.account_name IN (SELECT DISTINCT account_name FROM posts WHERE account_id IN (${placeholders}) AND platform = 'facebook')`);
-        reachParams.push(...accountIds);
+    // Filter by account names
+    if (req.query.accountNames) {
+      const names = req.query.accountNames.split(',').map(s => s.trim()).filter(Boolean);
+      if (names.length > 0) {
+        const placeholders = names.map(() => '?').join(',');
+        reachConditions.push(`ar.account_name IN (${placeholders})`);
+        reachParams.push(...names);
       }
     }
 
@@ -90,11 +90,11 @@ router.get('/', (req, res) => {
     params.push(req.query.platform);
   }
 
-  if (req.query.accounts) {
-    const accountIds = req.query.accounts.split(',').map(s => s.trim()).filter(Boolean);
-    if (accountIds.length > 0) {
-      conditions.push(`account_id IN (${accountIds.map(() => '?').join(',')})`);
-      params.push(...accountIds);
+  if (req.query.accountNames) {
+    const names = req.query.accountNames.split(',').map(s => s.trim()).filter(Boolean);
+    if (names.length > 0) {
+      conditions.push(`account_name IN (${names.map(() => '?').join(',')})`);
+      params.push(...names);
     }
   }
 
