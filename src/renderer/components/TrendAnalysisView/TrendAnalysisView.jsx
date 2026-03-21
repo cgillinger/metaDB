@@ -24,7 +24,7 @@ const TREND_METRICS_COMMON = {
   'post_count': 'Antal publiceringar',
   'posts_per_day': 'Publiceringar per dag'
 };
-const TREND_METRICS_FB = { 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'other_clicks': 'Övriga klick' };
+const TREND_METRICS_FB = { 'account_reach': 'Kontoräckvidd (API)', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'other_clicks': 'Övriga klick' };
 const TREND_METRICS_IG = { 'saves': 'Sparade', 'follows': 'Följare' };
 
 const CHART_COLORS = [
@@ -242,7 +242,7 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
                     <input type="radio" name="trendMetric" value={key} checked={selectedMetric === key} onChange={() => setSelectedMetric(key)} className="h-4 w-4 border-gray-300 accent-primary" />
                     <span className="text-sm flex items-center gap-1.5">
                       {label}
-                      {['total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
+                      {['account_reach', 'total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
                       {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
                     </span>
                   </Label>
