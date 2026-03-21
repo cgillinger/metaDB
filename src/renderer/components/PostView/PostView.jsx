@@ -55,7 +55,7 @@ const PostTypeBadge = ({ type }) => {
   return <span className={`px-2 py-1 text-xs font-medium rounded-full ${colorMap[type] || colorMap.default}`}>{type}</span>;
 };
 
-const PostView = ({ selectedFields, platform }) => {
+const PostView = ({ selectedFields, platform, periodParams = {} }) => {
   const [sortConfig, setSortConfig] = useState({ key: 'publish_time', direction: 'desc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -79,6 +79,7 @@ const PostView = ({ selectedFields, platform }) => {
           pageSize: pageSize,
           sort: sortConfig.key,
           order: sortConfig.direction,
+          ...periodParams,
         };
         if (platform) params.platform = platform;
         if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
@@ -94,13 +95,13 @@ const PostView = ({ selectedFields, platform }) => {
       }
     };
     fetchPosts();
-  }, [currentPage, pageSize, sortConfig, platform, selectedAccount]);
+  }, [currentPage, pageSize, sortConfig, platform, selectedAccount, periodParams]);
 
   // Fetch unique accounts for filter dropdown
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
-        const params = { fields: 'views' };
+        const params = { fields: 'views', ...periodParams };
         if (platform) params.platform = platform;
         const data = await api.getAccounts(params);
         const accounts = (data.accounts || []).map(a => ({
@@ -116,11 +117,11 @@ const PostView = ({ selectedFields, platform }) => {
       }
     };
     fetchAccounts();
-  }, [platform]);
+  }, [platform, periodParams]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [pageSize, selectedAccount, platform]);
+  }, [pageSize, selectedAccount, platform, periodParams]);
 
   const handleSort = (key) => {
     setSortConfig(current => ({
@@ -178,7 +179,7 @@ const PostView = ({ selectedFields, platform }) => {
   // Export fetches ALL matching posts (not just current page)
   const handleExportToCSV = async () => {
     try {
-      const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction };
+      const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction, ...periodParams };
       if (platform) params.platform = platform;
       if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
       const data = await api.getPosts(params);
@@ -218,7 +219,7 @@ const PostView = ({ selectedFields, platform }) => {
 
   const handleExportToExcel = async () => {
     try {
-      const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction };
+      const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction, ...periodParams };
       if (platform) params.platform = platform;
       if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
       const data = await api.getPosts(params);

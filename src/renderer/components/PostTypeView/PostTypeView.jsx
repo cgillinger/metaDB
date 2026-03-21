@@ -66,7 +66,7 @@ const SimplePieChart = ({ data }) => {
   );
 };
 
-const PostTypeView = ({ selectedFields, platform }) => {
+const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
   const [sortConfig, setSortConfig] = useState({ key: 'post_count', direction: 'desc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -89,7 +89,7 @@ const PostTypeView = ({ selectedFields, platform }) => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const params = {};
+        const params = { ...periodParams };
         if (platform) params.platform = platform;
         if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
         if (selectedFields && selectedFields.length > 0) params.fields = selectedFields.join(',');
@@ -103,13 +103,13 @@ const PostTypeView = ({ selectedFields, platform }) => {
       }
     };
     fetchData();
-  }, [platform, selectedAccount, selectedFields]);
+  }, [platform, selectedAccount, selectedFields, periodParams]);
 
   // Fetch unique accounts for filter
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
-        const params = { fields: 'views' };
+        const params = { fields: 'views', ...periodParams };
         if (platform) params.platform = platform;
         const data = await api.getAccounts(params);
         const accounts = (data.accounts || []).map(a => ({
@@ -122,9 +122,9 @@ const PostTypeView = ({ selectedFields, platform }) => {
       }
     };
     fetchAccounts();
-  }, [platform]);
+  }, [platform, periodParams]);
 
-  useEffect(() => { setCurrentPage(1); }, [platform, pageSize, selectedAccount]);
+  useEffect(() => { setCurrentPage(1); }, [platform, pageSize, selectedAccount, periodParams]);
 
   useEffect(() => {
     if (copyStatus.copied) {

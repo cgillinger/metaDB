@@ -68,7 +68,7 @@ const PAGE_SIZE_OPTIONS = [
   { value: '50', label: '50 per sida' }
 ];
 
-const AccountView = ({ selectedFields, platform }) => {
+const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -91,6 +91,7 @@ const AccountView = ({ selectedFields, platform }) => {
           fields: selectedFields.join(','),
           sort: sortConfig.key || 'views',
           order: sortConfig.direction || 'desc',
+          ...periodParams,
         };
         if (platform) params.platform = platform;
 
@@ -104,11 +105,11 @@ const AccountView = ({ selectedFields, platform }) => {
       }
     };
     fetchData();
-  }, [selectedFields, platform, sortConfig]);
+  }, [selectedFields, platform, sortConfig, periodParams]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedFields, platform, pageSize]);
+  }, [selectedFields, platform, pageSize, periodParams]);
 
   useEffect(() => {
     if (copyStatus.copied) {

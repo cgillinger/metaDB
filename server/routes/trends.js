@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
+import { buildPeriodConditions } from '../utils/periodFilter.js';
 
 const router = Router();
 
@@ -19,6 +20,11 @@ router.get('/', (req, res) => {
 
   const conditions = ['publish_time IS NOT NULL'];
   const params = [];
+
+  // Period filtering
+  const periodFilter = buildPeriodConditions(req.query);
+  conditions.push(...periodFilter.conditions);
+  params.push(...periodFilter.params);
 
   if (req.query.platform) {
     conditions.push('platform = ?');
