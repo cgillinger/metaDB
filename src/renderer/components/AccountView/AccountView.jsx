@@ -17,6 +17,7 @@ import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiC
 const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'average_reach': 'Genomsnittlig räckvidd',
+  'account_reach': 'Kontoräckvidd (API)',
   'interactions': 'Interaktioner',
   'engagement': 'Engagemang',
   'likes': 'Reaktioner/Gilla',
@@ -62,6 +63,14 @@ const ProfileIcon = ({ accountName }) => {
 
 const FIELDS_WITHOUT_TOTALS = ['average_reach', 'posts_per_day'];
 
+const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun',
+                         'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
+
+function formatReachColumnHeader(month) {
+  const [year, m] = month.split('-');
+  return `Räckvidd ${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${year.slice(2)}`;
+}
+
 const PAGE_SIZE_OPTIONS = [
   { value: '10', label: '10 per sida' },
   { value: '20', label: '20 per sida' },
@@ -75,6 +84,8 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
   const [copyStatus, setCopyStatus] = useState({ field: null, rowId: null, copied: false });
   const [accountData, setAccountData] = useState([]);
   const [totalSummary, setTotalSummary] = useState({});
+  const [reachByAccount, setReachByAccount] = useState({});
+  const [reachMonths, setReachMonths] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // Fetch account data from API
@@ -89,8 +100,6 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
       try {
         const params = {
           fields: selectedFields.join(','),
-          sort: sortConfig.key || 'views',
-          order: sortConfig.direction || 'desc',
           ...periodParams,
         };
         if (platform) params.platform = platform;
@@ -98,6 +107,8 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
         const data = await api.getAccounts(params);
         setAccountData(data.accounts || []);
         setTotalSummary(data.totals || {});
+        setReachByAccount(data.reachByAccount || {});
+        setReachMonths(data.reachMonths || []);
       } catch (error) {
         console.error('Fel vid hämtning av kontodata:', error);
       } finally {
@@ -105,7 +116,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
       }
     };
     fetchData();
-  }, [selectedFields, platform, sortConfig, periodParams]);
+  }, [selectedFields, platform, periodParams]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -184,11 +195,39 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
     );
   };
 
-  // Client-side pagination of already-sorted server data
+  // Client-side sorting and pagination
   const paginatedData = useMemo(() => {
+    let sorted = [...accountData];
+
+    if (sortConfig.key) {
+      sorted.sort((a, b) => {
+        let aVal, bVal;
+
+        if (sortConfig.key.startsWith('reach_')) {
+          const month = sortConfig.key.replace('reach_', '');
+          aVal = reachByAccount[a.account_name]?.[month] ?? -1;
+          bVal = reachByAccount[b.account_name]?.[month] ?? -1;
+        } else if (sortConfig.key === 'account_name') {
+          aVal = (a.account_name || '').toLowerCase();
+          bVal = (b.account_name || '').toLowerCase();
+          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+        } else {
+          aVal = a[sortConfig.key];
+          bVal = b[sortConfig.key];
+        }
+
+        if (aVal == null) aVal = -1;
+        if (bVal == null) bVal = -1;
+
+        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      });
+    }
+
     const startIndex = (currentPage - 1) * pageSize;
-    return accountData.slice(startIndex, startIndex + pageSize);
-  }, [accountData, currentPage, pageSize]);
+    return sorted.slice(startIndex, startIndex + pageSize);
+  }, [accountData, sortConfig, currentPage, pageSize, reachByAccount]);
 
   const totalPages = Math.ceil(accountData.length / pageSize);
 
@@ -226,10 +265,20 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
         formatted['Facebook URL'] = `https://www.facebook.com/${account.account_id}`;
       }
       for (const field of selectedFields) {
+        if (field === 'account_reach') continue;
         const displayName = getDisplayName(field);
         if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { formatted[displayName] = 'N/A'; continue; }
         if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') { formatted[displayName] = 'N/A'; continue; }
         formatted[displayName] = formatValue(getFieldValue(account, field));
+      }
+      if (selectedFields.includes('account_reach')) {
+        for (const month of reachMonths) {
+          const headerName = formatReachColumnHeader(month);
+          const reachMap = reachByAccount[account.account_name];
+          formatted[headerName] = reachMap?.[month] !== undefined
+            ? formatValue(reachMap[month])
+            : '—';
+        }
       }
       return formatted;
     });
@@ -294,7 +343,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
               <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort('account_name')}>
                 <div className="flex items-center">Kontonamn {getSortIcon('account_name')}</div>
               </TableHead>
-              {selectedFields.map(field => (
+              {selectedFields.filter(f => f !== 'account_reach').map(field => (
                 <TableHead key={field} className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort(field === 'average_reach' ? 'reach' : field)}>
                   <div className="flex items-center justify-end">
                     {getDisplayName(field)}
@@ -303,6 +352,30 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
                   </div>
                 </TableHead>
               ))}
+              {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => (
+                <TableHead
+                  key={`reach-${month}`}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => setSortConfig(current => ({
+                    key: `reach_${month}`,
+                    direction: current.key === `reach_${month}` && current.direction === 'asc' ? 'desc' : 'asc'
+                  }))}
+                >
+                  <div className="flex items-center justify-end whitespace-nowrap">
+                    {formatReachColumnHeader(month)}
+                    <PlatformBadge platform="facebook" />
+                    {getSortIcon(`reach_${month}`)}
+                  </div>
+                </TableHead>
+              ))}
+              {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
+                <TableHead>
+                  <div className="flex items-center justify-end whitespace-nowrap">
+                    Kontoräckvidd
+                    <PlatformBadge platform="facebook" />
+                  </div>
+                </TableHead>
+              )}
               <TableHead className="w-12 text-center">Länk</TableHead>
             </TableRow>
           </TableHeader>
@@ -314,7 +387,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
                 <Calculator className="w-4 h-4 mr-2 text-primary" />
                 <span className="text-primary">Totalt</span>
               </TableCell>
-              {selectedFields.map(field => (
+              {selectedFields.filter(f => f !== 'account_reach').map(field => (
                 <TableCell key={field} className="text-right font-semibold text-primary">
                   {!FIELDS_WITHOUT_TOTALS.includes(field) ? (
                     <div className="flex items-center justify-end group">
@@ -324,6 +397,14 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
                   ) : ''}
                 </TableCell>
               ))}
+              {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => (
+                <TableCell key={`total-reach-${month}`} className="text-right font-semibold text-primary">
+                  —
+                </TableCell>
+              ))}
+              {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
+                <TableCell className="text-right font-semibold text-primary">—</TableCell>
+              )}
               <TableCell></TableCell>
             </TableRow>
 
@@ -341,7 +422,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
                     {account.is_collab ? <CollabBadge /> : null}
                   </div>
                 </TableCell>
-                {selectedFields.map(field => (
+                {selectedFields.filter(f => f !== 'account_reach').map(field => (
                   <TableCell key={field} className="text-right">
                     <div className="flex items-center justify-end group">
                       <span>{renderCellContent(account, field)}</span>
@@ -351,6 +432,33 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
                     </div>
                   </TableCell>
                 ))}
+                {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => {
+                  const reachMap = reachByAccount[account.account_name];
+                  const reachValue = reachMap ? reachMap[month] : undefined;
+
+                  return (
+                    <TableCell key={`reach-${month}`} className="text-right">
+                      {reachValue !== undefined ? (
+                        <div className="flex items-center justify-end group">
+                          <span>{formatValue(reachValue)}</span>
+                          <CopyButton value={reachValue} field={`reach-${month}`} rowId={`${account.account_id}-reach-${month}`} />
+                        </div>
+                      ) : (
+                        <span
+                          className="text-muted-foreground cursor-help"
+                          title="Kontoräckvidd saknas för denna månad"
+                        >
+                          —
+                        </span>
+                      )}
+                    </TableCell>
+                  );
+                })}
+                {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
+                  <TableCell className="text-right">
+                    <span className="text-muted-foreground text-xs">Saknas</span>
+                  </TableCell>
+                )}
                 <TableCell className="text-center">
                   <button onClick={() => handleExternalLink(account)} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
                     <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna konto</span>
