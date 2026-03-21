@@ -21,7 +21,15 @@ router.get('/', (req, res) => {
     params.push(req.query.platform);
   }
 
-  if (req.query.account && req.query.account !== 'all') {
+  if (req.query.accountName) {
+    conditions.push('account_name = ?');
+    params.push(req.query.accountName);
+    if (req.query.accountPlatform) {
+      conditions.push('platform = ?');
+      params.push(req.query.accountPlatform);
+    }
+  } else if (req.query.account && req.query.account !== 'all') {
+    // Legacy: support old-style account filter
     conditions.push('(account_id = ? OR account_name = ?)');
     params.push(req.query.account, req.query.account);
   }

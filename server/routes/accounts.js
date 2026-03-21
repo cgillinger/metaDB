@@ -156,7 +156,7 @@ router.get('/', (req, res) => {
   const hasPostAccounts = accounts.length > 0;
   const shouldIncludeReachOnly = req.query.includeReachOnly === 'true' || !hasPostAccounts;
   if (shouldIncludeReachOnly && reachMonthsAvailable.length > 0) {
-    const existingAccountNames = new Set(accounts.map(a => a.account_name));
+    const existingAccountKeys = new Set(accounts.map(a => `${a.account_name}::${a.platform}`));
     const reachPlaceholders = reachMonthsAvailable.map(() => '?').join(',');
     const reachOnlyAccounts = db.prepare(`
       SELECT DISTINCT ar.account_name
@@ -166,7 +166,7 @@ router.get('/', (req, res) => {
     `).all(...reachMonthsAvailable);
 
     for (const row of reachOnlyAccounts) {
-      if (existingAccountNames.has(row.account_name)) continue;
+      if (existingAccountKeys.has(`${row.account_name}::facebook`)) continue;
       accounts.push({
         account_id: null,
         account_name: row.account_name,

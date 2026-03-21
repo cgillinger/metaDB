@@ -82,7 +82,15 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
           ...periodParams,
         };
         if (platform) params.platform = platform;
-        if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
+        if (selectedAccount !== ALL_ACCOUNTS) {
+          const sepIdx = selectedAccount.lastIndexOf('::');
+          if (sepIdx !== -1) {
+            params.accountName = selectedAccount.slice(0, sepIdx);
+            params.accountPlatform = selectedAccount.slice(sepIdx + 2);
+          } else {
+            params.accountName = selectedAccount;
+          }
+        }
 
         const data = await api.getPosts(params);
         setPosts(data.data || []);
@@ -108,6 +116,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
           name: a.account_name,
           platform: a.platform,
           isCollab: a.is_collab,
+          key: `${a.account_name}::${a.platform}`,
         }));
         setUniqueAccounts(accounts);
         const platforms = new Set(accounts.map(a => a.platform));
@@ -195,7 +204,15 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
     try {
       const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction, ...periodParams };
       if (platform) params.platform = platform;
-      if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
+      if (selectedAccount !== ALL_ACCOUNTS) {
+        const sepIdx = selectedAccount.lastIndexOf('::');
+        if (sepIdx !== -1) {
+          params.accountName = selectedAccount.slice(0, sepIdx);
+          params.accountPlatform = selectedAccount.slice(sepIdx + 2);
+        } else {
+          params.accountName = selectedAccount;
+        }
+      }
       const data = await api.getPosts(params);
       const allPosts = data.data || [];
 
@@ -224,7 +241,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
       exportData.forEach(row => {
         csvRows.push(headers.map(h => `"${String(row[h] || '').replace(/"/g, '""')}"`).join(','));
       });
-      const accountSuffix = selectedAccount !== ALL_ACCOUNTS ? `-${selectedAccount.replace(/\s+/g, '-')}` : '';
+      const accountSuffix = selectedAccount !== ALL_ACCOUNTS ? `-${selectedAccount.split('::')[0].replace(/\s+/g, '-')}` : '';
       downloadFile(csvRows.join('\n'), `meta-statistik-inlagg${accountSuffix}.csv`, 'text/csv;charset=utf-8;');
     } catch (error) {
       console.error('Export till CSV misslyckades:', error);
@@ -235,7 +252,15 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
     try {
       const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction, ...periodParams };
       if (platform) params.platform = platform;
-      if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
+      if (selectedAccount !== ALL_ACCOUNTS) {
+        const sepIdx = selectedAccount.lastIndexOf('::');
+        if (sepIdx !== -1) {
+          params.accountName = selectedAccount.slice(0, sepIdx);
+          params.accountPlatform = selectedAccount.slice(sepIdx + 2);
+        } else {
+          params.accountName = selectedAccount;
+        }
+      }
       const data = await api.getPosts(params);
       const allPosts = data.data || [];
 
@@ -259,7 +284,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
       });
 
       if (!exportData.length) return;
-      const accountSuffix = selectedAccount !== ALL_ACCOUNTS ? `-${selectedAccount.replace(/\s+/g, '-')}` : '';
+      const accountSuffix = selectedAccount !== ALL_ACCOUNTS ? `-${selectedAccount.split('::')[0].replace(/\s+/g, '-')}` : '';
       await downloadExcel(exportData, `meta-statistik-inlagg${accountSuffix}.xlsx`);
     } catch (error) {
       console.error('Export till Excel misslyckades:', error);
@@ -285,8 +310,8 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
             <SelectTrigger className="w-[200px]"><SelectValue placeholder="Välj konto" /></SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL_ACCOUNTS}>Alla konton</SelectItem>
-              {uniqueAccounts.map(({ name, platform: plat, isCollab }) => (
-                <SelectItem key={name} value={name}>
+              {uniqueAccounts.map(({ name, platform: plat, isCollab, key }) => (
+                <SelectItem key={key} value={key}>
                   <span className="flex items-center gap-2">
                     {name}
                     <PlatformBadge platform={plat} />

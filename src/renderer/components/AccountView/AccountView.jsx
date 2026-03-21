@@ -434,7 +434,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
 
             {paginatedData.map((account, index) => (
               <TableRow
-                key={`${account.account_id}-${account.account_name}`}
+                key={`${account.account_name}::${account.platform}`}
                 className={account._reachOnly ? 'bg-gray-50/50 opacity-60' : account.is_collab ? 'bg-amber-50/50 opacity-75' : ''}
               >
                 <TableCell className="text-center font-medium">{(currentPage - 1) * pageSize + index + 1}</TableCell>
