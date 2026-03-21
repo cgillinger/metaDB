@@ -91,7 +91,15 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
       try {
         const params = { ...periodParams };
         if (platform) params.platform = platform;
-        if (selectedAccount !== ALL_ACCOUNTS) params.account = selectedAccount;
+        if (selectedAccount !== ALL_ACCOUNTS) {
+          const sepIdx = selectedAccount.lastIndexOf('::');
+          if (sepIdx !== -1) {
+            params.accountName = selectedAccount.slice(0, sepIdx);
+            params.accountPlatform = selectedAccount.slice(sepIdx + 2);
+          } else {
+            params.accountName = selectedAccount;
+          }
+        }
         if (selectedFields && selectedFields.length > 0) params.fields = selectedFields.join(',');
 
         const data = await api.getPostTypes(params);
@@ -115,6 +123,7 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
         const accounts = (data.accounts || []).map(a => ({
           name: a.account_name,
           platform: a.platform,
+          key: `${a.account_name}::${a.platform}`,
         }));
         setUniqueAccounts(accounts);
       } catch (error) {
@@ -259,8 +268,8 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
                 <SelectTrigger className="w-[200px]"><SelectValue placeholder="Välj konto" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ALL_ACCOUNTS}>Alla konton</SelectItem>
-                  {uniqueAccounts.map(({ name, platform: plat }) => (
-                    <SelectItem key={name} value={name}>
+                  {uniqueAccounts.map(({ name, platform: plat, key }) => (
+                    <SelectItem key={key} value={key}>
                       <span className="flex items-center gap-2">{name} <PlatformBadge platform={plat} /></span>
                     </SelectItem>
                   ))}
@@ -283,7 +292,7 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
             <h3 className="text-lg font-semibold mb-2 flex items-center">
               <PieChartIcon className="w-5 h-5 mr-2 text-primary" />
               Fördelning per inläggstyp
-              {selectedAccount !== ALL_ACCOUNTS && `: ${selectedAccount}`}
+              {selectedAccount !== ALL_ACCOUNTS && `: ${selectedAccount.split('::')[0]}`}
             </h3>
             <SimplePieChart data={getPieChartData()} />
           </div>
