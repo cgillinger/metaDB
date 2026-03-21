@@ -9,7 +9,6 @@ import {
   TrendingUp,
   LineChart,
   AlertCircle,
-  Info
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
 
@@ -33,6 +32,13 @@ const CHART_COLORS = [
 ];
 
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
+
+// Composite key for unique account identification across platforms
+const accountKey = (name, platform) => `${name}::${platform}`;
+const parseAccountKey = (key) => {
+  const idx = key.lastIndexOf('::');
+  return { name: key.slice(0, idx), platform: key.slice(idx + 2) };
+};
 
 const calculateNiceYAxis = (maxValue) => {
   if (maxValue <= 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
@@ -74,6 +80,7 @@ const getMonthName = (month) => MONTH_NAMES_SV[month - 1] || String(month);
 
 const TrendAnalysisView = ({ platform, periodParams = {} }) => {
   const [selectedMetric, setSelectedMetric] = useState('interactions');
+  // selectedAccounts stores composite keys: "account_name::platform"
   const [selectedAccounts, setSelectedAccounts] = useState([]);
   const [hoveredDataPoint, setHoveredDataPoint] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -107,6 +114,7 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
           account_name: a.account_name,
           platform: a.platform,
           is_collab: a.is_collab,
+          key: accountKey(a.account_name, a.platform),
         })));
       } catch (error) {
         console.error('Fel vid hämtning av konton:', error);
@@ -124,9 +132,10 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
     const fetchTrends = async () => {
       setLoading(true);
       try {
+        // Send composite keys to backend
         const params = {
           metric: selectedMetric,
-          accountNames: selectedAccounts.join(','),
+          accountKeys: selectedAccounts.join(','),
           granularity: 'month',
           // account_reach always shows all imported months — skip period params
           ...(selectedMetric !== 'account_reach' ? periodParams : {}),
@@ -149,7 +158,7 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
       return { months: [], chartLines: [] };
     }
     const lines = trendData.series.map((series, index) => ({
-      account_id: series.account_id,
+      key: accountKey(series.account_name, series.platform),
       account_name: series.account_name,
       platform: series.platform,
       is_collab: series.is_collab || false,
@@ -179,24 +188,25 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
   // When metric changes to account_reach, remove non-FB accounts from selection
   useEffect(() => {
     if (selectedMetric === 'account_reach') {
-      const fbNames = new Set(accountList.filter(a => a.platform === 'facebook').map(a => a.account_name));
-      setSelectedAccounts(prev => prev.filter(name => fbNames.has(name)));
+      const fbKeys = new Set(accountList.filter(a => a.platform === 'facebook').map(a => a.key));
+      setSelectedAccounts(prev => prev.filter(k => fbKeys.has(k)));
     }
   }, [selectedMetric, accountList]);
 
-  const handleAccountToggle = (accountName) => {
+  const handleAccountToggle = (key) => {
     setSelectedAccounts(current =>
-      current.includes(accountName) ? current.filter(n => n !== accountName) : [...current, accountName]
+      current.includes(key) ? current.filter(k => k !== key) : [...current, key]
     );
   };
 
   const handleToggleAllAccounts = () => {
-    const allNames = filteredAccountList.map(a => a.account_name);
-    const allSelected = allNames.length > 0 && allNames.every(name => selectedAccounts.includes(name));
-    setSelectedAccounts(allSelected ? [] : allNames);
+    const allKeys = filteredAccountList.map(a => a.key);
+    const allSelected = allKeys.length > 0 && allKeys.every(k => selectedAccounts.includes(k));
+    setSelectedAccounts(allSelected ? [] : allKeys);
   };
 
-  const allAccountsSelected = filteredAccountList.length > 0 && filteredAccountList.every(a => selectedAccounts.includes(a.account_name));
+  const allAccountsSelected = filteredAccountList.length > 0 &&
+    filteredAccountList.every(a => selectedAccounts.includes(a.key));
 
   const handleMouseMove = (event, point) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -239,8 +249,13 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
               </div>
               <div className="max-h-48 overflow-y-auto border rounded-md p-3 space-y-2 bg-gray-50">
                 {filteredAccountList.map(account => (
-                  <Label key={account.account_name} className="flex items-center gap-2 cursor-pointer hover:bg-white p-2 rounded">
-                    <input type="checkbox" checked={selectedAccounts.includes(account.account_name)} onChange={() => handleAccountToggle(account.account_name)} className="h-4 w-4 accent-blue-600" />
+                  <Label key={account.key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-2 rounded">
+                    <input
+                      type="checkbox"
+                      checked={selectedAccounts.includes(account.key)}
+                      onChange={() => handleAccountToggle(account.key)}
+                      className="h-4 w-4 accent-blue-600"
+                    />
                     <span className="text-sm font-medium flex items-center gap-1.5">
                       {account.account_name}
                       <PlatformBadge platform={account.platform} />
@@ -257,7 +272,14 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
               <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3 bg-gray-50">
                 {Object.entries(availableMetrics).map(([key, label]) => (
                   <Label key={key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded">
-                    <input type="radio" name="trendMetric" value={key} checked={selectedMetric === key} onChange={() => setSelectedMetric(key)} className="h-4 w-4 border-gray-300 accent-primary" />
+                    <input
+                      type="radio"
+                      name="trendMetric"
+                      value={key}
+                      checked={selectedMetric === key}
+                      onChange={() => setSelectedMetric(key)}
+                      className="h-4 w-4 border-gray-300 accent-primary"
+                    />
                     <span className="text-sm flex items-center gap-1.5">
                       {label}
                       {['account_reach', 'total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
@@ -281,7 +303,7 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
               {/* Legend */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
                 {chartLines.map(line => (
-                  <div key={line.account_id} className="flex items-center gap-2">
+                  <div key={line.key} className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full border flex-shrink-0" style={{ backgroundColor: line.color }} />
                     <span className="text-sm font-medium truncate flex items-center gap-1" title={line.account_name}>
                       {line.account_name.length > 20 ? line.account_name.substring(0, 17) + '...' : line.account_name}
@@ -333,13 +355,13 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
                       point
                     }));
                     return (
-                      <g key={line.account_id}>
+                      <g key={line.key}>
                         {line.points.length > 1 && (
                           <path d={createSmoothPath(pathPoints)} fill="none" stroke={line.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
                         )}
                         {pathPoints.map(({ x, y, point }, index) => (
                           <circle key={index} cx={x} cy={y} r="5" fill={line.color} stroke="white" strokeWidth="2" className="cursor-pointer"
-                            onMouseEnter={(e) => handleMouseMove(e, { ...point, account_name: line.account_name, color: line.color })} />
+                            onMouseEnter={(e) => handleMouseMove(e, { ...point, account_name: line.account_name, platform: line.platform, color: line.color })} />
                         ))}
                       </g>
                     );
