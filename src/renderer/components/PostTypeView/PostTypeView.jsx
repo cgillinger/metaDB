@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
@@ -125,6 +125,19 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
   }, [platform, periodParams]);
 
   useEffect(() => { setCurrentPage(1); }, [platform, pageSize, selectedAccount, periodParams]);
+
+  // Auto-sort when a new field is added
+  const prevFieldsRef = useRef(selectedFields);
+  useEffect(() => {
+    const prev = prevFieldsRef.current;
+    prevFieldsRef.current = selectedFields;
+    if (selectedFields && selectedFields.length > (prev ? prev.length : 0)) {
+      const newField = selectedFields.find(f => !prev || !prev.includes(f));
+      if (newField && ALL_METRIC_FIELDS.includes(newField)) {
+        setSortConfig({ key: newField, direction: 'desc' });
+      }
+    }
+  }, [selectedFields]);
 
   useEffect(() => {
     if (copyStatus.copied) {

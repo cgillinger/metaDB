@@ -5,6 +5,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
 import { Button } from '../ui/button';
 import {
+  CalendarIcon,
   Plus,
   TrendingUp,
   Database
@@ -15,6 +16,7 @@ import PostTypeView from '../PostTypeView';
 import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
 import ImportManager from '../ImportManager/ImportManager';
 import PeriodSelector from '../PeriodSelector';
+import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
 
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
@@ -107,7 +109,11 @@ const ValueSelector = ({ availableFields, selectedFields, onSelectionChange }) =
             }
           }}
         />
-        <Label htmlFor={key}>{label}</Label>
+        <Label htmlFor={key} className="flex items-center gap-1.5">
+          {label}
+          {['total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
+          {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
+        </Label>
       </div>
     ))}
   </div>
@@ -229,6 +235,23 @@ const MainView = ({ onShowUploader }) => {
     return {};
   }, [periodMode, selectedMonths, customRange]);
 
+  const PeriodSummary = () => {
+    let periodText = '';
+    if (periodMode === 'custom' && customRange.from && customRange.to) {
+      periodText = `${customRange.from} – ${customRange.to}`;
+    } else if (periodMode === 'months' && selectedMonths.length > 0) {
+      const sorted = [...selectedMonths].sort();
+      periodText = sorted.length === 1 ? sorted[0] : `${sorted[0]} – ${sorted[sorted.length - 1]}`;
+    }
+    if (!periodText) return null;
+    return (
+      <div className="p-2 border border-gray-200 rounded-md bg-gray-50 flex items-center">
+        <CalendarIcon className="h-4 w-4 mr-2 text-gray-500" />
+        <span className="text-sm text-gray-700">Period: {periodText}</span>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6" data-platform={activePlatform || undefined}>
       <div className="flex justify-between items-center">
@@ -244,22 +267,6 @@ const MainView = ({ onShowUploader }) => {
           </Button>
         </div>
       </div>
-
-      {activeView !== 'trend_analysis' && activeView !== 'imports' && (
-        <Card>
-          <CardContent className="pt-6">
-            <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
-            <ValueSelector
-              availableFields={getAvailableFields()}
-              selectedFields={selectedFields}
-              onSelectionChange={setSelectedFields}
-            />
-            {selectedFields.includes('engagement') && (
-              <EngagementLegend activePlatform={activePlatform} />
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {platformInfo.hasMixed && (
         <div className="flex items-center gap-2">
@@ -296,6 +303,22 @@ const MainView = ({ onShowUploader }) => {
         />
       )}
 
+      {activeView !== 'trend_analysis' && activeView !== 'imports' && (
+        <Card>
+          <CardContent className="pt-6">
+            <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
+            <ValueSelector
+              availableFields={getAvailableFields()}
+              selectedFields={selectedFields}
+              onSelectionChange={setSelectedFields}
+            />
+            {selectedFields.includes('engagement') && (
+              <EngagementLegend activePlatform={activePlatform} />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs value={activeView} onValueChange={setActiveView}>
         <TabsList>
           <TabsTrigger value="account">Per konto</TabsTrigger>
@@ -312,18 +335,22 @@ const MainView = ({ onShowUploader }) => {
         </TabsList>
 
         <TabsContent value="account">
+          <PeriodSummary />
           <AccountView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="post">
+          <PeriodSummary />
           <PostView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="post_type">
+          <PeriodSummary />
           <PostTypeView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="trend_analysis">
+          <PeriodSummary />
           <TrendAnalysisView platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 

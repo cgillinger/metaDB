@@ -240,7 +240,11 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
                 {Object.entries(availableMetrics).map(([key, label]) => (
                   <Label key={key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded">
                     <input type="radio" name="trendMetric" value={key} checked={selectedMetric === key} onChange={() => setSelectedMetric(key)} className="h-4 w-4 border-gray-300 accent-primary" />
-                    <span className="text-sm">{label}</span>
+                    <span className="text-sm flex items-center gap-1.5">
+                      {label}
+                      {['total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
+                      {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
+                    </span>
                   </Label>
                 ))}
               </div>

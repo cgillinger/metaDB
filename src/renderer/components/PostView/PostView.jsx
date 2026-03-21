@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
 import InfoTooltip from '../ui/InfoTooltip';
 import CollabBadge from '../ui/CollabBadge';
@@ -122,6 +122,20 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
   useEffect(() => {
     setCurrentPage(1);
   }, [pageSize, selectedAccount, platform, periodParams]);
+
+  // Auto-sort when a new field is added
+  const prevFieldsRef = useRef(selectedFields);
+  useEffect(() => {
+    const prev = prevFieldsRef.current;
+    prevFieldsRef.current = selectedFields;
+    if (selectedFields.length > prev.length) {
+      const newField = selectedFields.find(f => !prev.includes(f));
+      if (newField && !['description', 'publish_time', 'account_name', 'post_type', 'permalink'].includes(newField)) {
+        setSortConfig({ key: newField, direction: 'desc' });
+        setCurrentPage(1);
+      }
+    }
+  }, [selectedFields]);
 
   const handleSort = (key) => {
     setSortConfig(current => ({
