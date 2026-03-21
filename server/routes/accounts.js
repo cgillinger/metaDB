@@ -101,7 +101,55 @@ router.get('/', (req, res) => {
   `;
   const totals = db.prepare(totalsQuery).get(...params) || {};
 
-  res.json({ accounts, totals });
+  // Fetch account-level reach data if available
+  let reachData = [];
+
+  // Extract which months are being requested
+  let reachMonths = [];
+  if (req.query.months) {
+    reachMonths = req.query.months.split(',').map(m => m.trim());
+  } else if (req.query.dateFrom && req.query.dateTo) {
+    const start = req.query.dateFrom.slice(0, 7);
+    const end = req.query.dateTo.slice(0, 7);
+    let current = start;
+    while (current <= end) {
+      reachMonths.push(current);
+      const [y, m] = current.split('-').map(Number);
+      const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+      current = next;
+    }
+  }
+
+  if (reachMonths.length > 0) {
+    const placeholders = reachMonths.map(() => '?').join(',');
+    reachData = db.prepare(`
+      SELECT account_name, month, reach
+      FROM account_reach
+      WHERE month IN (${placeholders})
+      ORDER BY account_name, month
+    `).all(...reachMonths);
+  } else {
+    // No period filter — get all reach data
+    reachData = db.prepare(`
+      SELECT account_name, month, reach
+      FROM account_reach
+      ORDER BY account_name, month
+    `).all();
+  }
+
+  // Group reach by account_name → { month: reach }
+  const reachByAccount = {};
+  for (const row of reachData) {
+    if (!reachByAccount[row.account_name]) {
+      reachByAccount[row.account_name] = {};
+    }
+    reachByAccount[row.account_name][row.month] = row.reach;
+  }
+
+  // Available reach months (only months that actually have data)
+  const reachMonthsAvailable = [...new Set(reachData.map(r => r.month))].sort();
+
+  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable });
 });
 
 export default router;
