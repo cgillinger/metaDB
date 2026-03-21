@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
 import InfoTooltip from '../ui/InfoTooltip';
 import CollabBadge from '../ui/CollabBadge';
@@ -110,6 +110,20 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedFields, platform, pageSize, periodParams]);
+
+  // Auto-sort when a new field is added
+  const prevFieldsRef = useRef(selectedFields);
+  useEffect(() => {
+    const prev = prevFieldsRef.current;
+    prevFieldsRef.current = selectedFields;
+    if (selectedFields.length > prev.length) {
+      const newField = selectedFields.find(f => !prev.includes(f));
+      if (newField) {
+        const sortKey = newField === 'average_reach' ? 'reach' : newField;
+        setSortConfig({ key: sortKey, direction: 'desc' });
+      }
+    }
+  }, [selectedFields]);
 
   useEffect(() => {
     if (copyStatus.copied) {
