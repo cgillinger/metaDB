@@ -135,7 +135,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {} }) => {
     prevFieldsRef.current = selectedFields;
     if (selectedFields.length > prev.length) {
       const newField = selectedFields.find(f => !prev.includes(f));
-      if (newField) {
+      if (newField && newField !== 'account_reach') {
         const sortKey = newField === 'average_reach' ? 'reach' : newField;
         setSortConfig({ key: sortKey, direction: 'desc' });
       }

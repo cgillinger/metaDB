@@ -161,8 +161,6 @@ router.get('/', (req, res) => {
         ${whereClause}
       )
       AND ar.account_name NOT LIKE 'srholder%'
-      AND ar.account_name NOT LIKE 'Srholder%'
-      AND ar.account_name NOT LIKE 'SRholder%'
     `).all(...reachMonthsAvailable, ...params);
 
     for (const row of reachOnlyAccounts) {
