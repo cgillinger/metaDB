@@ -132,7 +132,7 @@ const ImportManager = ({ onImportsChanged }) => {
             </div>
             <div className="text-center p-3 bg-muted/50 rounded-lg">
               <HardDrive className="h-5 w-5 mx-auto mb-1 text-primary" />
-              <p className="text-2xl font-bold">{formatFileSize(stats?.dbSize)}</p>
+              <p className="text-2xl font-bold">{stats?.fileSize || '–'}</p>
               <p className="text-xs text-muted-foreground">Databasstorlek</p>
             </div>
             <div className="text-center p-3 bg-muted/50 rounded-lg">

@@ -180,6 +180,16 @@ export function parseCSV(csvContent, filename) {
       engagement = interactions + saves + follows;
     }
 
+    // Normalize English post type names to Swedish
+    const POST_TYPE_MAP = {
+      'Photos': 'Foton', 'Photo': 'Foton',
+      'Videos': 'Videor', 'Video': 'Videor',
+      'Links': 'Länkar', 'Link': 'Länkar',
+      'Text': 'Status', 'Live': 'Live',
+    };
+    const rawType = mapped.post_type || null;
+    const normalizedType = rawType && POST_TYPE_MAP[rawType] ? POST_TYPE_MAP[rawType] : rawType;
+
     // Collect date for month derivation
     if (mapped.publish_time) {
       const d = new Date(mapped.publish_time);
@@ -193,7 +203,7 @@ export function parseCSV(csvContent, filename) {
       account_username: mapped.account_username || null,
       description: mapped.description || null,
       publish_time: mapped.publish_time || null,
-      post_type: mapped.post_type || null,
+      post_type: normalizedType,
       permalink: mapped.permalink || null,
       platform,
       views: safeInt(mapped.views),

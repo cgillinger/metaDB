@@ -48,11 +48,6 @@ router.get('/', (req, res) => {
     params.push(req.query.account, req.query.account);
   }
 
-  if (req.query.month) {
-    conditions.push("strftime('%Y-%m', publish_time) = ?");
-    params.push(req.query.month);
-  }
-
   if (req.query.postType) {
     conditions.push('post_type = ?');
     params.push(req.query.postType);
