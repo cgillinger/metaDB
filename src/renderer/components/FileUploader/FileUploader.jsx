@@ -53,6 +53,15 @@ export function FileUploader({ onImportComplete, onCancel }) {
                       preview.includes('Page ID') &&
                       preview.includes('Reach');
 
+      // Try to extract month from filename pattern FB_YYYY_MM.csv
+      let autoMonth = '';
+      if (isReach) {
+        const monthMatch = file.name.match(/(\d{4})[_-](\d{2})\.csv$/i);
+        if (monthMatch) {
+          autoMonth = `${monthMatch[1]}-${monthMatch[2]}`;
+        }
+      }
+
       fileEntries.push({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
         file,
@@ -60,7 +69,7 @@ export function FileUploader({ onImportComplete, onCancel }) {
         error: null,
         result: null,
         fileType: isReach ? 'reach' : 'posts',
-        reachMonth: '',
+        reachMonth: autoMonth,
       });
     }
 
@@ -286,7 +295,24 @@ export function FileUploader({ onImportComplete, onCancel }) {
                           {entry.result.stats?.postsUpdated || 0} uppdaterade
                         </p>
                       )}
-                      {entry.fileType === 'reach' && entry.status === FILE_STATUS.PENDING && (
+                      {entry.fileType === 'reach' && entry.status === FILE_STATUS.PENDING && entry.reachMonth && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Månad: {entry.reachMonth}
+                          <button
+                            type="button"
+                            className="ml-2 text-primary hover:underline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFiles(prev => prev.map(f =>
+                                f.id === entry.id ? { ...f, reachMonth: '' } : f
+                              ));
+                            }}
+                          >
+                            Ändra
+                          </button>
+                        </p>
+                      )}
+                      {entry.fileType === 'reach' && entry.status === FILE_STATUS.PENDING && !entry.reachMonth && (
                         <div className="mt-1 flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">Månad:</span>
                           <input
