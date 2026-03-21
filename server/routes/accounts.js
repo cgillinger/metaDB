@@ -150,21 +150,23 @@ router.get('/', (req, res) => {
   // Available reach months (only months that actually have data)
   const reachMonthsAvailable = [...new Set(reachData.map(r => r.month))].sort();
 
-  // Include reach-only accounts (accounts in account_reach but not in posts)
-  if (req.query.includeReachOnly === 'true' && reachMonthsAvailable.length > 0) {
+  // Include reach-only accounts (accounts in account_reach but not in posts).
+  // Auto-include when there are no post-based accounts but reach data exists,
+  // or when explicitly requested via includeReachOnly toggle.
+  const hasPostAccounts = accounts.length > 0;
+  const shouldIncludeReachOnly = req.query.includeReachOnly === 'true' || !hasPostAccounts;
+  if (shouldIncludeReachOnly && reachMonthsAvailable.length > 0) {
+    const existingAccountNames = new Set(accounts.map(a => a.account_name));
     const reachPlaceholders = reachMonthsAvailable.map(() => '?').join(',');
     const reachOnlyAccounts = db.prepare(`
       SELECT DISTINCT ar.account_name
       FROM account_reach ar
       WHERE ar.month IN (${reachPlaceholders})
-      AND ar.account_name NOT IN (
-        SELECT DISTINCT account_name FROM posts
-        ${whereClause}
-      )
       AND ar.account_name NOT LIKE 'srholder%'
-    `).all(...reachMonthsAvailable, ...params);
+    `).all(...reachMonthsAvailable);
 
     for (const row of reachOnlyAccounts) {
+      if (existingAccountNames.has(row.account_name)) continue;
       accounts.push({
         account_id: null,
         account_name: row.account_name,
