@@ -32,6 +32,26 @@ export const FB_COLUMN_MAPPINGS = {
   "Övriga klick": "other_clicks"
 };
 
+// English Facebook CSV column mappings (Meta exports in user's UI language)
+export const FB_COLUMN_MAPPINGS_EN = {
+  "Post ID": "post_id",
+  "Page ID": "account_id",
+  "Page name": "account_name",
+  "Title": "description",
+  "Publish time": "publish_time",
+  "Post type": "post_type",
+  "Permalink": "permalink",
+  "Impressions": "views",
+  "Reach": "reach",
+  "Reactions, Comments and Shares": "interactions",
+  "Reactions": "likes",
+  "Comments": "comments",
+  "Shares": "shares",
+  "Total clicks": "total_clicks",
+  "Link Clicks": "link_clicks",
+  "Other Clicks": "other_clicks"
+};
+
 // Instagram CSV column mappings
 export const IG_COLUMN_MAPPINGS = {
   "Publicerings-id": "post_id",
@@ -49,6 +69,25 @@ export const IG_COLUMN_MAPPINGS = {
   "Delningar": "shares",
   "Följer": "follows",
   "Sparade objekt": "saves"
+};
+
+// English Instagram CSV column mappings
+export const IG_COLUMN_MAPPINGS_EN = {
+  "Post ID": "post_id",
+  "Account ID": "account_id",
+  "Account username": "account_username",
+  "Account name": "account_name",
+  "Description": "description",
+  "Publish time": "publish_time",
+  "Post type": "post_type",
+  "Permalink": "permalink",
+  "Impressions": "views",
+  "Reach": "reach",
+  "Likes": "likes",
+  "Comments": "comments",
+  "Shares": "shares",
+  "Follows": "follows",
+  "Saves": "saves"
 };
 
 // Display names for UI (Swedish)
@@ -97,12 +136,20 @@ export function detectPlatform(headers) {
   if (!headers || !Array.isArray(headers)) return null;
   const headerSet = new Set(headers.map(h => normalizeText(h)));
 
-  // Facebook-specific columns
+  // Swedish Facebook
   if (headerSet.has(normalizeText('Sid-id')) || headerSet.has(normalizeText('Sidnamn'))) {
     return 'facebook';
   }
-  // Instagram-specific columns
+  // English Facebook
+  if (headerSet.has(normalizeText('Page ID')) || headerSet.has(normalizeText('Page name'))) {
+    return 'facebook';
+  }
+  // Swedish Instagram
   if (headerSet.has(normalizeText('Konto-id')) || headerSet.has(normalizeText('Kontots användarnamn'))) {
+    return 'instagram';
+  }
+  // English Instagram
+  if (headerSet.has(normalizeText('Account ID')) || headerSet.has(normalizeText('Account username'))) {
     return 'instagram';
   }
   return null;
@@ -112,9 +159,9 @@ export function detectPlatform(headers) {
  * Get column mappings for a detected platform
  */
 export function getMappingsForPlatform(platform) {
-  if (platform === 'facebook') return FB_COLUMN_MAPPINGS;
-  if (platform === 'instagram') return IG_COLUMN_MAPPINGS;
-  return { ...FB_COLUMN_MAPPINGS, ...IG_COLUMN_MAPPINGS };
+  if (platform === 'facebook') return { ...FB_COLUMN_MAPPINGS, ...FB_COLUMN_MAPPINGS_EN };
+  if (platform === 'instagram') return { ...IG_COLUMN_MAPPINGS, ...IG_COLUMN_MAPPINGS_EN };
+  return { ...FB_COLUMN_MAPPINGS, ...FB_COLUMN_MAPPINGS_EN, ...IG_COLUMN_MAPPINGS, ...IG_COLUMN_MAPPINGS_EN };
 }
 
 /**
