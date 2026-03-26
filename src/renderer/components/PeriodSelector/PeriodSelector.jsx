@@ -112,6 +112,7 @@ const PeriodSelector = ({
     if (d.has_facebook && d.has_instagram) return 'bg-purple-600 text-white';
     if (d.has_instagram) return 'bg-pink-600 text-white';
     if (d.has_facebook) return 'bg-blue-600 text-white';
+    if (d.has_ga_listens) return 'bg-green-600 text-white';
     return 'bg-primary text-primary-foreground';
   };
 
@@ -200,7 +201,8 @@ const PeriodSelector = ({
                       const name = MONTH_NAMES_SV[monthNum - 1];
                       const isSelected = selectedSet.has(monthKey);
                       const count = monthData.post_count;
-                      const reachOnly = count === 0 && monthData.has_reach;
+                      const gaOnly = count === 0 && monthData.has_ga_listens && !monthData.has_facebook && !monthData.has_instagram;
+                      const reachOnly = count === 0 && monthData.has_reach && !gaOnly;
 
                       return (
                         <button
@@ -214,7 +216,7 @@ const PeriodSelector = ({
                         >
                           <span className="block">{name}</span>
                           <span className={`block text-xs ${isSelected ? 'opacity-80' : 'text-gray-400'}`}>
-                            {reachOnly ? 'räckvidd' : count.toLocaleString('sv-SE')}
+                            {gaOnly ? 'lyssningar' : reachOnly ? 'räckvidd' : count.toLocaleString('sv-SE')}
                           </span>
                         </button>
                       );
