@@ -134,6 +134,7 @@ const MainView = ({ onShowUploader }) => {
   const [platformFilter, setPlatformFilter] = useState('all');
   const [stats, setStats] = useState(null);
   const [imports, setImports] = useState([]);
+  // True when at least one month of GA listening data is available
   const [hasGAListens, setHasGAListens] = useState(false);
 
   // Period selection
@@ -239,6 +240,43 @@ const MainView = ({ onShowUploader }) => {
     }
   }, [platformFilter]);
 
+  // Filter and re-map coverage months based on the active platform filter so
+  // PeriodSelector only shows months that are relevant for the selected platform.
+  const filteredCoverageData = useMemo(() => {
+    if (platformFilter === 'facebook') {
+      // Show months with Facebook posts or reach data; display fb_count as the number
+      return coverageData
+        .filter(m => (m.fb_count ?? 0) > 0 || m.has_reach)
+        .map(m => ({ ...m, post_count: m.fb_count ?? 0 }));
+    }
+    if (platformFilter === 'instagram') {
+      return coverageData
+        .filter(m => (m.ig_count ?? 0) > 0)
+        .map(m => ({ ...m, post_count: m.ig_count ?? 0 }));
+    }
+    if (platformFilter === 'ga_listens') {
+      // Display the number of programmes with listening data for the month
+      return coverageData
+        .filter(m => (m.ga_listens_count ?? 0) > 0)
+        .map(m => ({ ...m, post_count: m.ga_listens_count ?? 0 }));
+    }
+    // 'all' — keep existing coverage data unchanged
+    return coverageData;
+  }, [coverageData, platformFilter]);
+
+  // When the platform filter changes, keep the current month selection only if
+  // all selected months are still available in the filtered set.
+  // Otherwise fall back to the latest available month.
+  useEffect(() => {
+    if (filteredCoverageData.length === 0) return;
+    const available = new Set(filteredCoverageData.map(m => m.month));
+    const allAvailable = selectedMonths.length > 0 && selectedMonths.every(m => available.has(m));
+    if (!allAvailable) {
+      const sorted = [...filteredCoverageData].sort((a, b) => b.month.localeCompare(a.month));
+      setSelectedMonths([sorted[0].month]);
+    }
+  }, [platformFilter, filteredCoverageData]);
+
   const periodParams = useMemo(() => {
     if (periodMode === 'custom' && customRange.from && customRange.to) {
       return { dateFrom: customRange.from, dateTo: customRange.to };
@@ -316,6 +354,7 @@ const MainView = ({ onShowUploader }) => {
                 : `Instagram (${platformInfo.igPosts})`}
             </button>
           )}
+          {/* GA Listens button — always shown when GA data exists */}
           {hasGAListens && (
             <button
               onClick={() => setPlatformFilter('ga_listens')}
@@ -331,9 +370,9 @@ const MainView = ({ onShowUploader }) => {
         </div>
       )}
 
-      {activeView !== 'imports' && coverageData.length > 0 && (
+      {activeView !== 'imports' && filteredCoverageData.length > 0 && (
         <PeriodSelector
-          availableMonths={coverageData}
+          availableMonths={filteredCoverageData}
           selectedMonths={selectedMonths}
           onMonthsChange={setSelectedMonths}
           customRange={customRange}

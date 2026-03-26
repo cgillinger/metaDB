@@ -1,21 +1,9 @@
+/**
+ * TrendAnalysisView — month-over-month line chart for selected accounts.
+ * Supports both Meta post metrics (standard mode) and GA listens
+ * (gaListensMode), where chart lines represent programme listening trends.
+ */
 import React, { useState, useEffect, useMemo } from 'react';
-
-const P4_CHANNELS = new Set([
-  'P4 Blekinge', 'P4 Dalarna', 'P4 Fyrbodal', 'P4 Göteborg',
-  'P4 Gävleborg', 'P4 Gotland', 'P4 Halland', 'P4 Jämtland',
-  'P4 Jönköping', 'P4 Kalmar', 'P4 Kristianstad', 'P4 Kronoberg',
-  'P4 Malmöhus', 'P4 Norrbotten', 'P4 Sjuhärad', 'P4 Skaraborg',
-  'P4 Stockholm', 'P4 Sörmland', 'P4 Uppland', 'P4 Värmland',
-  'P4 Västerbotten', 'P4 Västernorrland', 'P4 Västmanland',
-  'P4 Väst', 'P4 Östergötland',
-]);
-
-const sortGAPrograms = (a, b) => {
-  const ga = P4_CHANNELS.has(a) ? 0 : 1;
-  const gb = P4_CHANNELS.has(b) ? 0 : 1;
-  if (ga !== gb) return ga - gb;
-  return a.localeCompare(b, 'sv');
-};
 import PlatformBadge from '../ui/PlatformBadge';
 import CollabBadge from '../ui/CollabBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -28,6 +16,28 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
+
+// P4 Lokalt regional channel names — explicit Set for O(1) membership lookup.
+const P4_CHANNELS = new Set([
+  'P4 Blekinge', 'P4 Dalarna', 'P4 Fyrbodal', 'P4 Göteborg',
+  'P4 Gävleborg', 'P4 Gotland', 'P4 Halland', 'P4 Jämtland',
+  'P4 Jönköping', 'P4 Kalmar', 'P4 Kristianstad', 'P4 Kronoberg',
+  'P4 Malmöhus', 'P4 Norrbotten', 'P4 Sjuhärad', 'P4 Skaraborg',
+  'P4 Stockholm', 'P4 Sörmland', 'P4 Uppland', 'P4 Värmland',
+  'P4 Västerbotten', 'P4 Västernorrland', 'P4 Västmanland',
+  'P4 Väst', 'P4 Östergötland',
+]);
+
+/**
+ * Comparator that places P4 Lokalt channels first, then all other programmes,
+ * each group sorted alphabetically with Swedish locale.
+ */
+const sortGAPrograms = (a, b) => {
+  const ga = P4_CHANNELS.has(a) ? 0 : 1;
+  const gb = P4_CHANNELS.has(b) ? 0 : 1;
+  if (ga !== gb) return ga - gb;
+  return a.localeCompare(b, 'sv');
+};
 
 const TREND_METRICS_COMMON = {
   'views': 'Visningar',
@@ -106,11 +116,11 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
   const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // GA Listens state
-  const [gaRawData, setGaRawData] = useState([]);
-  const [gaAccountList, setGaAccountList] = useState([]);
+  // GA Listens state — populated only when gaListensMode is true
+  const [gaRawData, setGaRawData] = useState([]);       // flat rows from API
+  const [gaAccountList, setGaAccountList] = useState([]); // sorted account objects
 
-  // Clear selection when switching between GA and post mode
+  // Clear selection and trend data when switching between GA and post mode
   useEffect(() => {
     setSelectedAccounts([]);
     setTrendData(null);
@@ -206,7 +216,7 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
     return calculateNiceYAxis(Math.max(...allValues));
   }, [chartLines]);
 
-  // Fetch GA listens data
+  // Fetch GA listens data and build the sorted account list
   useEffect(() => {
     if (!gaListensMode) return;
     const fetchGA = async () => {
@@ -231,7 +241,8 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
     fetchGA();
   }, [gaListensMode, periodParams]);
 
-  // GA pivot: account_name → month → listens
+  // GA pivot: { account_name → { 'YYYY-MM' → listens } }
+  // Computed only in GA mode to avoid unnecessary work in posts mode.
   const gaPivot = useMemo(() => {
     if (!gaListensMode) return {};
     const map = {};
@@ -269,7 +280,7 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
     return calculateNiceYAxis(Math.max(...allValues));
   }, [gaChartLines]);
 
-  // Unified display values: GA mode or post mode
+  // Transparent switchers so the SVG chart render logic below needs no branching.
   const displayMonths    = gaListensMode ? gaMonths    : months;
   const displayChartLines = gaListensMode ? gaChartLines : chartLines;
   const displayYAxisConfig = gaListensMode ? gaYAxisConfig : yAxisConfig;

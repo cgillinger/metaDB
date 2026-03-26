@@ -1,21 +1,9 @@
+/**
+ * AccountView — per-account statistics table.
+ * Supports both Meta post metrics (standard mode) and a GA listens pivot
+ * table (gaListensMode), showing programme × month listening counts.
+ */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-
-const P4_CHANNELS = new Set([
-  'P4 Blekinge', 'P4 Dalarna', 'P4 Fyrbodal', 'P4 Göteborg',
-  'P4 Gävleborg', 'P4 Gotland', 'P4 Halland', 'P4 Jämtland',
-  'P4 Jönköping', 'P4 Kalmar', 'P4 Kristianstad', 'P4 Kronoberg',
-  'P4 Malmöhus', 'P4 Norrbotten', 'P4 Sjuhärad', 'P4 Skaraborg',
-  'P4 Stockholm', 'P4 Sörmland', 'P4 Uppland', 'P4 Värmland',
-  'P4 Västerbotten', 'P4 Västernorrland', 'P4 Västmanland',
-  'P4 Väst', 'P4 Östergötland',
-]);
-
-const sortGAPrograms = (a, b) => {
-  const ga = P4_CHANNELS.has(a) ? 0 : 1;
-  const gb = P4_CHANNELS.has(b) ? 0 : 1;
-  if (ga !== gb) return ga - gb;
-  return a.localeCompare(b, 'sv');
-};
 import PlatformBadge from '../ui/PlatformBadge';
 import InfoTooltip from '../ui/InfoTooltip';
 import CollabBadge from '../ui/CollabBadge';
@@ -32,6 +20,30 @@ import {
   ENGAGEMENT_INFO
 } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
+
+// P4 Lokalt regional channel names, kept as an explicit Set for O(1) membership
+// lookup. Explicit enumeration is intentional — the list is stable and finite.
+const P4_CHANNELS = new Set([
+  'P4 Blekinge', 'P4 Dalarna', 'P4 Fyrbodal', 'P4 Göteborg',
+  'P4 Gävleborg', 'P4 Gotland', 'P4 Halland', 'P4 Jämtland',
+  'P4 Jönköping', 'P4 Kalmar', 'P4 Kristianstad', 'P4 Kronoberg',
+  'P4 Malmöhus', 'P4 Norrbotten', 'P4 Sjuhärad', 'P4 Skaraborg',
+  'P4 Stockholm', 'P4 Sörmland', 'P4 Uppland', 'P4 Värmland',
+  'P4 Västerbotten', 'P4 Västernorrland', 'P4 Västmanland',
+  'P4 Väst', 'P4 Östergötland',
+]);
+
+/**
+ * Sort comparator for GA programme lists.
+ * P4 Lokalt channels (group 0) sort before all other programmes (group 1),
+ * with Swedish locale-aware alphabetical order applied within each group.
+ */
+const sortGAPrograms = (a, b) => {
+  const ga = P4_CHANNELS.has(a) ? 0 : 1;
+  const gb = P4_CHANNELS.has(b) ? 0 : 1;
+  if (ga !== gb) return ga - gb;
+  return a.localeCompare(b, 'sv');
+};
 
 const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'views': 'Visningar',
@@ -108,9 +120,9 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
   const [showReachOnlyAccounts, setShowReachOnlyAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // GA Listens state
-  const [gaData, setGaData] = useState([]);
-  const [gaMonths, setGaMonths] = useState([]);
+  // GA Listens state — populated only when gaListensMode is true
+  const [gaData, setGaData] = useState([]);   // flat rows: {account_name, month, listens}
+  const [gaMonths, setGaMonths] = useState([]); // sorted unique months in current period
   const [gaSortConfig, setGaSortConfig] = useState({ key: null, direction: 'desc' });
   const [gaLoading, setGaLoading] = useState(false);
 
@@ -290,7 +302,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
 
   const totalPages = Math.ceil(accountData.length / pageSize);
 
-  // GA pivot: { programnamn → { month → listens } }
+  // Transform flat GA rows into a pivot: { programnamn → { 'YYYY-MM' → listens } }
   const gaPivot = useMemo(() => {
     const map = {};
     for (const row of gaData) {
@@ -300,7 +312,8 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     return map;
   }, [gaData]);
 
-  // GA column totals
+  // Sum listens per month across all programmes for the totals row.
+  // Listens are summed (not averaged) because each row represents distinct sessions.
   const gaTotals = useMemo(() => {
     const totals = {};
     for (const monthMap of Object.values(gaPivot)) {
@@ -311,7 +324,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     return totals;
   }, [gaPivot]);
 
-  // GA sorted program list
+  // Programme list sorted by gaSortConfig (column sort) or default P4-first order
   const gaSortedPrograms = useMemo(() => {
     const programs = Object.keys(gaPivot);
     if (!gaSortConfig.key) return [...programs].sort(sortGAPrograms);
@@ -442,7 +455,8 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     }
   };
 
-  // ── GA Listens mode ──────────────────────────────────────────────────────
+  // Early-return GA block — placed after all hooks to satisfy React rules of hooks.
+  // Renders a standalone pivot table; the normal Meta table is never reached.
   if (gaListensMode) {
     if (gaLoading) {
       return (

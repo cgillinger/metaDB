@@ -49,10 +49,12 @@ export function FileUploader({ onImportComplete, onCancel }) {
         reader.readAsText(file.slice(0, 4096));
       });
 
+      // Reach export: identified by the combination of Page, Page ID and Reach headers
       const isReach = preview.includes('Page') &&
                       preview.includes('Page ID') &&
                       preview.includes('Reach');
 
+      // GA listens export: must have Programnamn and at least one "lyssningar" column
       const isGaListens = !isReach &&
         preview.includes('Programnamn') &&
         preview.some(h => h.toLowerCase().includes('lyssningar'));
@@ -153,6 +155,7 @@ export function FileUploader({ onImportComplete, onCancel }) {
           }
           result = await api.uploadReachCSV(entry.file, entry.reachMonth);
         } else if (entry.fileType === 'ga_listens') {
+          // Month is mandatory because GA exports contain no date information
           if (!entry.gaListensMonth) {
             throw new Error('Ange vilken månad lyssnarfilen gäller.');
           }

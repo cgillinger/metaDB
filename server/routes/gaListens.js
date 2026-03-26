@@ -1,3 +1,7 @@
+/**
+ * GA Listens router — /api/ga-listens
+ * Handles upload, retrieval, and deletion of Google Analytics listening data.
+ */
 import { Router } from 'express';
 import multer from 'multer';
 import fs from 'fs';

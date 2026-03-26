@@ -1,3 +1,7 @@
+/**
+ * PeriodSelector — interactive month-picker with collapsible year groups.
+ * Accepts pre-filtered availableMonths so callers control which months appear.
+ */
 import React, { useMemo, useState } from 'react';
 import { Calendar, SlidersHorizontal, ChevronRight } from 'lucide-react';
 
@@ -112,7 +116,7 @@ const PeriodSelector = ({
     if (d.has_facebook && d.has_instagram) return 'bg-purple-600 text-white';
     if (d.has_instagram) return 'bg-pink-600 text-white';
     if (d.has_facebook) return 'bg-blue-600 text-white';
-    if (d.has_ga_listens) return 'bg-green-600 text-white';
+    if (d.has_ga_listens) return 'bg-green-600 text-white'; // GA-only month
     return 'bg-primary text-primary-foreground';
   };
 
@@ -201,6 +205,7 @@ const PeriodSelector = ({
                       const name = MONTH_NAMES_SV[monthNum - 1];
                       const isSelected = selectedSet.has(monthKey);
                       const count = monthData.post_count;
+                      // gaOnly: no posts, only GA data — show "lyssningar" subtitle instead of 0
                       const gaOnly = count === 0 && monthData.has_ga_listens && !monthData.has_facebook && !monthData.has_instagram;
                       const reachOnly = count === 0 && monthData.has_reach && !gaOnly;
 

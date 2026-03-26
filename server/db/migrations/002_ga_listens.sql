@@ -1,3 +1,7 @@
+-- Migration 002: GA Listens
+-- Stores monthly listening data exported from Google Analytics.
+-- One row per programme per month; listens = number of sessions ≥5 seconds.
+
 CREATE TABLE IF NOT EXISTS ga_listens (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   account_name TEXT NOT NULL,
@@ -6,7 +10,7 @@ CREATE TABLE IF NOT EXISTS ga_listens (
   imported_at TEXT DEFAULT (datetime('now')),
   source_filename TEXT,
 
-  UNIQUE(account_name, month)       -- En rad per konto per månad
+  UNIQUE(account_name, month)       -- one row per programme per month
 );
 
 CREATE INDEX IF NOT EXISTS idx_ga_listens_month ON ga_listens(month);

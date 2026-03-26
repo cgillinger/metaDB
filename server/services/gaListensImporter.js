@@ -1,3 +1,8 @@
+/**
+ * gaListensImporter — import and query GA listening data.
+ * Handles detection, parsing, and upsert of monthly programme listen counts
+ * exported from Google Analytics.
+ */
 import Papa from 'papaparse';
 import { getDb } from '../db/connection.js';
 
