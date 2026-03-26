@@ -1,4 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
+
+const P4_CHANNELS = new Set([
+  'P4 Blekinge', 'P4 Dalarna', 'P4 Fyrbodal', 'P4 Göteborg',
+  'P4 Gävleborg', 'P4 Gotland', 'P4 Halland', 'P4 Jämtland',
+  'P4 Jönköping', 'P4 Kalmar', 'P4 Kristianstad', 'P4 Kronoberg',
+  'P4 Malmöhus', 'P4 Norrbotten', 'P4 Sjuhärad', 'P4 Skaraborg',
+  'P4 Stockholm', 'P4 Sörmland', 'P4 Uppland', 'P4 Värmland',
+  'P4 Västerbotten', 'P4 Västernorrland', 'P4 Västmanland',
+  'P4 Väst', 'P4 Östergötland',
+]);
+
+const sortGAPrograms = (a, b) => {
+  const ga = P4_CHANNELS.has(a) ? 0 : 1;
+  const gb = P4_CHANNELS.has(b) ? 0 : 1;
+  if (ga !== gb) return ga - gb;
+  return a.localeCompare(b, 'sv');
+};
 import PlatformBadge from '../ui/PlatformBadge';
 import CollabBadge from '../ui/CollabBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -200,9 +217,7 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
         const result = await api.getGAListens(months);
         const rows = result.data || [];
         setGaRawData(rows);
-        const names = [...new Set(rows.map(r => r.account_name))].sort((a, b) =>
-          a.localeCompare(b, 'sv')
-        );
+        const names = [...new Set(rows.map(r => r.account_name))].sort(sortGAPrograms);
         setGaAccountList(names.map(name => ({
           account_name: name,
           platform: 'ga_listens',
