@@ -104,6 +104,12 @@ export const api = {
   /** @param {string} month - 'YYYY-MM' */
   deleteGAListensMonth: (month) =>
     fetch(`/api/ga-listens/${month}`, { method: 'DELETE' }).then(handleResponse),
+
+  // Posts — delete by account + period
+  deleteAccountPosts: (accountName, platform, periodParams) => {
+    const params = new URLSearchParams({ accountName, platform, ...periodParams });
+    return fetch(`/api/posts/by-account?${params}`, { method: 'DELETE' }).then(handleResponse);
+  },
 };
 
 // --- Client-side export utilities (unchanged from storageService.js) ---
