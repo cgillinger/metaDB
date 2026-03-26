@@ -86,6 +86,19 @@ export const api = {
       : '';
     return fetch(`/api/ga-listens${params}`).then(handleResponse);
   },
+  /**
+   * Fetch aggregated GA listens per programme, summed across selected months.
+   * @param {string[]|null} months - Array of 'YYYY-MM' strings, or null for all
+   * @param {'asc'|'desc'} order
+   * @returns {Promise<{programmes: Array<{account_name: string, total_listens: number, month_count: number}>, grandTotal: number}>}
+   */
+  getGAListensSummary: (months, order = 'desc') => {
+    const params = new URLSearchParams();
+    if (months && months.length > 0) params.set('months', months.join(','));
+    if (order) params.set('order', order);
+    const qs = params.toString();
+    return fetch(`/api/ga-listens/summary${qs ? '?' + qs : ''}`).then(handleResponse);
+  },
   /** @returns {Promise<{months: string[]}>} */
   getGAListensMonths: () => fetch('/api/ga-listens/months').then(handleResponse),
   /** @param {string} month - 'YYYY-MM' */

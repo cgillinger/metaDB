@@ -120,10 +120,9 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
   const [showReachOnlyAccounts, setShowReachOnlyAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // GA Listens state — populated only when gaListensMode is true
-  const [gaData, setGaData] = useState([]);   // flat rows: {account_name, month, listens}
-  const [gaMonths, setGaMonths] = useState([]); // sorted unique months in current period
-  const [gaSortConfig, setGaSortConfig] = useState({ key: null, direction: 'desc' });
+  // GA Listens state — summerade lyssningar per program
+  const [gaSummary, setGaSummary] = useState({ programmes: [], grandTotal: 0 });
+  const [gaSortDir, setGaSortDir] = useState('desc');
   const [gaLoading, setGaLoading] = useState(false);
 
   // Fetch account data from API
@@ -160,33 +159,25 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     fetchData();
   }, [selectedFields, platform, periodParams, showReachOnlyAccounts]);
 
-  // Fetch GA listens data
+  // Fetch summerade GA-lyssningar
   useEffect(() => {
     if (!gaListensMode) return;
-    const fetchGAData = async () => {
+    const fetchGASummary = async () => {
       setGaLoading(true);
       try {
         const months = periodParams.months
           ? periodParams.months.split(',').map(m => m.trim())
           : null;
-        const result = await api.getGAListens(months);
-        const rows = result.data || [];
-        setGaData(rows);
-        const monthsSet = new Set(rows.map(r => r.month));
-        const sortedMonths = [...monthsSet].sort();
-        setGaMonths(sortedMonths);
-        // Default sort: latest month descending
-        if (sortedMonths.length > 0) {
-          setGaSortConfig({ key: sortedMonths[sortedMonths.length - 1], direction: 'desc' });
-        }
+        const result = await api.getGAListensSummary(months, gaSortDir);
+        setGaSummary(result);
       } catch (err) {
         console.error('Fel vid hämtning av GA-lyssningar:', err);
       } finally {
         setGaLoading(false);
       }
     };
-    fetchGAData();
-  }, [gaListensMode, periodParams]);
+    fetchGASummary();
+  }, [gaListensMode, periodParams, gaSortDir]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -302,38 +293,6 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
 
   const totalPages = Math.ceil(accountData.length / pageSize);
 
-  // Transform flat GA rows into a pivot: { programnamn → { 'YYYY-MM' → listens } }
-  const gaPivot = useMemo(() => {
-    const map = {};
-    for (const row of gaData) {
-      if (!map[row.account_name]) map[row.account_name] = {};
-      map[row.account_name][row.month] = row.listens;
-    }
-    return map;
-  }, [gaData]);
-
-  // Sum listens per month across all programmes for the totals row.
-  // Listens are summed (not averaged) because each row represents distinct sessions.
-  const gaTotals = useMemo(() => {
-    const totals = {};
-    for (const monthMap of Object.values(gaPivot)) {
-      for (const [month, val] of Object.entries(monthMap)) {
-        totals[month] = (totals[month] || 0) + val;
-      }
-    }
-    return totals;
-  }, [gaPivot]);
-
-  // Programme list sorted by gaSortConfig (column sort) or default P4-first order
-  const gaSortedPrograms = useMemo(() => {
-    const programs = Object.keys(gaPivot);
-    if (!gaSortConfig.key) return [...programs].sort(sortGAPrograms);
-    return [...programs].sort((a, b) => {
-      const aVal = gaPivot[a][gaSortConfig.key] ?? -1;
-      const bVal = gaPivot[b][gaSortConfig.key] ?? -1;
-      return gaSortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
-    });
-  }, [gaPivot, gaSortConfig]);
 
   const getFieldValue = (account, field) => {
     // Map average_reach → reach from API
@@ -355,42 +314,6 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     return getFieldValue(account, field);
   };
 
-  // GA helpers
-  const formatGAMonthHeader = (month) => {
-    const [year, m] = month.split('-');
-    return `${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${year.slice(2)}`;
-  };
-
-  const getGASortIcon = (monthKey) => {
-    if (gaSortConfig.key !== monthKey) return <ArrowUpDown className="h-4 w-4 ml-1" />;
-    return gaSortConfig.direction === 'asc'
-      ? <ArrowUp className="h-4 w-4 ml-1" />
-      : <ArrowDown className="h-4 w-4 ml-1" />;
-  };
-
-  const handleGAExportCSV = () => {
-    const headers = ['Programnamn', ...gaMonths.map(formatGAMonthHeader)];
-    const rows = gaSortedPrograms.map(prog => [
-      prog,
-      ...gaMonths.map(m => gaPivot[prog][m] ?? ''),
-    ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.map(v => {
-      const s = String(v);
-      return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
-    }).join(','))].join('\n');
-    downloadFile(csvContent, 'ga-lyssningar.csv', 'text/csv;charset=utf-8;');
-  };
-
-  const handleGAExportExcel = async () => {
-    const exportData = gaSortedPrograms.map(prog => {
-      const row = { 'Programnamn': prog };
-      for (const m of gaMonths) {
-        row[formatGAMonthHeader(m)] = gaPivot[prog][m] ?? '';
-      }
-      return row;
-    });
-    await downloadExcel(exportData, 'ga-lyssningar.xlsx');
-  };
 
   // Format data for export
   const formatDataForExport = (exportData) => {
@@ -456,7 +379,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
   };
 
   // Early-return GA block — placed after all hooks to satisfy React rules of hooks.
-  // Renders a standalone pivot table; the normal Meta table is never reached.
+  // Renders a summerad tabell (en kolumn); den normala Meta-tabellen nås aldrig.
   if (gaListensMode) {
     if (gaLoading) {
       return (
@@ -465,13 +388,40 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
         </Card>
       );
     }
-    if (gaData.length === 0) {
+    if (gaSummary.programmes.length === 0) {
       return (
         <Card className="p-6">
           <p className="text-center text-muted-foreground">Ingen GA-lyssningsdata tillgänglig för vald period</p>
         </Card>
       );
     }
+
+    const handleGAExportCSV = () => {
+      const headers = ['#', 'Programnamn', 'Lyssningar'];
+      const rows = gaSummary.programmes.map((prog, idx) => [
+        idx + 1,
+        prog.account_name,
+        prog.total_listens,
+      ]);
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(r => r.map(v => {
+          const s = String(v);
+          return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
+        }).join(','))
+      ].join('\n');
+      downloadFile(csvContent, 'ga-lyssningar.csv', 'text/csv;charset=utf-8;');
+    };
+
+    const handleGAExportExcel = async () => {
+      const exportData = gaSummary.programmes.map((prog, idx) => ({
+        '#': idx + 1,
+        'Programnamn': prog.account_name,
+        'Lyssningar': prog.total_listens,
+      }));
+      await downloadExcel(exportData, 'ga-lyssningar.xlsx');
+    };
+
     return (
       <Card className="p-4">
         <div className="flex items-center justify-between mb-4">
@@ -491,21 +441,17 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
               <TableRow>
                 <TableHead className="w-10 text-center">#</TableHead>
                 <TableHead>Programnamn</TableHead>
-                {gaMonths.map(month => (
-                  <TableHead
-                    key={month}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setGaSortConfig(prev => ({
-                      key: month,
-                      direction: prev.key === month && prev.direction === 'asc' ? 'desc' : 'asc',
-                    }))}
-                  >
-                    <div className="flex items-center justify-end whitespace-nowrap">
-                      {formatGAMonthHeader(month)}
-                      {getGASortIcon(month)}
-                    </div>
-                  </TableHead>
-                ))}
+                <TableHead
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => setGaSortDir(prev => prev === 'asc' ? 'desc' : 'asc')}
+                >
+                  <div className="flex items-center justify-end whitespace-nowrap">
+                    Lyssningar
+                    {gaSortDir === 'asc'
+                      ? <ArrowUp className="h-4 w-4 ml-1" />
+                      : <ArrowDown className="h-4 w-4 ml-1" />}
+                  </div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -516,29 +462,23 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                   <Calculator className="w-4 h-4 mr-2 text-primary" />
                   <span className="text-primary">Totalt</span>
                 </TableCell>
-                {gaMonths.map(month => (
-                  <TableCell key={month} className="text-right font-semibold text-primary">
-                    {formatValue(gaTotals[month])}
-                  </TableCell>
-                ))}
+                <TableCell className="text-right font-semibold text-primary">
+                  {formatValue(gaSummary.grandTotal)}
+                </TableCell>
               </TableRow>
-              {gaSortedPrograms.map((prog, idx) => (
-                <TableRow key={prog}>
+              {gaSummary.programmes.map((prog, idx) => (
+                <TableRow key={prog.account_name}>
                   <TableCell className="text-center font-medium">{idx + 1}</TableCell>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
-                      <ProfileIcon accountName={prog} />
-                      <span>{prog}</span>
+                      <ProfileIcon accountName={prog.account_name} />
+                      <span>{prog.account_name}</span>
                       <PlatformBadge platform="ga_listens" />
                     </div>
                   </TableCell>
-                  {gaMonths.map(month => (
-                    <TableCell key={month} className="text-right">
-                      {gaPivot[prog][month] !== undefined
-                        ? formatValue(gaPivot[prog][month])
-                        : <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                  ))}
+                  <TableCell className="text-right">
+                    {formatValue(prog.total_listens)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
