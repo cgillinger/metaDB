@@ -33,6 +33,7 @@ const ImportManager = ({ onImportsChanged }) => {
   const [stats, setStats] = useState(null);
   const [coverage, setCoverage] = useState(null);
   const [reachMonths, setReachMonths] = useState([]);
+  const [gaListensMonths, setGaListensMonths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [vacuuming, setVacuuming] = useState(false);
@@ -40,16 +41,18 @@ const ImportManager = ({ onImportsChanged }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [importsData, statsData, coverageData, reachMonthsData] = await Promise.all([
+      const [importsData, statsData, coverageData, reachMonthsData, gaMonthsData] = await Promise.all([
         api.getImports(),
         api.getStats(),
         api.getCoverage().catch(() => null),
         api.getReachMonths().catch(() => ({ months: [] })),
+        api.getGAListensMonths().catch(() => ({ months: [] })),
       ]);
       setImports(importsData);
       setStats(statsData);
       setCoverage(coverageData);
       setReachMonths(reachMonthsData.months || []);
+      setGaListensMonths(gaMonthsData.months || []);
     } catch (error) {
       console.error('Fel vid hämtning av importdata:', error);
     } finally {
@@ -204,6 +207,38 @@ const ImportManager = ({ onImportsChanged }) => {
             </div>
             <p className="text-xs text-muted-foreground mt-2">
               Räckviddsdata importerad från Metas Graph API. Gäller bara Facebook.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* GA Listens data */}
+      {gaListensMonths.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Lyssningar (Google Analytics)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {gaListensMonths.map(month => (
+                <div key={month} className="flex items-center gap-1 px-3 py-1.5 rounded border bg-green-50 border-green-200 text-green-800 text-sm font-medium">
+                  {month}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Radera GA-lyssningsdata för ${month}?`)) {
+                        api.deleteGAListensMonth(month).then(fetchData);
+                      }
+                    }}
+                    className="ml-1 hover:text-red-600"
+                    title="Radera"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Lyssningsdata från Google Analytics (Facebook-trafik, lyssnat ≥5 sekunder).
             </p>
           </CardContent>
         </Card>
