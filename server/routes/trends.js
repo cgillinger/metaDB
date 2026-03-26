@@ -4,12 +4,28 @@ import { buildPeriodConditions } from '../utils/periodFilter.js';
 
 const router = Router();
 
-const ALLOWED_METRICS = new Set([
-  'views', 'reach', 'average_reach', 'likes', 'comments', 'shares',
-  'total_clicks', 'link_clicks', 'other_clicks',
-  'saves', 'follows', 'interactions', 'engagement',
-  'post_count', 'posts_per_day', 'account_reach'
-]);
+/**
+ * Whitelist map: metric name → SQL aggregation expression.
+ * Only metrics listed here are accepted; anything else returns 400.
+ * account_reach is handled separately (own table, own query path).
+ */
+const METRIC_SQL_MAP = {
+  views:          'SUM(views)',
+  reach:          'CAST(ROUND(AVG(reach)) AS INTEGER)',
+  average_reach:  'CAST(ROUND(AVG(reach)) AS INTEGER)',
+  likes:          'SUM(likes)',
+  comments:       'SUM(comments)',
+  shares:         'SUM(shares)',
+  total_clicks:   'SUM(total_clicks)',
+  link_clicks:    'SUM(link_clicks)',
+  other_clicks:   'SUM(other_clicks)',
+  saves:          'SUM(saves)',
+  follows:        'SUM(follows)',
+  interactions:   'SUM(interactions)',
+  engagement:     'SUM(engagement)',
+  post_count:     'COUNT(*)',
+  posts_per_day:  'COUNT(*)',
+};
 
 // Parse composite keys "name::platform" into {name, platform} pairs.
 // Keys are separated by "||" to avoid conflicts with commas in account names.
@@ -41,13 +57,12 @@ function buildAccountFilter(pairs, tableAlias = '') {
 router.get('/', (req, res) => {
   const db = getDb();
 
-  let metric = ALLOWED_METRICS.has(req.query.metric) ? req.query.metric : 'interactions';
+  const metric = req.query.metric;
   const granularity = req.query.granularity === 'week' ? 'week' : 'month';
 
   const accountPairs = parseAccountKeys(req.query.accountKeys);
 
-  // account_reach comes from a separate table (FB only).
-  // Always returns ALL imported months — period selection is ignored.
+  // account_reach is served from a separate table (FB only) — validate and handle early
   if (metric === 'account_reach') {
     const reachConditions = [];
     const reachParams = [];
@@ -102,6 +117,12 @@ router.get('/', (req, res) => {
     return res.json({ metric, granularity: 'month', months, series });
   }
 
+  // Validate metric against the whitelist map — reject anything not explicitly listed
+  const valueExpr = METRIC_SQL_MAP[metric];
+  if (!valueExpr) {
+    return res.status(400).json({ error: 'Ogiltigt mätvärde.' });
+  }
+
   // Regular metrics from posts table
   const conditions = ['publish_time IS NOT NULL'];
   const params = [];
@@ -131,18 +152,6 @@ router.get('/', (req, res) => {
   const timeExpr = granularity === 'week'
     ? "strftime('%Y-W%W', publish_time)"
     : "strftime('%Y-%m', publish_time)";
-
-  // Determine SQL aggregation based on metric
-  let valueExpr;
-  if (metric === 'reach' || metric === 'average_reach') {
-    valueExpr = 'CAST(ROUND(AVG(reach)) AS INTEGER)';
-  } else if (metric === 'post_count') {
-    valueExpr = 'COUNT(*)';
-  } else if (metric === 'posts_per_day') {
-    valueExpr = 'COUNT(*)';
-  } else {
-    valueExpr = `SUM(${metric})`;
-  }
 
   // Group by period + account_name + platform to keep FB/IG separate
   const query = `

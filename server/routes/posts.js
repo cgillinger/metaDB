@@ -5,12 +5,27 @@ import { redetectAllCollabs } from '../services/collabDetector.js';
 
 const router = Router();
 
-// Allowed sort columns to prevent SQL injection
-const ALLOWED_SORT = new Set([
-  'publish_time', 'views', 'reach', 'likes', 'comments', 'shares',
-  'total_clicks', 'link_clicks', 'other_clicks', 'saves', 'follows',
-  'interactions', 'engagement', 'account_name', 'post_type'
-]);
+/**
+ * Maps every accepted ?sort= value to the exact posts table column name.
+ * Any value absent from this map falls back to 'publish_time'.
+ */
+const SORT_SQL_MAP = {
+  publish_time:  'publish_time',
+  views:         'views',
+  reach:         'reach',
+  likes:         'likes',
+  comments:      'comments',
+  shares:        'shares',
+  total_clicks:  'total_clicks',
+  link_clicks:   'link_clicks',
+  other_clicks:  'other_clicks',
+  saves:         'saves',
+  follows:       'follows',
+  interactions:  'interactions',
+  engagement:    'engagement',
+  account_name:  'account_name',
+  post_type:     'post_type',
+};
 
 // GET /api/posts?page=1&pageSize=20&sort=publish_time&order=desc&account=X&platform=facebook&month=2026-01
 router.get('/', (req, res) => {
@@ -18,7 +33,7 @@ router.get('/', (req, res) => {
 
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
-  const sort = ALLOWED_SORT.has(req.query.sort) ? req.query.sort : 'publish_time';
+  const sort = SORT_SQL_MAP[req.query.sort] ?? 'publish_time';
   const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
   const offset = (page - 1) * pageSize;
 

@@ -4,23 +4,33 @@ import { buildPeriodConditions } from '../utils/periodFilter.js';
 
 const router = Router();
 
-// Metrics that are SUMmed per account
-const SUM_FIELDS = new Set([
-  'views', 'likes', 'comments', 'shares',
-  'total_clicks', 'link_clicks', 'other_clicks',
-  'saves', 'follows', 'interactions', 'engagement'
-]);
-
-// Allowed sort columns
-const ALLOWED_SORT = new Set([
-  ...SUM_FIELDS, 'reach', 'account_name', 'post_count', 'posts_per_day'
-]);
+/**
+ * Maps every accepted ?sort= value to the exact SQL column name produced by
+ * the GROUP BY query. Any value absent from this map falls back to 'views'.
+ */
+const SORT_SQL_MAP = {
+  views:          'views',
+  likes:          'likes',
+  comments:       'comments',
+  shares:         'shares',
+  total_clicks:   'total_clicks',
+  link_clicks:    'link_clicks',
+  other_clicks:   'other_clicks',
+  saves:          'saves',
+  follows:        'follows',
+  interactions:   'interactions',
+  engagement:     'engagement',
+  reach:          'reach',
+  account_name:   'account_name',
+  post_count:     'post_count',
+  posts_per_day:  'posts_per_day',
+};
 
 // GET /api/accounts?fields=views,reach,likes&sort=views&order=desc&platform=facebook
 router.get('/', (req, res) => {
   const db = getDb();
 
-  const sort = ALLOWED_SORT.has(req.query.sort) ? req.query.sort : 'views';
+  const sort = SORT_SQL_MAP[req.query.sort] ?? 'views';
   const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
 
   // Build WHERE
