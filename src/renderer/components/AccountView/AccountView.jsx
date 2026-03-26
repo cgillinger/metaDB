@@ -9,7 +9,8 @@ import InfoTooltip from '../ui/InfoTooltip';
 import CollabBadge from '../ui/CollabBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, Trash2, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
@@ -119,6 +120,10 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
   const [reachMonths, setReachMonths] = useState([]);
   const [showReachOnlyAccounts, setShowReachOnlyAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showDeleteColumn, setShowDeleteColumn] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   // GA Listens state
   const [gaViewMode, setGaViewMode] = useState('summary'); // 'summary' | 'monthly'
@@ -162,7 +167,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       }
     };
     fetchData();
-  }, [selectedFields, platform, periodParams, showReachOnlyAccounts]);
+  }, [selectedFields, platform, periodParams, showReachOnlyAccounts, refreshCounter]);
 
   // Fetch summerade GA-lyssningar
   useEffect(() => {
@@ -439,6 +444,25 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     }
   };
 
+  const handleDeleteAccount = async () => {
+    if (!deleteConfirm) return;
+    setDeleteLoading(true);
+    try {
+      await api.deleteAccountPosts(
+        deleteConfirm.accountName,
+        deleteConfirm.platform,
+        periodParams
+      );
+      setDeleteConfirm(null);
+      setRefreshCounter(c => c + 1);
+    } catch (err) {
+      console.error('Radering misslyckades:', err);
+      alert(`Radering misslyckades: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   // Early-return GA block — placed after all hooks to satisfy React rules of hooks.
   if (gaListensMode) {
     if (gaLoading) {
@@ -689,11 +713,56 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
             </div>
           )}
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={handleExportToCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
-          <Button variant="outline" onClick={handleExportToExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+        <div className="flex items-center gap-4">
+          {!gaListensMode && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-delete-column"
+                checked={showDeleteColumn}
+                onCheckedChange={setShowDeleteColumn}
+              />
+              <Label htmlFor="show-delete-column" className="text-sm text-red-600">
+                Visa raderingskolumn
+              </Label>
+            </div>
+          )}
+          <div className="flex space-x-2">
+            <Button variant="outline" onClick={handleExportToCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
+            <Button variant="outline" onClick={handleExportToExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+          </div>
         </div>
       </div>
+      {deleteConfirm && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Bekräfta radering</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">
+              Radera alla <strong>{deleteConfirm.postCount}</strong> poster för{' '}
+              <strong>{deleteConfirm.accountName}</strong> ({deleteConfirm.platform === 'facebook' ? 'Facebook' : 'Instagram'})
+              {' '}i vald period? Detta kan inte ångras.
+            </p>
+            <div className="flex space-x-2 mt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleteLoading}
+              >
+                Avbryt
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteAccount}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
       <div className="rounded-md border bg-white">
         <Table>
           <TableHeader>
@@ -735,6 +804,9 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                   </div>
                 </TableHead>
               )}
+              {showDeleteColumn && (
+                <TableHead className="w-12 text-center text-red-500">Radera</TableHead>
+              )}
               <TableHead className="w-12 text-center">Länk</TableHead>
             </TableRow>
           </TableHeader>
@@ -764,6 +836,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
               {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
                 <TableCell className="text-right font-semibold text-primary">—</TableCell>
               )}
+              {showDeleteColumn && <TableCell />}
               <TableCell></TableCell>
             </TableRow>
 
@@ -816,6 +889,23 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                 {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
                   <TableCell className="text-right">
                     <span className="text-muted-foreground text-xs">Saknas</span>
+                  </TableCell>
+                )}
+                {showDeleteColumn && (
+                  <TableCell className="text-center">
+                    {!account._reachOnly && (
+                      <button
+                        onClick={() => setDeleteConfirm({
+                          accountName: account.account_name,
+                          platform: account.platform,
+                          postCount: account.post_count,
+                        })}
+                        className="inline-flex items-center justify-center text-red-400 hover:text-red-600 transition-colors"
+                        title={`Radera ${account.account_name} från vald period`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </TableCell>
                 )}
                 <TableCell className="text-center">
