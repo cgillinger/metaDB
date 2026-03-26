@@ -376,7 +376,12 @@ const MainView = ({ onShowUploader }) => {
 
         <TabsContent value="account">
           <PeriodSummary />
-          <AccountView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
+          <AccountView
+            selectedFields={selectedFields}
+            platform={apiPlatform}
+            periodParams={periodParams}
+            gaListensMode={platformFilter === 'ga_listens'}
+          />
         </TabsContent>
 
         <TabsContent value="post">
