@@ -15,7 +15,19 @@ import {
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 
 const router = Router();
-const upload = multer({ dest: '/tmp/meta-uploads/' });
+
+// Multer config: 50 MB cap, CSV-only filter
+const upload = multer({
+  dest: '/tmp/meta-uploads/',
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'text/csv' || file.originalname.toLowerCase().endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Endast CSV-filer tillåtna.'));
+    }
+  },
+});
 
 // POST / — upload GA listens CSV
 // Expects multipart form with 'file' and 'month' (YYYY-MM)
@@ -111,6 +123,10 @@ router.get('/months', (req, res) => {
 
 // DELETE /:month — delete GA listens data for a month
 router.delete('/:month', (req, res) => {
+  // Validate month format to prevent unexpected values reaching the DB
+  if (!/^\d{4}-\d{2}$/.test(req.params.month)) {
+    return res.status(400).json({ error: 'Ogiltigt månadsformat. Förväntat: YYYY-MM.' });
+  }
   const result = deleteGaListensMonth(req.params.month);
   res.json({ deleted: result.changes });
 });

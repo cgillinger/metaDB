@@ -86,6 +86,15 @@ function convertPacificToStockholm(dateStr) {
 }
 
 /**
+ * Strip HTML-significant characters from free-text fields imported from CSV.
+ * Prevents stored XSS if values are ever rendered without escaping.
+ */
+function sanitizeText(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/[<>]/g, '');
+}
+
+/**
  * Map a single raw CSV row to internal field names using column mappings.
  */
 function mapRow(rawRow, columnMappings, platform) {
@@ -199,9 +208,9 @@ export function parseCSV(csvContent, filename) {
     posts.push({
       post_id: String(mapped.post_id || ''),
       account_id: mapped.account_id ? String(mapped.account_id) : null,
-      account_name: mapped.account_name || null,
-      account_username: mapped.account_username || null,
-      description: mapped.description || null,
+      account_name:     sanitizeText(mapped.account_name || null),
+      account_username: sanitizeText(mapped.account_username || null),
+      description:      sanitizeText(mapped.description || null),
       publish_time: mapped.publish_time || null,
       post_type: normalizedType,
       permalink: mapped.permalink || null,
