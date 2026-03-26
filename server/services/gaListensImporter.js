@@ -2,13 +2,22 @@ import Papa from 'papaparse';
 import { getDb } from '../db/connection.js';
 
 /**
+ * Find the "lyssningar" column in a list of headers (case-insensitive substring match).
+ * Returns the matching header name, or null if not found.
+ */
+function findListensColumn(headers) {
+  return headers.find(h => h.trim().toLowerCase().includes('lyssningar')) || null;
+}
+
+/**
  * Detect if a CSV is a GA listens export.
- * Returns true if headers contain "Program" and "Lyssningar".
+ * Returns true if headers contain "Programnamn" and at least one column
+ * whose name includes "lyssningar" (case-insensitive).
  */
 export function isGaListensCSV(headers) {
   if (!headers || !Array.isArray(headers)) return false;
-  const headerSet = new Set(headers.map(h => h.trim()));
-  return headerSet.has('Program') && headerSet.has('Lyssningar');
+  const trimmed = headers.map(h => h.trim());
+  return trimmed.includes('Programnamn') && findListensColumn(trimmed) !== null;
 }
 
 /**
@@ -32,10 +41,14 @@ export function importGaListensCSV(csvContent, month, filename) {
     throw new Error('Ingen data hittades i CSV-filen.');
   }
 
-  const headers = Object.keys(result.data[0]);
+  const headers = Object.keys(result.data[0]).map(h => h.trim());
   if (!isGaListensCSV(headers)) {
-    throw new Error('Filen är inte en GA-lyssnarexport. Förväntade kolumnerna Program, Lyssningar.');
+    throw new Error(
+      'Filen är inte en GA-lyssnarexport. Förväntade kolumnen "Programnamn" och en kolumn med "lyssningar".'
+    );
   }
+
+  const listensCol = findListensColumn(headers);
 
   const db = getDb();
 
@@ -54,8 +67,8 @@ export function importGaListensCSV(csvContent, month, filename) {
 
   db.transaction(() => {
     for (const row of result.data) {
-      const programName = (row['Program'] || '').trim();
-      const listens = parseInt(row['Lyssningar'], 10) || 0;
+      const programName = (row['Programnamn'] || '').trim();
+      const listens = parseInt(row[listensCol], 10) || 0;
 
       if (!programName) {
         skipped++;
