@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readdirSync, unlinkSync, existsSync } from 'fs';
 import helmet from 'helmet';
 import { getDb, closeDb } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -44,6 +45,14 @@ app.use('/api/', apiLimiter);
 // Initialize database on startup
 getDb();
 console.log('Database initialized.');
+
+// Remove any temp upload files left over from a previous unclean shutdown
+const TMP_UPLOAD_DIR = '/tmp/meta-uploads/';
+if (existsSync(TMP_UPLOAD_DIR)) {
+  for (const f of readdirSync(TMP_UPLOAD_DIR)) {
+    try { unlinkSync(path.join(TMP_UPLOAD_DIR, f)); } catch {}
+  }
+}
 
 // API routes
 app.use('/api/health', (req, res, next) => {
