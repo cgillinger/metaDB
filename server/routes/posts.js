@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
+import { redetectAllCollabs } from '../services/collabDetector.js';
 
 const router = Router();
 
@@ -75,6 +76,42 @@ router.get('/', (req, res) => {
     pageSize,
     totalPages: Math.ceil(total / pageSize),
   });
+});
+
+// DELETE /api/posts/by-account?accountName=X&platform=facebook&months=2026-01,2026-02
+// or ?accountName=X&platform=instagram&dateFrom=2026-01-01&dateTo=2026-01-31
+router.delete('/by-account', (req, res) => {
+  const { accountName, platform } = req.query;
+
+  if (!accountName || !platform) {
+    return res.status(400).json({ error: 'accountName och platform är obligatoriska.' });
+  }
+
+  if (platform !== 'facebook' && platform !== 'instagram') {
+    return res.status(400).json({ error: 'platform måste vara facebook eller instagram.' });
+  }
+
+  const periodFilter = buildPeriodConditions(req.query);
+  if (periodFilter.conditions.length === 0) {
+    return res.status(400).json({ error: 'Periodfilter är obligatoriskt (months eller dateFrom+dateTo).' });
+  }
+
+  const db = getDb();
+
+  const conditions = [
+    'account_name = ?',
+    'platform = ?',
+    ...periodFilter.conditions,
+  ];
+  const params = [accountName, platform, ...periodFilter.params];
+
+  const result = db.prepare(
+    `DELETE FROM posts WHERE ${conditions.join(' AND ')}`
+  ).run(...params);
+
+  redetectAllCollabs();
+
+  res.json({ deleted: result.changes, accountName, platform });
 });
 
 export default router;
