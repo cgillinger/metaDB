@@ -396,7 +396,11 @@ const MainView = ({ onShowUploader }) => {
 
         <TabsContent value="trend_analysis">
           <PeriodSummary />
-          <TrendAnalysisView platform={apiPlatform} periodParams={periodParams} />
+          <TrendAnalysisView
+            platform={apiPlatform}
+            periodParams={periodParams}
+            gaListensMode={platformFilter === 'ga_listens'}
+          />
         </TabsContent>
 
         <TabsContent value="imports">

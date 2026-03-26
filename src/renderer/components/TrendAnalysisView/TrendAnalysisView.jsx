@@ -78,7 +78,7 @@ const createSmoothPath = (points) => {
 
 const getMonthName = (month) => MONTH_NAMES_SV[month - 1] || String(month);
 
-const TrendAnalysisView = ({ platform, periodParams = {} }) => {
+const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false }) => {
   const [selectedMetric, setSelectedMetric] = useState('interactions');
   // selectedAccounts stores composite keys: "account_name::platform"
   const [selectedAccounts, setSelectedAccounts] = useState([]);
@@ -88,6 +88,16 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
   const [accountList, setAccountList] = useState([]);
   const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // GA Listens state
+  const [gaRawData, setGaRawData] = useState([]);
+  const [gaAccountList, setGaAccountList] = useState([]);
+
+  // Clear selection when switching between GA and post mode
+  useEffect(() => {
+    setSelectedAccounts([]);
+    setTrendData(null);
+  }, [gaListensMode]);
 
   // Detect platforms from account list
   const { hasFacebook, hasInstagram } = useMemo(() => {
@@ -102,8 +112,9 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
     return metrics;
   }, [hasFacebook, hasInstagram]);
 
-  // Fetch account list
+  // Fetch account list (posts mode only)
   useEffect(() => {
+    if (gaListensMode) return;
     const fetchAccounts = async () => {
       try {
         const params = { fields: 'views', ...periodParams, includeReachOnly: 'true' };
@@ -121,10 +132,11 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
       }
     };
     fetchAccounts();
-  }, [platform, periodParams]);
+  }, [gaListensMode, platform, periodParams]);
 
-  // Fetch trend data when metric or accounts change
+  // Fetch trend data when metric or accounts change (posts mode only)
   useEffect(() => {
+    if (gaListensMode) return;
     if (!selectedMetric || selectedAccounts.length === 0) {
       setTrendData(null);
       return;
@@ -150,7 +162,7 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
       }
     };
     fetchTrends();
-  }, [selectedMetric, selectedAccounts, platform, periodParams]);
+  }, [gaListensMode, selectedMetric, selectedAccounts, platform, periodParams]);
 
   // Build chart lines from trend data
   const { months, chartLines } = useMemo(() => {
@@ -177,6 +189,76 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
     return calculateNiceYAxis(Math.max(...allValues));
   }, [chartLines]);
 
+  // Fetch GA listens data
+  useEffect(() => {
+    if (!gaListensMode) return;
+    const fetchGA = async () => {
+      try {
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGAListens(months);
+        const rows = result.data || [];
+        setGaRawData(rows);
+        const names = [...new Set(rows.map(r => r.account_name))].sort((a, b) =>
+          a.localeCompare(b, 'sv')
+        );
+        setGaAccountList(names.map(name => ({
+          account_name: name,
+          platform: 'ga_listens',
+          is_collab: false,
+          key: accountKey(name, 'ga_listens'),
+        })));
+      } catch (err) {
+        console.error('Fel vid hämtning av GA-lyssningar:', err);
+      }
+    };
+    fetchGA();
+  }, [gaListensMode, periodParams]);
+
+  // GA pivot: account_name → month → listens
+  const gaPivot = useMemo(() => {
+    if (!gaListensMode) return {};
+    const map = {};
+    for (const row of gaRawData) {
+      if (!map[row.account_name]) map[row.account_name] = {};
+      map[row.account_name][row.month] = row.listens;
+    }
+    return map;
+  }, [gaListensMode, gaRawData]);
+
+  const gaMonths = useMemo(() =>
+    gaListensMode ? [...new Set(gaRawData.map(r => r.month))].sort() : []
+  , [gaListensMode, gaRawData]);
+
+  const gaChartLines = useMemo(() => {
+    if (!gaListensMode || selectedAccounts.length === 0) return [];
+    return selectedAccounts
+      .filter(key => { const { name } = parseAccountKey(key); return gaPivot[name] !== undefined; })
+      .map((key, index) => {
+        const { name } = parseAccountKey(key);
+        return {
+          key,
+          account_name: name,
+          platform: 'ga_listens',
+          is_collab: false,
+          color: CHART_COLORS[index % CHART_COLORS.length],
+          points: gaMonths.map(month => ({ month, value: gaPivot[name]?.[month] ?? 0 })),
+        };
+      });
+  }, [gaListensMode, selectedAccounts, gaPivot, gaMonths]);
+
+  const gaYAxisConfig = useMemo(() => {
+    if (gaChartLines.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
+    const allValues = gaChartLines.flatMap(line => line.points.map(p => p.value));
+    return calculateNiceYAxis(Math.max(...allValues));
+  }, [gaChartLines]);
+
+  // Unified display values: GA mode or post mode
+  const displayMonths    = gaListensMode ? gaMonths    : months;
+  const displayChartLines = gaListensMode ? gaChartLines : chartLines;
+  const displayYAxisConfig = gaListensMode ? gaYAxisConfig : yAxisConfig;
+
   // Filter account list based on selected metric (account_reach = FB only)
   const filteredAccountList = useMemo(() => {
     if (selectedMetric === 'account_reach') {
@@ -187,11 +269,14 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
 
   // When metric changes to account_reach, remove non-FB accounts from selection
   useEffect(() => {
-    if (selectedMetric === 'account_reach') {
+    if (!gaListensMode && selectedMetric === 'account_reach') {
       const fbKeys = new Set(accountList.filter(a => a.platform === 'facebook').map(a => a.key));
       setSelectedAccounts(prev => prev.filter(k => fbKeys.has(k)));
     }
-  }, [selectedMetric, accountList]);
+  }, [gaListensMode, selectedMetric, accountList]);
+
+  // Final display account list (resolved after filteredAccountList is available)
+  const activeAccountList = gaListensMode ? gaAccountList : filteredAccountList;
 
   const handleAccountToggle = (key) => {
     setSelectedAccounts(current =>
@@ -200,13 +285,13 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
   };
 
   const handleToggleAllAccounts = () => {
-    const allKeys = filteredAccountList.map(a => a.key);
+    const allKeys = activeAccountList.map(a => a.key);
     const allSelected = allKeys.length > 0 && allKeys.every(k => selectedAccounts.includes(k));
     setSelectedAccounts(allSelected ? [] : allKeys);
   };
 
-  const allAccountsSelected = filteredAccountList.length > 0 &&
-    filteredAccountList.every(a => selectedAccounts.includes(a.key));
+  const allAccountsSelected = activeAccountList.length > 0 &&
+    activeAccountList.every(a => selectedAccounts.includes(a.key));
 
   const handleMouseMove = (event, point) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -214,9 +299,11 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
     setHoveredDataPoint(point);
   };
 
-  const showChart = selectedMetric && selectedAccounts.length > 0 && months.length > 0;
+  const showChart = gaListensMode
+    ? selectedAccounts.length > 0 && displayMonths.length > 0
+    : selectedMetric && selectedAccounts.length > 0 && months.length > 0;
 
-  if (filteredAccountList.length === 0) {
+  if (activeAccountList.length === 0) {
     return (
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" />Trendanalys</CardTitle></CardHeader>
@@ -237,18 +324,18 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Account selector */}
+            {/* Account / program selector */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <Label className="text-base font-medium">
-                  Välj konton ({selectedAccounts.length} valda)
+                  {gaListensMode ? 'Välj program' : 'Välj konton'} ({selectedAccounts.length} valda)
                 </Label>
                 <Button variant="outline" size="sm" onClick={handleToggleAllAccounts}>
                   {allAccountsSelected ? 'Avmarkera alla' : 'Välj alla'}
                 </Button>
               </div>
               <div className="max-h-48 overflow-y-auto border rounded-md p-3 space-y-2 bg-gray-50">
-                {filteredAccountList.map(account => (
+                {activeAccountList.map(account => (
                   <Label key={account.key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-2 rounded">
                     <input
                       type="checkbox"
@@ -266,35 +353,49 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
               </div>
             </div>
 
-            {/* Metric selector */}
-            <div>
-              <Label className="text-base font-medium mb-3 block">Välj datapunkt att analysera</Label>
-              <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3 bg-gray-50">
-                {Object.entries(availableMetrics).map(([key, label]) => (
-                  <Label key={key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded">
-                    <input
-                      type="radio"
-                      name="trendMetric"
-                      value={key}
-                      checked={selectedMetric === key}
-                      onChange={() => setSelectedMetric(key)}
-                      className="h-4 w-4 border-gray-300 accent-primary"
-                    />
-                    <span className="text-sm flex items-center gap-1.5">
-                      {label}
-                      {['account_reach', 'total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
-                      {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
-                    </span>
-                  </Label>
-                ))}
+            {/* Metric selector — hidden in GA mode (metric is fixed: Lyssningar) */}
+            {gaListensMode ? (
+              <div>
+                <Label className="text-base font-medium mb-3 block">Datapunkt</Label>
+                <div className="border rounded-md p-3 bg-gray-50">
+                  <span className="text-sm flex items-center gap-1.5 font-medium">
+                    <PlatformBadge platform="ga_listens" />
+                    Lyssningar
+                  </span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <Label className="text-base font-medium mb-3 block">Välj datapunkt att analysera</Label>
+                <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3 bg-gray-50">
+                  {Object.entries(availableMetrics).map(([key, label]) => (
+                    <Label key={key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded">
+                      <input
+                        type="radio"
+                        name="trendMetric"
+                        value={key}
+                        checked={selectedMetric === key}
+                        onChange={() => setSelectedMetric(key)}
+                        className="h-4 w-4 border-gray-300 accent-primary"
+                      />
+                      <span className="text-sm flex items-center gap-1.5">
+                        {label}
+                        {['account_reach', 'total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
+                        {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
+                      </span>
+                    </Label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {selectedMetric && (
+          {(gaListensMode || selectedMetric) && (
             <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-center">
-              <h3 className="text-lg font-bold text-primary">Visar: {availableMetrics[selectedMetric]}</h3>
-              <p className="text-sm text-primary/70 mt-1">Utveckling över tid för valda konton</p>
+              <h3 className="text-lg font-bold text-primary">
+                Visar: {gaListensMode ? 'Lyssningar (GA)' : availableMetrics[selectedMetric]}
+              </h3>
+              <p className="text-sm text-primary/70 mt-1">Utveckling över tid för valda {gaListensMode ? 'program' : 'konton'}</p>
             </div>
           )}
 
@@ -302,7 +403,7 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
             <div className="space-y-4">
               {/* Legend */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
-                {chartLines.map(line => (
+                {displayChartLines.map(line => (
                   <div key={line.key} className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full border flex-shrink-0" style={{ backgroundColor: line.color }} />
                     <span className="text-sm font-medium truncate flex items-center gap-1" title={line.account_name}>
@@ -325,8 +426,8 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
                   </defs>
                   <rect width="100%" height="100%" fill="url(#grid)" />
 
-                  {yAxisConfig.ticks.map(tickValue => {
-                    const yPos = 450 - ((tickValue - yAxisConfig.min) / (yAxisConfig.max - yAxisConfig.min)) * 380;
+                  {displayYAxisConfig.ticks.map(tickValue => {
+                    const yPos = 450 - ((tickValue - displayYAxisConfig.min) / (displayYAxisConfig.max - displayYAxisConfig.min)) * 380;
                     return (
                       <g key={tickValue}>
                         <line x1="70" y1={yPos} x2="930" y2={yPos} stroke="#d1d5db" strokeWidth="1" />
@@ -335,9 +436,9 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
                     );
                   })}
 
-                  {months.map((monthKey, index) => {
+                  {displayMonths.map((monthKey, index) => {
                     const [year, month] = monthKey.split('-').map(Number);
-                    const xPos = 70 + (index / Math.max(1, months.length - 1)) * 860;
+                    const xPos = 70 + (index / Math.max(1, displayMonths.length - 1)) * 860;
                     return (
                       <g key={monthKey}>
                         <line x1={xPos} y1="70" x2={xPos} y2="450" stroke="#d1d5db" strokeWidth="1" />
@@ -347,11 +448,11 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
                     );
                   })}
 
-                  {chartLines.map(line => {
+                  {displayChartLines.map(line => {
                     if (line.points.length < 1) return null;
                     const pathPoints = line.points.map((point, index) => ({
-                      x: 70 + (index / Math.max(1, months.length - 1)) * 860,
-                      y: 450 - ((point.value - yAxisConfig.min) / (yAxisConfig.max - yAxisConfig.min)) * 380,
+                      x: 70 + (index / Math.max(1, displayMonths.length - 1)) * 860,
+                      y: 450 - ((point.value - displayYAxisConfig.min) / (displayYAxisConfig.max - displayYAxisConfig.min)) * 380,
                       point
                     }));
                     return (
@@ -374,12 +475,13 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
                     if (tooltipY < 15) tooltipY = mousePosition.y + 15;
                     if (tooltipY + tooltipHeight > 480) tooltipY = mousePosition.y - tooltipHeight - 15;
                     const [year, month] = hoveredDataPoint.month.split('-').map(Number);
+                    const tooltipMetric = gaListensMode ? 'Lyssningar' : availableMetrics[selectedMetric];
                     return (
                       <g>
                         <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} fill="rgba(0,0,0,0.85)" rx="6" />
                         <text x={tooltipX + 12} y={tooltipY + 20} fill="white" fontSize="13" fontWeight="bold">{hoveredDataPoint.account_name}</text>
                         <text x={tooltipX + 12} y={tooltipY + 38} fill="white" fontSize="12">{getMonthName(month)} {year}</text>
-                        <text x={tooltipX + 12} y={tooltipY + 55} fill="white" fontSize="12">{availableMetrics[selectedMetric]}: {hoveredDataPoint.value.toLocaleString()}</text>
+                        <text x={tooltipX + 12} y={tooltipY + 55} fill="white" fontSize="12">{tooltipMetric}: {hoveredDataPoint.value.toLocaleString()}</text>
                       </g>
                     );
                   })()}
@@ -389,9 +491,13 @@ const TrendAnalysisView = ({ platform, periodParams = {} }) => {
           ) : (
             <div className="text-center py-12 text-muted-foreground">
               <LineChart className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium mb-2">Välj konton och datapunkt för att visa trend</p>
+              <p className="text-lg font-medium mb-2">
+                {gaListensMode ? 'Välj program för att visa lyssnartrender' : 'Välj konton och datapunkt för att visa trend'}
+              </p>
               <p className="text-sm">
-                {selectedAccounts.length === 0 ? 'Markera minst ett konto i listan ovan' : loading ? 'Laddar trenddata...' : 'Valda konton är redo'}
+                {selectedAccounts.length === 0
+                  ? `Markera minst ett ${gaListensMode ? 'program' : 'konto'} i listan ovan`
+                  : loading ? 'Laddar trenddata...' : 'Valda konton är redo'}
               </p>
             </div>
           )}
