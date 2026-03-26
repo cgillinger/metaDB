@@ -4,7 +4,8 @@ import { fileURLToPath } from 'url';
 import helmet from 'helmet';
 import { getDb, closeDb } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { apiLimiter } from './middleware/rateLimiters.js';
+import { apiLimiter, backupLimiter } from './middleware/rateLimiters.js';
+import { requireAdmin } from './middleware/adminAuth.js';
 import maintenanceRouter from './routes/maintenance.js';
 import importsRouter from './routes/imports.js';
 import postsRouter from './routes/posts.js';
@@ -49,12 +50,23 @@ app.use('/api/health', (req, res, next) => {
   req.url = '/health';
   maintenanceRouter(req, res, next);
 });
+
+// Backup: rate-limited (max 2/min) but no admin token required — must be
+// registered before the requireAdmin-guarded /api/maintenance mount below
+app.get('/api/maintenance/backup', backupLimiter, (req, res, next) => {
+  req.url = '/backup';
+  maintenanceRouter(req, res, next);
+});
+
+// All other maintenance endpoints (stats, vacuum, redetect-collab):
+// require X-Admin-Token header when ADMIN_TOKEN env var is set
+app.use('/api/maintenance', requireAdmin, maintenanceRouter);
+
 app.use('/api/imports', importsRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/accounts', accountsRouter);
 app.use('/api/post-types', postTypesRouter);
 app.use('/api/trends', trendsRouter);
-app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/reach', reachRouter);
 app.use('/api/ga-listens', gaListensRouter); // Google Analytics listening data
 
