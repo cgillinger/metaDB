@@ -66,20 +66,28 @@ export function importGaListensCSV(csvContent, month, filename) {
       imported_at = datetime('now')
   `);
 
-  let imported = 0;
+  // Accumulate listens per trimmed account name to handle duplicate/trailing-space
+  // variants in the same CSV (e.g. "P4 Väst" and "P4 Väst " should be one row).
+  const aggregated = new Map(); // trimmedName → totalListens
   let skipped = 0;
+
+  for (const row of result.data) {
+    const programName = (row['Programnamn'] || '').trim();
+    const listens = parseInt(row[listensCol], 10) || 0;
+
+    if (!programName) {
+      skipped++;
+      continue;
+    }
+
+    aggregated.set(programName, (aggregated.get(programName) || 0) + listens);
+  }
+
+  let imported = 0;
   const accounts = [];
 
   db.transaction(() => {
-    for (const row of result.data) {
-      const programName = (row['Programnamn'] || '').trim();
-      const listens = parseInt(row[listensCol], 10) || 0;
-
-      if (!programName) {
-        skipped++;
-        continue;
-      }
-
+    for (const [programName, listens] of aggregated) {
       upsert.run(programName, month, listens, filename || null);
       imported++;
       accounts.push({ name: programName, listens });
