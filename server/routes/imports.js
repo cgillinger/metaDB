@@ -4,6 +4,7 @@ import fs from 'fs';
 import { getDb } from '../db/connection.js';
 import { parseCSV } from '../services/csvProcessor.js';
 import { redetectAllCollabs } from '../services/collabDetector.js';
+import { uploadLimiter } from '../middleware/rateLimiters.js';
 
 const router = Router();
 const upload = multer({ dest: '/tmp/meta-uploads/' });
@@ -117,7 +118,8 @@ router.get('/coverage', (req, res) => {
 });
 
 // POST /api/imports — upload and process a CSV file
-router.post('/', upload.single('file'), (req, res) => {
+// uploadLimiter: max 10 uploads per minute to prevent abuse
+router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Ingen fil bifogades.' });
   }

@@ -1,8 +1,10 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import helmet from 'helmet';
 import { getDb, closeDb } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { apiLimiter } from './middleware/rateLimiters.js';
 import maintenanceRouter from './routes/maintenance.js';
 import importsRouter from './routes/imports.js';
 import postsRouter from './routes/posts.js';
@@ -19,7 +21,24 @@ const PORT = process.env.PORT || 3001;
 
 const app = express();
 
-app.use(express.json());
+// Limit JSON request body size to prevent payload-based DoS
+app.use(express.json({ limit: '1mb' }));
+
+// Security headers (CSP, X-Frame-Options, X-Content-Type-Options, etc.)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+    },
+  },
+}));
+
+// Broad rate limiting for all API routes (200 requests per minute)
+app.use('/api/', apiLimiter);
 
 // Initialize database on startup
 getDb();

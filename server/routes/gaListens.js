@@ -12,13 +12,15 @@ import {
   getGaListensMonths,
   deleteGaListensMonth,
 } from '../services/gaListensImporter.js';
+import { uploadLimiter } from '../middleware/rateLimiters.js';
 
 const router = Router();
 const upload = multer({ dest: '/tmp/meta-uploads/' });
 
 // POST / — upload GA listens CSV
 // Expects multipart form with 'file' and 'month' (YYYY-MM)
-router.post('/', upload.single('file'), (req, res) => {
+// uploadLimiter: max 10 uploads per minute to prevent abuse
+router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Ingen fil bifogades.' });
   }
