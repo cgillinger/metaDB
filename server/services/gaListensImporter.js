@@ -66,9 +66,12 @@ export function importGaListensCSV(csvContent, month, filename) {
       imported_at = datetime('now')
   `);
 
-  // Accumulate listens per trimmed account name to handle duplicate/trailing-space
-  // variants in the same CSV (e.g. "P4 Väst" and "P4 Väst " should be one row).
-  const aggregated = new Map(); // trimmedName → totalListens
+  // Deduplicate by taking MAX listens per trimmed account name.
+  // GA exports can contain multiple rows that collapse to the same name after
+  // trimming (e.g. "P4 Gävleborg" = 13 433 and "P4 Gävleborg " = 42).
+  // These are distinct GA entities, not a split of the same measurement,
+  // so the largest value is the canonical channel total and the rest is noise.
+  const aggregated = new Map(); // trimmedName → maxListens
   let skipped = 0;
 
   for (const row of result.data) {
@@ -80,7 +83,8 @@ export function importGaListensCSV(csvContent, month, filename) {
       continue;
     }
 
-    aggregated.set(programName, (aggregated.get(programName) || 0) + listens);
+    const current = aggregated.get(programName) ?? 0;
+    if (listens > current) aggregated.set(programName, listens);
   }
 
   let imported = 0;
