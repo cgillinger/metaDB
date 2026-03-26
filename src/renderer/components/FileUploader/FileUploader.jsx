@@ -53,14 +53,22 @@ export function FileUploader({ onImportComplete, onCancel }) {
                       preview.includes('Page ID') &&
                       preview.includes('Reach');
 
-      // Try to extract month from filename pattern FB_YYYY_MM.csv
+      const isGaListens = !isReach &&
+        preview.includes('Programnamn') &&
+        preview.some(h => h.toLowerCase().includes('lyssningar'));
+
+      // Try to extract month from filename pattern YYYY_MM or YYYY-MM
       let autoMonth = '';
-      if (isReach) {
-        const monthMatch = file.name.match(/(\d{4})[_-](\d{2})\.csv$/i);
+      if (isReach || isGaListens) {
+        const monthMatch = file.name.match(/(\d{4})[_-](\d{2})(?:[_-]|\.|$)/i);
         if (monthMatch) {
           autoMonth = `${monthMatch[1]}-${monthMatch[2]}`;
         }
       }
+
+      let fileType = 'posts';
+      if (isReach) fileType = 'reach';
+      else if (isGaListens) fileType = 'ga_listens';
 
       fileEntries.push({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
@@ -68,8 +76,9 @@ export function FileUploader({ onImportComplete, onCancel }) {
         status: FILE_STATUS.PENDING,
         error: null,
         result: null,
-        fileType: isReach ? 'reach' : 'posts',
-        reachMonth: autoMonth,
+        fileType,
+        reachMonth: isReach ? autoMonth : '',
+        gaListensMonth: isGaListens ? autoMonth : '',
       });
     }
 
@@ -143,6 +152,11 @@ export function FileUploader({ onImportComplete, onCancel }) {
             throw new Error('Ange vilken månad räckviddsfilen gäller.');
           }
           result = await api.uploadReachCSV(entry.file, entry.reachMonth);
+        } else if (entry.fileType === 'ga_listens') {
+          if (!entry.gaListensMonth) {
+            throw new Error('Ange vilken månad lyssnarfilen gäller.');
+          }
+          result = await api.uploadGAListensCSV(entry.file, entry.gaListensMonth);
         } else {
           result = await api.uploadCSV(entry.file);
         }
@@ -288,6 +302,11 @@ export function FileUploader({ onImportComplete, onCancel }) {
                             Kontoräckvidd
                           </span>
                         )}
+                        {entry.fileType === 'ga_listens' && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 border border-green-300">
+                            Lyssningar (GA)
+                          </span>
+                        )}
                       </p>
                       {entry.result && (
                         <p className="text-xs text-green-600">
@@ -322,6 +341,41 @@ export function FileUploader({ onImportComplete, onCancel }) {
                               e.stopPropagation();
                               setFiles(prev => prev.map(f =>
                                 f.id === entry.id ? { ...f, reachMonth: e.target.value } : f
+                              ));
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="border border-input rounded px-2 py-0.5 text-xs"
+                            required
+                          />
+                        </div>
+                      )}
+                      {entry.fileType === 'ga_listens' && entry.status === FILE_STATUS.PENDING && entry.gaListensMonth && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Månad: {entry.gaListensMonth}
+                          <button
+                            type="button"
+                            className="ml-2 text-primary hover:underline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFiles(prev => prev.map(f =>
+                                f.id === entry.id ? { ...f, gaListensMonth: '' } : f
+                              ));
+                            }}
+                          >
+                            Ändra
+                          </button>
+                        </p>
+                      )}
+                      {entry.fileType === 'ga_listens' && entry.status === FILE_STATUS.PENDING && !entry.gaListensMonth && (
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Månad:</span>
+                          <input
+                            type="month"
+                            value={entry.gaListensMonth}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setFiles(prev => prev.map(f =>
+                                f.id === entry.id ? { ...f, gaListensMonth: e.target.value } : f
                               ));
                             }}
                             onClick={(e) => e.stopPropagation()}

@@ -61,6 +61,23 @@ export const api = {
   getReachMonths: () => fetch('/api/reach/months').then(handleResponse),
   deleteReachMonth: (month) =>
     fetch(`/api/reach/${month}`, { method: 'DELETE' }).then(handleResponse),
+
+  // GA Listens imports
+  uploadGAListensCSV: (file, month) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('month', month);
+    return fetch('/api/ga-listens', { method: 'POST', body: formData }).then(handleResponse);
+  },
+  getGAListens: (months) => {
+    const params = months && months.length > 0
+      ? '?' + new URLSearchParams({ months: months.join(',') })
+      : '';
+    return fetch(`/api/ga-listens${params}`).then(handleResponse);
+  },
+  getGAListensMonths: () => fetch('/api/ga-listens/months').then(handleResponse),
+  deleteGAListensMonth: (month) =>
+    fetch(`/api/ga-listens/${month}`, { method: 'DELETE' }).then(handleResponse),
 };
 
 // --- Client-side export utilities (unchanged from storageService.js) ---

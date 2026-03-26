@@ -2,6 +2,13 @@ import React from 'react';
 
 const PlatformBadge = ({ platform }) => {
   if (!platform || platform === 'mixed') return null;
+  if (platform === 'ga_listens') {
+    return (
+      <span className="inline-block px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">
+        GA
+      </span>
+    );
+  }
   const isFB = platform === 'facebook';
   return (
     <span

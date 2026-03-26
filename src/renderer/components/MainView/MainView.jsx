@@ -134,6 +134,7 @@ const MainView = ({ onShowUploader }) => {
   const [platformFilter, setPlatformFilter] = useState('all');
   const [stats, setStats] = useState(null);
   const [imports, setImports] = useState([]);
+  const [hasGAListens, setHasGAListens] = useState(false);
 
   // Period selection
   const [periodMode, setPeriodMode] = useState('months');
@@ -145,13 +146,15 @@ const MainView = ({ onShowUploader }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [statsData, importsData, coverageResult] = await Promise.all([
+        const [statsData, importsData, coverageResult, gaMonthsResult] = await Promise.all([
           api.getStats(),
           api.getImports(),
           api.getCoverage().catch(() => ({ months: [] })),
+          api.getGAListensMonths().catch(() => ({ months: [] })),
         ]);
         setStats(statsData);
         setImports(importsData);
+        setHasGAListens((gaMonthsResult.months || []).length > 0);
 
         const months = coverageResult.months || [];
         setCoverageData(months);
@@ -214,18 +217,27 @@ const MainView = ({ onShowUploader }) => {
 
   const handleImportsChanged = async () => {
     try {
-      const [statsData, importsData, coverageResult] = await Promise.all([
+      const [statsData, importsData, coverageResult, gaMonthsResult] = await Promise.all([
         api.getStats(),
         api.getImports(),
         api.getCoverage().catch(() => ({ months: [] })),
+        api.getGAListensMonths().catch(() => ({ months: [] })),
       ]);
       setStats(statsData);
       setImports(importsData);
       setCoverageData(coverageResult.months || []);
+      setHasGAListens((gaMonthsResult.months || []).length > 0);
     } catch (error) {
       console.error('Fel vid uppdatering:', error);
     }
   };
+
+  // Reset to 'account' if a hidden tab is active when switching to ga_listens
+  useEffect(() => {
+    if (platformFilter === 'ga_listens' && (activeView === 'post' || activeView === 'post_type')) {
+      setActiveView('account');
+    }
+  }, [platformFilter]);
 
   const periodParams = useMemo(() => {
     if (periodMode === 'custom' && customRange.from && customRange.to) {
@@ -270,10 +282,10 @@ const MainView = ({ onShowUploader }) => {
         </div>
       </div>
 
-      {platformInfo.hasMixed && (
+      {(platformInfo.hasMixed || hasGAListens) && (
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500 mr-1">Plattform:</span>
-          {[
+          {platformInfo.hasMixed && [
             { value: 'all', label: `Alla (${platformInfo.fbPosts + platformInfo.igPosts})` },
             { value: 'facebook', label: `Facebook (${platformInfo.fbPosts})` },
             { value: 'instagram', label: `Instagram (${platformInfo.igPosts})` },
@@ -290,6 +302,32 @@ const MainView = ({ onShowUploader }) => {
               {label}
             </button>
           ))}
+          {!platformInfo.hasMixed && (platformInfo.fbPosts + platformInfo.igPosts) > 0 && hasGAListens && (
+            <button
+              onClick={() => setPlatformFilter('all')}
+              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                platformFilter !== 'ga_listens'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-white text-gray-700 border-gray-300 hover:border-primary/60'
+              }`}
+            >
+              {platformInfo.fbPosts > 0
+                ? `Facebook (${platformInfo.fbPosts})`
+                : `Instagram (${platformInfo.igPosts})`}
+            </button>
+          )}
+          {hasGAListens && (
+            <button
+              onClick={() => setPlatformFilter('ga_listens')}
+              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                platformFilter === 'ga_listens'
+                  ? 'bg-green-600 text-white border-green-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+              }`}
+            >
+              Lyssningar
+            </button>
+          )}
         </div>
       )}
 
@@ -305,7 +343,7 @@ const MainView = ({ onShowUploader }) => {
         />
       )}
 
-      {activeView !== 'trend_analysis' && activeView !== 'imports' && (
+      {activeView !== 'trend_analysis' && activeView !== 'imports' && platformFilter !== 'ga_listens' && (
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
@@ -324,8 +362,8 @@ const MainView = ({ onShowUploader }) => {
       <Tabs value={activeView} onValueChange={setActiveView}>
         <TabsList>
           <TabsTrigger value="account">Per konto</TabsTrigger>
-          <TabsTrigger value="post">Per inlägg</TabsTrigger>
-          <TabsTrigger value="post_type">Per inläggstyp</TabsTrigger>
+          {platformFilter !== 'ga_listens' && <TabsTrigger value="post">Per inlägg</TabsTrigger>}
+          {platformFilter !== 'ga_listens' && <TabsTrigger value="post_type">Per inläggstyp</TabsTrigger>}
           <TabsTrigger value="trend_analysis">
             <TrendingUp className="w-4 h-4 mr-1" />
             Trendanalys
@@ -338,7 +376,12 @@ const MainView = ({ onShowUploader }) => {
 
         <TabsContent value="account">
           <PeriodSummary />
-          <AccountView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
+          <AccountView
+            selectedFields={selectedFields}
+            platform={apiPlatform}
+            periodParams={periodParams}
+            gaListensMode={platformFilter === 'ga_listens'}
+          />
         </TabsContent>
 
         <TabsContent value="post">
@@ -353,7 +396,11 @@ const MainView = ({ onShowUploader }) => {
 
         <TabsContent value="trend_analysis">
           <PeriodSummary />
-          <TrendAnalysisView platform={apiPlatform} periodParams={periodParams} />
+          <TrendAnalysisView
+            platform={apiPlatform}
+            periodParams={periodParams}
+            gaListensMode={platformFilter === 'ga_listens'}
+          />
         </TabsContent>
 
         <TabsContent value="imports">

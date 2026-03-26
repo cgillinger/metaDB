@@ -10,6 +10,7 @@ import accountsRouter from './routes/accounts.js';
 import postTypesRouter from './routes/postTypes.js';
 import trendsRouter from './routes/trends.js';
 import reachRouter from './routes/reach.js';
+import gaListensRouter from './routes/gaListens.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,6 +37,7 @@ app.use('/api/post-types', postTypesRouter);
 app.use('/api/trends', trendsRouter);
 app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/reach', reachRouter);
+app.use('/api/ga-listens', gaListensRouter);
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
