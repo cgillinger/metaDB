@@ -269,6 +269,36 @@ Appen stöder tre typer av dataimport:
 
 ---
 
+## Säkerhet
+
+Appen är avsedd att köras på **LAN eller Tailscale** — inte exponerad direkt mot publikt internet. Säkerhetshärdningen ger ett extra skyddslager men ersätter inte nätverksisolering.
+
+### Skyddslager
+
+| Skydd | Detalj |
+|---|---|
+| **HTTP-säkerhetsheaders** | [helmet](https://helmetjs.github.io/) sätter `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options` m.fl. |
+| **Rate limiting** | API: 200 req/min · Uppladdning: 10 req/min · Backup: 2 req/min |
+| **JSON body-gräns** | Max 1 MB per request |
+| **CSV-validering** | Multer tillåter enbart CSV (MIME-typ eller `.csv`-ändelse), max 50 MB |
+| **SQL-whitelisting** | Metric- och sort-parametrar matchas mot explicita maps — ingen dynamisk stränginterpolering i SQL |
+| **Non-root container** | Processen kör som `appuser` (inte root) inuti Docker-containern |
+
+### ADMIN_TOKEN — skydda underhållsendpoints
+
+Endpointerna `/api/maintenance/stats`, `/vacuum` och `/redetect-collab` kan skyddas med ett hemligt token. Sätt det i `docker-compose.yml`:
+
+```yaml
+environment:
+  # - ADMIN_TOKEN=byt-till-ditt-eget-token
+```
+
+Med token satt krävs headern `X-Admin-Token: <token>` för att nå dessa endpoints. Utan token är de öppna (standardläget för LAN-bruk).
+
+Backup-endpointen (`/api/maintenance/backup`) är alltid öppen men rate-limitad till 2 nedladdningar per minut.
+
+---
+
 ## Licens
 
 MIT © cgillinger
