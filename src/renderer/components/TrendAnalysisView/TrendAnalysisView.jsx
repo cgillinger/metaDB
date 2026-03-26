@@ -495,8 +495,8 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
                   })}
 
                   {hoveredDataPoint && (() => {
-                    const tooltipWidth = 220, tooltipHeight = 70;
-                    let tooltipX = mousePosition.x + 15, tooltipY = mousePosition.y - 35;
+                    const tooltipWidth = 240, tooltipHeight = 88;
+                    let tooltipX = mousePosition.x + 15, tooltipY = mousePosition.y - 45;
                     if (tooltipX + tooltipWidth > 980) tooltipX = mousePosition.x - tooltipWidth - 15;
                     if (tooltipY < 15) tooltipY = mousePosition.y + 15;
                     if (tooltipY + tooltipHeight > 480) tooltipY = mousePosition.y - tooltipHeight - 15;
@@ -507,7 +507,8 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
                         <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} fill="rgba(0,0,0,0.85)" rx="6" />
                         <text x={tooltipX + 12} y={tooltipY + 20} fill="white" fontSize="13" fontWeight="bold">{hoveredDataPoint.account_name}</text>
                         <text x={tooltipX + 12} y={tooltipY + 38} fill="white" fontSize="12">{getMonthName(month)} {year}</text>
-                        <text x={tooltipX + 12} y={tooltipY + 55} fill="white" fontSize="12">{tooltipMetric}: {hoveredDataPoint.value.toLocaleString()}</text>
+                        <text x={tooltipX + 12} y={tooltipY + 55} fill="white" fontSize="11">{tooltipMetric}</text>
+                        <text x={tooltipX + 12} y={tooltipY + 73} fill="white" fontSize="14" fontWeight="bold">{hoveredDataPoint.value.toLocaleString()}</text>
                       </g>
                     );
                   })()}
