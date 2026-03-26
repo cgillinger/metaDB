@@ -49,12 +49,24 @@ router.get('/coverage', (req, res) => {
     // account_reach table may not exist yet
   }
 
+  // Get all months that have ga_listens data
+  let gaListensMonthSet = new Set();
+  try {
+    const gaRows = db.prepare(`
+      SELECT DISTINCT month FROM ga_listens ORDER BY month ASC
+    `).all();
+    for (const r of gaRows) gaListensMonthSet.add(r.month);
+  } catch (e) {
+    // ga_listens table may not exist yet
+  }
+
   const months = postRows.map(r => ({
     month: r.month,
     post_count: r.post_count,
     has_facebook: r.fb_count > 0,
     has_instagram: r.ig_count > 0,
     has_reach: reachMonthSet.has(r.month),
+    has_ga_listens: gaListensMonthSet.has(r.month),
   }));
 
   // Add reach-only months (no posts, but have account reach data)
@@ -67,6 +79,21 @@ router.get('/coverage', (req, res) => {
         has_facebook: true,
         has_instagram: false,
         has_reach: true,
+        has_ga_listens: gaListensMonthSet.has(reachMonth),
+      });
+    }
+  }
+
+  // Add GA-only months (no posts, no reach, but have ga_listens data)
+  for (const gaMonth of gaListensMonthSet) {
+    if (!postMonthSet.has(gaMonth) && !reachMonthSet.has(gaMonth)) {
+      months.push({
+        month: gaMonth,
+        post_count: 0,
+        has_facebook: false,
+        has_instagram: false,
+        has_reach: false,
+        has_ga_listens: true,
       });
     }
   }
