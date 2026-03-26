@@ -62,20 +62,33 @@ export const api = {
   deleteReachMonth: (month) =>
     fetch(`/api/reach/${month}`, { method: 'DELETE' }).then(handleResponse),
 
-  // GA Listens imports
+  // GA Listens imports — Google Analytics podcast listening data
+
+  /**
+   * Upload a GA listens CSV export for the given month.
+   * @param {File} file - CSV file with Programnamn + lyssningar columns
+   * @param {string} month - Target month in 'YYYY-MM' format
+   */
   uploadGAListensCSV: (file, month) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('month', month);
     return fetch('/api/ga-listens', { method: 'POST', body: formData }).then(handleResponse);
   },
+  /**
+   * Fetch GA listens rows, optionally filtered to specific months.
+   * @param {string[]|null} months - Array of 'YYYY-MM' strings, or null for all
+   * @returns {Promise<{data: Array}>}
+   */
   getGAListens: (months) => {
     const params = months && months.length > 0
       ? '?' + new URLSearchParams({ months: months.join(',') })
       : '';
     return fetch(`/api/ga-listens${params}`).then(handleResponse);
   },
+  /** @returns {Promise<{months: string[]}>} */
   getGAListensMonths: () => fetch('/api/ga-listens/months').then(handleResponse),
+  /** @param {string} month - 'YYYY-MM' */
   deleteGAListensMonth: (month) =>
     fetch(`/api/ga-listens/${month}`, { method: 'DELETE' }).then(handleResponse),
 };

@@ -49,13 +49,16 @@ router.get('/coverage', (req, res) => {
     // account_reach table may not exist yet
   }
 
-  // Get all months that have ga_listens data
-  let gaListensMonthSet = new Set();
+  // Count distinct programmes with GA listens data per month.
+  // Used by the frontend to filter the period selector by platform.
+  let gaListensCountMap = new Map();
   try {
-    const gaRows = db.prepare(`
-      SELECT DISTINCT month FROM ga_listens ORDER BY month ASC
+    const gaCountRows = db.prepare(`
+      SELECT month, COUNT(DISTINCT account_name) AS ga_listens_count
+      FROM ga_listens
+      GROUP BY month
     `).all();
-    for (const r of gaRows) gaListensMonthSet.add(r.month);
+    for (const r of gaCountRows) gaListensCountMap.set(r.month, r.ga_listens_count);
   } catch (e) {
     // ga_listens table may not exist yet
   }
@@ -63,10 +66,13 @@ router.get('/coverage', (req, res) => {
   const months = postRows.map(r => ({
     month: r.month,
     post_count: r.post_count,
+    fb_count: r.fb_count,
+    ig_count: r.ig_count,
     has_facebook: r.fb_count > 0,
     has_instagram: r.ig_count > 0,
     has_reach: reachMonthSet.has(r.month),
-    has_ga_listens: gaListensMonthSet.has(r.month),
+    has_ga_listens: gaListensCountMap.has(r.month),
+    ga_listens_count: gaListensCountMap.get(r.month) || 0,
   }));
 
   // Add reach-only months (no posts, but have account reach data)
@@ -76,24 +82,30 @@ router.get('/coverage', (req, res) => {
       months.push({
         month: reachMonth,
         post_count: 0,
+        fb_count: 0,
+        ig_count: 0,
         has_facebook: true,
         has_instagram: false,
         has_reach: true,
-        has_ga_listens: gaListensMonthSet.has(reachMonth),
+        has_ga_listens: gaListensCountMap.has(reachMonth),
+        ga_listens_count: gaListensCountMap.get(reachMonth) || 0,
       });
     }
   }
 
   // Add GA-only months (no posts, no reach, but have ga_listens data)
-  for (const gaMonth of gaListensMonthSet) {
+  for (const [gaMonth, gaCount] of gaListensCountMap) {
     if (!postMonthSet.has(gaMonth) && !reachMonthSet.has(gaMonth)) {
       months.push({
         month: gaMonth,
         post_count: 0,
+        fb_count: 0,
+        ig_count: 0,
         has_facebook: false,
         has_instagram: false,
         has_reach: false,
         has_ga_listens: true,
+        ga_listens_count: gaCount,
       });
     }
   }

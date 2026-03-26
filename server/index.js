@@ -37,7 +37,7 @@ app.use('/api/post-types', postTypesRouter);
 app.use('/api/trends', trendsRouter);
 app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/reach', reachRouter);
-app.use('/api/ga-listens', gaListensRouter);
+app.use('/api/ga-listens', gaListensRouter); // Google Analytics listening data
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {

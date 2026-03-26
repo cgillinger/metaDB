@@ -212,7 +212,7 @@ const ImportManager = ({ onImportsChanged }) => {
         </Card>
       )}
 
-      {/* GA Listens data */}
+      {/* GA Listens data — shown when at least one month of GA data exists */}
       {gaListensMonths.length > 0 && (
         <Card>
           <CardHeader>
