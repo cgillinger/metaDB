@@ -11,6 +11,7 @@ import {
   getGaListens,
   getGaListensMonths,
   deleteGaListensMonth,
+  deleteGaListensByAccount,
 } from '../services/gaListensImporter.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 
@@ -119,6 +120,29 @@ router.get('/', (req, res) => {
 router.get('/months', (req, res) => {
   const months = getGaListensMonths();
   res.json({ months });
+});
+
+// DELETE /by-account — delete GA listens for a specific account within given months
+// Must be registered BEFORE /:month to prevent that route from capturing "by-account"
+router.delete('/by-account', (req, res) => {
+  const { accountName, months: monthsParam } = req.query;
+
+  if (!accountName) {
+    return res.status(400).json({ error: 'accountName krävs.' });
+  }
+
+  if (!monthsParam) {
+    return res.status(400).json({ error: 'months krävs.' });
+  }
+
+  const monthsArray = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
+  const invalid = monthsArray.find(m => !/^\d{4}-\d{2}$/.test(m));
+  if (invalid || monthsArray.length === 0) {
+    return res.status(400).json({ error: 'Ogiltigt månadsformat. Förväntat: YYYY-MM.' });
+  }
+
+  const deleted = deleteGaListensByAccount(accountName, monthsArray);
+  res.json({ deleted, accountName });
 });
 
 // DELETE /:month — delete GA listens data for a month

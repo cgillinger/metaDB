@@ -104,6 +104,10 @@ export const api = {
   /** @param {string} month - 'YYYY-MM' */
   deleteGAListensMonth: (month) =>
     fetch(`/api/ga-listens/${month}`, { method: 'DELETE' }).then(handleResponse),
+  deleteGAListensAccount: (accountName, months) => {
+    const params = new URLSearchParams({ accountName, months: months.join(',') });
+    return fetch(`/api/ga-listens/by-account?${params}`, { method: 'DELETE' }).then(handleResponse);
+  },
 
   // Posts — delete by account + period
   deleteAccountPosts: (accountName, platform, periodParams) => {
