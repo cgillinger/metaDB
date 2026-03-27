@@ -105,7 +105,10 @@ const PeriodSelector = ({
         const newSelection = sortedAvailableKeys.slice(newMin, newMax + 1);
         onMonthsChange(newSelection);
       } else {
-        onMonthsChange([monthKey]);
+        const newMin = Math.min(clickedIdx, minIdx);
+        const newMax = Math.max(clickedIdx, maxIdx);
+        const newSelection = sortedAvailableKeys.slice(newMin, newMax + 1);
+        onMonthsChange(newSelection);
       }
     }
   };
@@ -226,6 +229,36 @@ const PeriodSelector = ({
                         </button>
                       );
                     })}
+                    {monthsByYear[year].length >= 4 && (() => {
+                      const yearMonthKeys = monthsByYear[year].map(m => m.month);
+                      const allYearSelected = yearMonthKeys.every(k => selectedSet.has(k));
+                      return (
+                        <button
+                          onClick={() => {
+                            if (allYearSelected) {
+                              const remaining = sortedSelected.filter(k => !yearMonthKeys.includes(k));
+                              if (remaining.length === 0) return;
+                              onMonthsChange(remaining);
+                            } else {
+                              const yearFirstIdx = sortedAvailableKeys.indexOf(yearMonthKeys[0]);
+                              const yearLastIdx = sortedAvailableKeys.indexOf(yearMonthKeys[yearMonthKeys.length - 1]);
+                              const minIdx = sortedAvailableKeys.indexOf(sortedSelected[0]);
+                              const maxIdx = sortedAvailableKeys.indexOf(sortedSelected[sortedSelected.length - 1]);
+                              const newMin = Math.min(yearFirstIdx, minIdx);
+                              const newMax = Math.max(yearLastIdx, maxIdx);
+                              onMonthsChange(sortedAvailableKeys.slice(newMin, newMax + 1));
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                            allYearSelected
+                              ? 'bg-gray-700 text-white border-transparent'
+                              : 'bg-white text-gray-600 border-gray-300 hover:border-primary/60 hover:bg-gray-50'
+                          }`}
+                        >
+                          Alla
+                        </button>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
