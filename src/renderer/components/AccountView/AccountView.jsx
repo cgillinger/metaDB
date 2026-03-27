@@ -187,7 +187,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       }
     };
     fetchGASummary();
-  }, [gaListensMode, periodParams, gaSortDir]);
+  }, [gaListensMode, periodParams, gaSortDir, refreshCounter]);
 
   // Fetch GA listens per-month data (for monthly pivot view)
   useEffect(() => {
@@ -214,7 +214,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       }
     };
     fetchGAMonthly();
-  }, [gaListensMode, gaViewMode, periodParams]);
+  }, [gaListensMode, gaViewMode, periodParams, refreshCounter]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -463,6 +463,24 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     }
   };
 
+  const handleDeleteGAAccount = async () => {
+    if (!deleteConfirm) return;
+    setDeleteLoading(true);
+    try {
+      const monthsArray = periodParams.months
+        ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
+        : [];
+      await api.deleteGAListensAccount(deleteConfirm.accountName, monthsArray);
+      setDeleteConfirm(null);
+      setRefreshCounter(c => c + 1);
+    } catch (err) {
+      console.error('Radering misslyckades:', err);
+      alert(`Radering misslyckades: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   // Early-return GA block — placed after all hooks to satisfy React rules of hooks.
   if (gaListensMode) {
     if (gaLoading) {
@@ -537,9 +555,21 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
           <Button variant={gaViewMode === 'summary' ? 'default' : 'ghost'} size="sm" onClick={() => setGaViewMode('summary')}>Summerat</Button>
           <Button variant={gaViewMode === 'monthly' ? 'default' : 'ghost'} size="sm" onClick={() => setGaViewMode('monthly')}>Per m&aring;nad</Button>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={handleGAExportCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
-          <Button variant="outline" onClick={handleGAExportExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Switch
+              id="show-delete-column"
+              checked={showDeleteColumn}
+              onCheckedChange={setShowDeleteColumn}
+            />
+            <Label htmlFor="show-delete-column" className="text-sm text-red-600">
+              Visa raderingskolumn
+            </Label>
+          </div>
+          <div className="flex space-x-2">
+            <Button variant="outline" onClick={handleGAExportCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
+            <Button variant="outline" onClick={handleGAExportExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+          </div>
         </div>
       </div>
     );
@@ -548,6 +578,26 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     if (gaViewMode === 'summary') {
       return (
         <Card className="p-4">
+          {deleteConfirm?.type === 'ga_listens' && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Bekräfta radering</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">
+                  Radera alla lyssningar för <strong>{deleteConfirm.accountName}</strong> i vald period
+                  ({deleteConfirm.listenCount.toLocaleString('sv-SE')} lyssningar totalt)? Detta kan inte ångras.
+                </p>
+                <div className="flex space-x-2 mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)} disabled={deleteLoading}>
+                    Avbryt
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={handleDeleteGAAccount} disabled={deleteLoading}>
+                    {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
           {gaToolbar}
           <div className="rounded-md border bg-white">
             <Table>
@@ -566,6 +616,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                         : <ArrowDown className="h-4 w-4 ml-1" />}
                     </div>
                   </TableHead>
+                  {showDeleteColumn && <TableHead className="w-10" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -578,6 +629,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                   <TableCell className="text-right font-semibold text-primary">
                     {formatValue(gaSummary.grandTotal)}
                   </TableCell>
+                  {showDeleteColumn && <TableCell />}
                 </TableRow>
                 {gaSummary.programmes.map((prog, idx) => (
                   <TableRow key={prog.account_name}>
@@ -592,6 +644,21 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                     <TableCell className="text-right">
                       {formatValue(prog.total_listens)}
                     </TableCell>
+                    {showDeleteColumn && (
+                      <TableCell className="text-center">
+                        <button
+                          onClick={() => setDeleteConfirm({
+                            accountName: prog.account_name,
+                            type: 'ga_listens',
+                            listenCount: prog.total_listens,
+                          })}
+                          className="text-red-500 hover:text-red-700"
+                          title="Radera lyssningar för detta program"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -616,6 +683,26 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
 
     return (
       <Card className="p-4">
+        {deleteConfirm?.type === 'ga_listens' && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Bekräfta radering</AlertTitle>
+            <AlertDescription>
+              <p className="mb-2">
+                Radera alla lyssningar för <strong>{deleteConfirm.accountName}</strong> i vald period
+                ({deleteConfirm.listenCount.toLocaleString('sv-SE')} lyssningar totalt)? Detta kan inte ångras.
+              </p>
+              <div className="flex space-x-2 mt-2">
+                <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)} disabled={deleteLoading}>
+                  Avbryt
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleDeleteGAAccount} disabled={deleteLoading}>
+                  {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
         {gaToolbar}
         <div className="rounded-md border bg-white">
           <Table>
@@ -638,6 +725,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                     </div>
                   </TableHead>
                 ))}
+                {showDeleteColumn && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -652,6 +740,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                     {formatValue(gaTotals[month])}
                   </TableCell>
                 ))}
+                {showDeleteColumn && <TableCell />}
               </TableRow>
               {gaSortedPrograms.map((prog, idx) => (
                 <TableRow key={prog}>
@@ -670,6 +759,21 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                         : <span className="text-muted-foreground">&mdash;</span>}
                     </TableCell>
                   ))}
+                  {showDeleteColumn && (
+                    <TableCell className="text-center">
+                      <button
+                        onClick={() => setDeleteConfirm({
+                          accountName: prog,
+                          type: 'ga_listens',
+                          listenCount: Object.values(gaPivot[prog]).reduce((sum, v) => sum + v, 0),
+                        })}
+                        className="text-red-500 hover:text-red-700"
+                        title="Radera lyssningar för detta program"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
