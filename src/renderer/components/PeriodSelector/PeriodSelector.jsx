@@ -238,22 +238,9 @@ const PeriodSelector = ({
                             if (allYearSelected) {
                               const remaining = sortedSelected.filter(k => !yearMonthKeys.includes(k));
                               if (remaining.length === 0) return;
-                              // Remaining may be non-contiguous if year was in the middle.
-                              // Keep only the contiguous group containing the latest month.
-                              const latestKey = remaining[remaining.length - 1];
-                              const latestIdx = sortedAvailableKeys.indexOf(latestKey);
-                              let startIdx = latestIdx;
-                              while (startIdx > 0 && remaining.includes(sortedAvailableKeys[startIdx - 1])) {
-                                startIdx--;
-                              }
-                              onMonthsChange(sortedAvailableKeys.slice(startIdx, latestIdx + 1));
+                              onMonthsChange(remaining);
                             } else {
-                              // Merge year months with current selection, find overall min/max, slice.
-                              const merged = new Set([...yearMonthKeys, ...sortedSelected]);
-                              const mergedInOrder = sortedAvailableKeys.filter(k => merged.has(k));
-                              const newMin = sortedAvailableKeys.indexOf(mergedInOrder[0]);
-                              const newMax = sortedAvailableKeys.indexOf(mergedInOrder[mergedInOrder.length - 1]);
-                              onMonthsChange(sortedAvailableKeys.slice(newMin, newMax + 1));
+                              onMonthsChange(yearMonthKeys);
                             }
                           }}
                           className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
