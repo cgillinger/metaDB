@@ -144,6 +144,21 @@ export function deleteGaListensMonth(month) {
 }
 
 /**
+ * Delete all GA listens data for one or more account names (across all months).
+ * @param {string[]} accountNames - Array of programme names to delete
+ * @returns {{ deleted: number }} - Number of rows removed
+ */
+export function deleteGaListensAccounts(accountNames) {
+  if (!accountNames || accountNames.length === 0) return { deleted: 0 };
+  const db = getDb();
+  const placeholders = accountNames.map(() => '?').join(', ');
+  const result = db.prepare(
+    `DELETE FROM ga_listens WHERE account_name IN (${placeholders})`
+  ).run(...accountNames);
+  return { deleted: result.changes };
+}
+
+/**
  * Delete all GA listens data for a specific account within the given months.
  * months: array of 'YYYY-MM' strings (required, at least 1 element).
  * Returns the number of deleted rows.

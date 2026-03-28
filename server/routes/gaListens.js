@@ -6,12 +6,14 @@ import { Router } from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import { getDb } from '../db/connection.js';
+import express from 'express';
 import {
   importGaListensCSV,
   getGaListens,
   getGaListensMonths,
   deleteGaListensMonth,
   deleteGaListensByAccount,
+  deleteGaListensAccounts,
 } from '../services/gaListensImporter.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 
@@ -120,6 +122,28 @@ router.get('/', (req, res) => {
 router.get('/months', (req, res) => {
   const months = getGaListensMonths();
   res.json({ months });
+});
+
+/**
+ * DELETE /by-accounts — batch-delete GA listens data for specific account names.
+ * Expects JSON body: { accountNames: string[] }
+ * Deletes ALL months for the given account names.
+ */
+router.delete('/by-accounts', express.json(), (req, res) => {
+  const { accountNames } = req.body;
+
+  if (!Array.isArray(accountNames) || accountNames.length === 0) {
+    return res.status(400).json({ error: 'accountNames måste vara en icke-tom array.' });
+  }
+
+  // Sanitise: trim, deduplicate, remove empties
+  const cleaned = [...new Set(accountNames.map(n => n.trim()).filter(Boolean))];
+  if (cleaned.length === 0) {
+    return res.status(400).json({ error: 'Inga giltiga kontonamn angavs.' });
+  }
+
+  const result = deleteGaListensAccounts(cleaned);
+  res.json({ deleted: result.deleted, accountNames: cleaned });
 });
 
 // DELETE /by-account — delete GA listens for a specific account within given months
