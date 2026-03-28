@@ -202,6 +202,14 @@ const MainView = ({ onShowUploader }) => {
     if (activeView === 'account') fields = ACCOUNT_VIEW_AVAILABLE_FIELDS;
     else if (activeView === 'trend_analysis') fields = TREND_ANALYSIS_AVAILABLE_FIELDS;
     else fields = POST_VIEW_AVAILABLE_FIELDS;
+
+    // account_reach is monthly-only (from Meta Graph API) — hide it in custom
+    // date range mode to prevent displaying misleading reach columns.
+    if (periodMode === 'custom' && fields.account_reach) {
+      fields = { ...fields };
+      delete fields.account_reach;
+    }
+
     return filterFieldsByPlatform(fields, activePlatform);
   };
 
@@ -214,7 +222,7 @@ const MainView = ({ onShowUploader }) => {
       }
       return filtered;
     });
-  }, [activeView, activePlatform]);
+  }, [activeView, activePlatform, periodMode]);
 
   const handleImportsChanged = async () => {
     try {
@@ -276,6 +284,21 @@ const MainView = ({ onShowUploader }) => {
       setSelectedMonths([sorted[0].month]);
     }
   }, [platformFilter, filteredCoverageData]);
+
+  /** Custom date ranges only work for post-level data (publish_time).
+   *  GA listens and account_reach are stored at monthly granularity only. */
+  const allowCustomPeriod = platformFilter !== 'ga_listens';
+
+  /**
+   * When switching to a platform that doesn't support custom date ranges,
+   * fall back to month-based selection to avoid sending unsupported
+   * dateFrom/dateTo params to endpoints that ignore them.
+   */
+  useEffect(() => {
+    if (!allowCustomPeriod && periodMode === 'custom') {
+      setPeriodMode('months');
+    }
+  }, [allowCustomPeriod]);
 
   const periodParams = useMemo(() => {
     if (periodMode === 'custom' && customRange.from && customRange.to) {
@@ -379,6 +402,7 @@ const MainView = ({ onShowUploader }) => {
           onCustomRangeChange={setCustomRange}
           mode={periodMode}
           onModeChange={setPeriodMode}
+          allowCustom={allowCustomPeriod}
         />
       )}
 
