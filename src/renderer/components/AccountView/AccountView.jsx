@@ -135,6 +135,11 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
   const [gaMonths, setGaMonths] = useState([]);
   const [gaMonthlySortConfig, setGaMonthlySortConfig] = useState({ key: null, direction: 'desc' });
 
+  // GA batch delete state
+  const [gaSelectedAccounts, setGaSelectedAccounts] = useState(new Set());
+  const [gaShowDeleteColumn, setGaShowDeleteColumn] = useState(false);
+  const [gaDeleteLoading, setGaDeleteLoading] = useState(false);
+
   // Fetch account data from API
   useEffect(() => {
     if (gaListensMode) return;
@@ -481,6 +486,16 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     }
   };
 
+  /** Clear checkbox selection when summary data reloads (e.g. after deletion). */
+  useEffect(() => {
+    setGaSelectedAccounts(new Set());
+  }, [gaSummary]);
+
+  /** Clear selection when delete column is hidden. */
+  useEffect(() => {
+    if (!gaShowDeleteColumn) setGaSelectedAccounts(new Set());
+  }, [gaShowDeleteColumn]);
+
   // Early-return GA block — placed after all hooks to satisfy React rules of hooks.
   if (gaListensMode) {
     if (gaLoading) {
@@ -548,28 +563,98 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       }
     };
 
+    /** Toggle a single account in the checkbox selection. */
+    const handleGAToggleAccount = (accountName) => {
+      setGaSelectedAccounts(prev => {
+        const next = new Set(prev);
+        if (next.has(accountName)) next.delete(accountName);
+        else next.add(accountName);
+        return next;
+      });
+    };
+
+    /** Toggle all / none. */
+    const handleGAToggleAll = () => {
+      const allNames = gaSummary.programmes.map(p => p.account_name);
+      if (gaSelectedAccounts.size === allNames.length) {
+        setGaSelectedAccounts(new Set());
+      } else {
+        setGaSelectedAccounts(new Set(allNames));
+      }
+    };
+
+    /** Batch-delete selected accounts with confirmation. */
+    const handleGABatchDelete = async () => {
+      if (gaSelectedAccounts.size === 0) return;
+      const names = [...gaSelectedAccounts];
+      const confirmed = confirm(
+        `Radera all lyssningsdata (alla månader) för ${names.length} konto${names.length > 1 ? 'n' : ''}?\n\n` +
+        names.slice(0, 10).join('\n') +
+        (names.length > 10 ? `\n... och ${names.length - 10} till` : '') +
+        '\n\nDetta kan inte ångras.'
+      );
+      if (!confirmed) return;
+
+      setGaDeleteLoading(true);
+      try {
+        await api.deleteGAListensAccounts(names);
+        setGaSelectedAccounts(new Set());
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGAListensSummary(months, gaSortDir);
+        setGaSummary(result);
+      } catch (err) {
+        console.error('Batch-radering misslyckades:', err);
+        alert(`Radering misslyckades: ${err.message}`);
+      } finally {
+        setGaDeleteLoading(false);
+      }
+    };
+
     // --- Shared GA toolbar ---
     const gaToolbar = (
       <div className="flex items-center justify-between mb-4">
-        <div className="inline-flex rounded-md border">
-          <Button variant={gaViewMode === 'summary' ? 'default' : 'ghost'} size="sm" onClick={() => setGaViewMode('summary')}>Summerat</Button>
-          <Button variant={gaViewMode === 'monthly' ? 'default' : 'ghost'} size="sm" onClick={() => setGaViewMode('monthly')}>Per m&aring;nad</Button>
-        </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Switch
-              id="show-delete-column"
-              checked={showDeleteColumn}
-              onCheckedChange={setShowDeleteColumn}
-            />
-            <Label htmlFor="show-delete-column" className="text-sm text-red-600">
-              Visa raderingskolumn
-            </Label>
+          <div className="inline-flex rounded-md border">
+            <Button variant={gaViewMode === 'summary' ? 'default' : 'ghost'} size="sm"
+              onClick={() => setGaViewMode('summary')}>Summerat</Button>
+            <Button variant={gaViewMode === 'monthly' ? 'default' : 'ghost'} size="sm"
+              onClick={() => setGaViewMode('monthly')}>Per m&aring;nad</Button>
           </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" onClick={handleGAExportCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
-            <Button variant="outline" onClick={handleGAExportExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
-          </div>
+          {/* Delete toggle — only in summary view */}
+          {gaViewMode === 'summary' && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="ga-show-delete"
+                checked={gaShowDeleteColumn}
+                onCheckedChange={setGaShowDeleteColumn}
+              />
+              <Label htmlFor="ga-show-delete" className="text-sm text-red-600">
+                Radera konton
+              </Label>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Batch delete button — visible when checkboxes are checked */}
+          {gaShowDeleteColumn && gaSelectedAccounts.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleGABatchDelete}
+              disabled={gaDeleteLoading}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Radera {gaSelectedAccounts.size} konto{gaSelectedAccounts.size > 1 ? 'n' : ''}
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleGAExportCSV}>
+            <FileDown className="w-4 h-4 mr-2" />CSV
+          </Button>
+          <Button variant="outline" onClick={handleGAExportExcel}>
+            <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
+          </Button>
         </div>
       </div>
     );
@@ -603,6 +688,17 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
             <Table>
               <TableHeader>
                 <TableRow>
+                  {gaShowDeleteColumn && (
+                    <TableHead className="w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={gaSelectedAccounts.size === gaSummary.programmes.length && gaSummary.programmes.length > 0}
+                        onChange={handleGAToggleAll}
+                        className="rounded border-gray-300"
+                        title="Markera alla"
+                      />
+                    </TableHead>
+                  )}
                   <TableHead className="w-10 text-center">#</TableHead>
                   <TableHead>Programnamn</TableHead>
                   <TableHead
@@ -616,11 +712,11 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                         : <ArrowDown className="h-4 w-4 ml-1" />}
                     </div>
                   </TableHead>
-                  {showDeleteColumn && <TableHead className="w-10" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow className="bg-primary/5 border-b-2 border-primary/20">
+                  {gaShowDeleteColumn && <TableCell />}
                   <TableCell />
                   <TableCell className="font-semibold flex items-center">
                     <Calculator className="w-4 h-4 mr-2 text-primary" />
@@ -629,10 +725,19 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                   <TableCell className="text-right font-semibold text-primary">
                     {formatValue(gaSummary.grandTotal)}
                   </TableCell>
-                  {showDeleteColumn && <TableCell />}
                 </TableRow>
                 {gaSummary.programmes.map((prog, idx) => (
                   <TableRow key={prog.account_name}>
+                    {gaShowDeleteColumn && (
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={gaSelectedAccounts.has(prog.account_name)}
+                          onChange={() => handleGAToggleAccount(prog.account_name)}
+                          className="rounded border-gray-300"
+                        />
+                      </TableCell>
+                    )}
                     <TableCell className="text-center font-medium">{idx + 1}</TableCell>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
@@ -644,21 +749,6 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                     <TableCell className="text-right">
                       {formatValue(prog.total_listens)}
                     </TableCell>
-                    {showDeleteColumn && (
-                      <TableCell className="text-center">
-                        <button
-                          onClick={() => setDeleteConfirm({
-                            accountName: prog.account_name,
-                            type: 'ga_listens',
-                            listenCount: prog.total_listens,
-                          })}
-                          className="text-red-500 hover:text-red-700"
-                          title="Radera lyssningar för detta program"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </TableCell>
-                    )}
                   </TableRow>
                 ))}
               </TableBody>

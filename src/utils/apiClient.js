@@ -108,6 +108,17 @@ export const api = {
     const params = new URLSearchParams({ accountName, months: months.join(',') });
     return fetch(`/api/ga-listens/by-account?${params}`, { method: 'DELETE' }).then(handleResponse);
   },
+  /**
+   * Batch-delete GA listens data for specific account names (all months).
+   * @param {string[]} accountNames - Programme names to delete
+   * @returns {Promise<{ deleted: number, accountNames: string[] }>}
+   */
+  deleteGAListensAccounts: (accountNames) =>
+    fetch('/api/ga-listens/by-accounts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountNames }),
+    }).then(handleResponse),
 
   // Posts — delete by account + period
   deleteAccountPosts: (accountName, platform, periodParams) => {
