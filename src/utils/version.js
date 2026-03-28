@@ -1,5 +1,5 @@
 /**
  * Application version — single source of truth.
- * Update this when releasing a new version.
+ * Synced with package.json. Update both when releasing.
  */
-export const VERSION = '1.3.0';
+export const VERSION = '2.1.1';
