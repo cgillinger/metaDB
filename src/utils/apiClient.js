@@ -120,6 +120,57 @@ export const api = {
       body: JSON.stringify({ accountNames }),
     }).then(handleResponse),
 
+  // Account Groups
+  /**
+   * Fetch all account groups, optionally filtered by source.
+   * @param {'ga_listens'|'posts'|null} source
+   * @returns {Promise<{groups: Array}>}
+   */
+  getAccountGroups: (source = null) => {
+    const params = source ? `?source=${source}` : '';
+    return fetch(`/api/account-groups${params}`).then(handleResponse);
+  },
+  /**
+   * Create a new account group.
+   * @param {string} name
+   * @param {'ga_listens'|'posts'} source
+   * @param {string[]} members - Array of account_key strings
+   * @returns {Promise<{id, name, source, members}>}
+   */
+  createAccountGroup: (name, source, members) => {
+    return fetch('/api/account-groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, source, members }),
+    }).then(handleResponse);
+  },
+  /**
+   * Update an account group.
+   * @param {number} id
+   * @param {{name?: string, members?: string[]}} updates
+   * @returns {Promise<{id, name, source, members}>}
+   */
+  updateAccountGroup: (id, updates) => {
+    return fetch(`/api/account-groups/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    }).then(handleResponse);
+  },
+  /**
+   * Delete a single account group.
+   * @param {number} id
+   */
+  deleteAccountGroup: (id) => {
+    return fetch(`/api/account-groups/${id}`, { method: 'DELETE' }).then(handleResponse);
+  },
+  /**
+   * Delete ALL account groups.
+   */
+  deleteAllAccountGroups: () => {
+    return fetch('/api/account-groups/all', { method: 'DELETE' }).then(handleResponse);
+  },
+
   // Posts — delete by account + period
   deleteAccountPosts: (accountName, platform, periodParams) => {
     const params = new URLSearchParams({ accountName, platform, ...periodParams });

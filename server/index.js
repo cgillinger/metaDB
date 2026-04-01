@@ -15,6 +15,7 @@ import postTypesRouter from './routes/postTypes.js';
 import trendsRouter from './routes/trends.js';
 import reachRouter from './routes/reach.js';
 import gaListensRouter from './routes/gaListens.js';
+import accountGroupsRouter from './routes/accountGroups.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -78,6 +79,7 @@ app.use('/api/post-types', postTypesRouter);
 app.use('/api/trends', trendsRouter);
 app.use('/api/reach', reachRouter);
 app.use('/api/ga-listens', gaListensRouter); // Google Analytics listening data
+app.use('/api/account-groups', accountGroupsRouter);
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
