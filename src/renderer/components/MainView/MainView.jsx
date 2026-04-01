@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Card, CardContent } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
@@ -136,6 +136,8 @@ const MainView = ({ onShowUploader }) => {
   const [imports, setImports] = useState([]);
   // True when at least one month of GA listening data is available
   const [hasGAListens, setHasGAListens] = useState(false);
+  // Account groups — persists across view switches
+  const [accountGroups, setAccountGroups] = useState([]);
 
   // Period selection
   const [periodMode, setPeriodMode] = useState('months');
@@ -171,6 +173,17 @@ const MainView = ({ onShowUploader }) => {
     };
     loadData();
   }, []);
+
+  const refreshAccountGroups = useCallback(async () => {
+    try {
+      const result = await api.getAccountGroups();
+      setAccountGroups(result.groups || []);
+    } catch (err) {
+      console.error('Fel vid hämtning av kontogrupper:', err);
+    }
+  }, []);
+
+  useEffect(() => { refreshAccountGroups(); }, [refreshAccountGroups]);
 
   // Detect platform from imports
   const platformInfo = useMemo(() => {
@@ -467,7 +480,11 @@ const MainView = ({ onShowUploader }) => {
         </TabsContent>
 
         <TabsContent value="imports">
-          <ImportManager onImportsChanged={handleImportsChanged} />
+          <ImportManager
+            onImportsChanged={handleImportsChanged}
+            accountGroups={accountGroups}
+            onGroupsChanged={refreshAccountGroups}
+          />
         </TabsContent>
       </Tabs>
     </div>
