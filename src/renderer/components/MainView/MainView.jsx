@@ -457,6 +457,8 @@ const MainView = ({ onShowUploader }) => {
             platform={apiPlatform}
             periodParams={periodParams}
             gaListensMode={platformFilter === 'ga_listens'}
+            accountGroups={accountGroups}
+            onGroupsChanged={refreshAccountGroups}
           />
         </TabsContent>
 
@@ -476,6 +478,8 @@ const MainView = ({ onShowUploader }) => {
             platform={apiPlatform}
             periodParams={periodParams}
             gaListensMode={platformFilter === 'ga_listens'}
+            accountGroups={accountGroups}
+            onGroupsChanged={refreshAccountGroups}
           />
         </TabsContent>
 
