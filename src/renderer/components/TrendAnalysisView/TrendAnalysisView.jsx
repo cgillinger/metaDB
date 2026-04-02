@@ -14,8 +14,10 @@ import {
   TrendingUp,
   LineChart,
   AlertCircle,
+  Users,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
+import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 
 // P4 Lokalt regional channel names — explicit Set for O(1) membership lookup.
 const P4_CHANNELS = new Set([
@@ -57,6 +59,11 @@ const CHART_COLORS = [
   '#2563EB', '#16A34A', '#EAB308', '#DC2626', '#7C3AED', '#EA580C',
   '#0891B2', '#BE185D', '#059669', '#7C2D12', '#4338CA', '#C2410C'
 ];
+
+// Metrics that cannot be meaningfully summed across accounts in a group
+const NON_SUMMABLE_METRICS = new Set([
+  'reach', 'average_reach', 'account_reach', 'posts_per_day',
+]);
 
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
 
@@ -105,12 +112,19 @@ const createSmoothPath = (points) => {
 
 const getMonthName = (month) => MONTH_NAMES_SV[month - 1] || String(month);
 
-const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false }) => {
+const TrendAnalysisView = ({
+  platform,
+  periodParams = {},
+  gaListensMode = false,
+  accountGroups = [],
+  onGroupsChanged = null,
+}) => {
   const [selectedMetric, setSelectedMetric] = useState('interactions');
-  // selectedAccounts stores composite keys: "account_name::platform"
+  // selectedAccounts stores composite keys: "account_name::platform" or "__group__<id>"
   const [selectedAccounts, setSelectedAccounts] = useState([]);
   const [hoveredDataPoint, setHoveredDataPoint] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [groupNotice, setGroupNotice] = useState(null);
 
   const [accountList, setAccountList] = useState([]);
   const [trendData, setTrendData] = useState(null);
@@ -119,6 +133,10 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
   // GA Listens state — populated only when gaListensMode is true
   const [gaRawData, setGaRawData] = useState([]);       // flat rows from API
   const [gaAccountList, setGaAccountList] = useState([]); // sorted account objects
+
+  // Group create dialog state
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [groupDialogAccounts, setGroupDialogAccounts] = useState([]);
 
   // Clear selection and trend data when switching between GA and post mode
   useEffect(() => {
@@ -138,6 +156,70 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
     if (hasInstagram) Object.assign(metrics, TREND_METRICS_IG);
     return metrics;
   }, [hasFacebook, hasInstagram]);
+
+  // Inject GA groups into the GA account list
+  const gaAccountListWithGroups = useMemo(() => {
+    const gaNames = new Set(gaAccountList.map(a => a.account_name));
+    const gaGroups = accountGroups
+      .filter(g => g.source === 'ga_listens')
+      .map(g => {
+        const memberNames = g.members.map(k => k.split('::')[0]);
+        const matchedCount = memberNames.filter(n => gaNames.has(n)).length;
+        return {
+          account_name: g.name,
+          platform: 'ga_listens',
+          is_collab: false,
+          key: `__group__${g.id}`,
+          isGroup: true,
+          groupId: g.id,
+          memberKeys: g.members,
+          memberCount: g.members.length,
+          matchedCount,
+          disabled: matchedCount === 0,
+        };
+      });
+    return [...gaGroups, ...gaAccountList];
+  }, [accountGroups, gaAccountList]);
+
+  // Inject posts groups into the posts account list
+  const accountListWithGroups = useMemo(() => {
+    const postKeys = new Set(accountList.map(a => a.key));
+    const postGroups = accountGroups
+      .filter(g => g.source === 'posts')
+      .map(g => {
+        const matchedCount = g.members.filter(k => postKeys.has(k)).length;
+        return {
+          account_name: g.name,
+          platform: 'group',
+          is_collab: false,
+          key: `__group__${g.id}`,
+          isGroup: true,
+          groupId: g.id,
+          memberKeys: g.members,
+          memberCount: g.members.length,
+          matchedCount,
+          disabled: matchedCount === 0,
+        };
+      });
+    return [...postGroups, ...accountList];
+  }, [accountGroups, accountList]);
+
+  // True when any selected account is a group
+  const hasGroupSelected = selectedAccounts.some(k => k.startsWith('__group__'));
+
+  // Auto-switch from non-summable metric when a group is selected
+  useEffect(() => {
+    if (!gaListensMode && hasGroupSelected && NON_SUMMABLE_METRICS.has(selectedMetric)) {
+      setSelectedMetric('interactions');
+      setGroupNotice('Räckvidd kan inte aggregeras för kontogrupper. Bytte till Interaktioner.');
+    }
+  }, [gaListensMode, hasGroupSelected, selectedMetric]);
+
+  useEffect(() => {
+    if (!groupNotice) return;
+    const t = setTimeout(() => setGroupNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [groupNotice]);
 
   // Fetch account list (posts mode only)
   useEffect(() => {
@@ -171,12 +253,21 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
     const fetchTrends = async () => {
       setLoading(true);
       try {
-        // Send composite keys to backend
+        // Expand group selections into their member keys for the API call
+        const expandedKeys = selectedAccounts.flatMap(key => {
+          if (key.startsWith('__group__')) {
+            const entry = accountListWithGroups.find(a => a.key === key);
+            return entry ? entry.memberKeys : [];
+          }
+          return [key];
+        });
+        const uniqueKeys = [...new Set(expandedKeys)];
+        if (uniqueKeys.length === 0) { setTrendData(null); return; }
+
         const params = {
           metric: selectedMetric,
-          accountKeys: selectedAccounts.join('||'),
+          accountKeys: uniqueKeys.join('||'),
           granularity: 'month',
-          // account_reach always shows all imported months — skip period params
           ...(selectedMetric !== 'account_reach' ? periodParams : {}),
         };
         if (platform) params.platform = platform;
@@ -189,26 +280,66 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
       }
     };
     fetchTrends();
-  }, [gaListensMode, selectedMetric, selectedAccounts, platform, periodParams]);
+  }, [gaListensMode, selectedMetric, selectedAccounts, platform, periodParams, accountListWithGroups]);
 
-  // Build chart lines from trend data
+  // Build chart lines from trend data, aggregating group series client-side
   const { months, chartLines } = useMemo(() => {
     if (!trendData || !trendData.months || !trendData.series) {
       return { months: [], chartLines: [] };
     }
-    const lines = trendData.series.map((series, index) => ({
-      key: accountKey(series.account_name, series.platform),
-      account_name: series.account_name,
-      platform: series.platform,
-      is_collab: series.is_collab || false,
-      color: CHART_COLORS[index % CHART_COLORS.length],
-      points: trendData.months.map((monthKey, mIndex) => ({
-        month: monthKey,
-        value: series.data[mIndex] || 0,
-      })),
-    }));
+
+    // Index raw series by composite key for fast lookup
+    const seriesByKey = {};
+    for (const s of trendData.series) {
+      seriesByKey[accountKey(s.account_name, s.platform)] = s;
+    }
+
+    let colorIndex = 0;
+    const lines = selectedAccounts.map(selectedKey => {
+      const entry = accountListWithGroups.find(a => a.key === selectedKey);
+      if (!entry) return null;
+
+      if (entry.isGroup) {
+        // Sum member series element-wise
+        const summedData = trendData.months.map((_, mIndex) =>
+          entry.memberKeys.reduce((sum, memberKey) => {
+            const s = seriesByKey[memberKey];
+            return sum + (s ? (s.data[mIndex] || 0) : 0);
+          }, 0)
+        );
+        return {
+          key: selectedKey,
+          account_name: entry.account_name,
+          platform: 'group',
+          is_collab: false,
+          isGroup: true,
+          color: CHART_COLORS[colorIndex++ % CHART_COLORS.length],
+          points: trendData.months.map((monthKey, mIndex) => ({
+            month: monthKey,
+            value: summedData[mIndex],
+          })),
+        };
+      }
+
+      // Regular account
+      const series = seriesByKey[selectedKey];
+      if (!series) return null;
+      return {
+        key: selectedKey,
+        account_name: series.account_name,
+        platform: series.platform,
+        is_collab: series.is_collab || false,
+        isGroup: false,
+        color: CHART_COLORS[colorIndex++ % CHART_COLORS.length],
+        points: trendData.months.map((monthKey, mIndex) => ({
+          month: monthKey,
+          value: series.data[mIndex] || 0,
+        })),
+      };
+    }).filter(Boolean);
+
     return { months: trendData.months, chartLines: lines };
-  }, [trendData]);
+  }, [trendData, selectedAccounts, accountListWithGroups]);
 
   const yAxisConfig = useMemo(() => {
     if (chartLines.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
@@ -259,20 +390,45 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
 
   const gaChartLines = useMemo(() => {
     if (!gaListensMode || selectedAccounts.length === 0) return [];
-    return selectedAccounts
-      .filter(key => { const { name } = parseAccountKey(key); return gaPivot[name] !== undefined; })
-      .map((key, index) => {
-        const { name } = parseAccountKey(key);
+    return selectedAccounts.map((key, index) => {
+      const entry = gaAccountListWithGroups.find(a => a.key === key);
+      if (!entry) return null;
+
+      if (entry.isGroup) {
+        // Aggregate listens across all member accounts per month
+        const aggregatedByMonth = {};
+        for (const memberKey of entry.memberKeys) {
+          const memberName = memberKey.split('::')[0];
+          const memberData = gaPivot[memberName];
+          if (!memberData) continue;
+          for (const [month, listens] of Object.entries(memberData)) {
+            aggregatedByMonth[month] = (aggregatedByMonth[month] || 0) + listens;
+          }
+        }
         return {
           key,
-          account_name: name,
+          account_name: entry.account_name,
           platform: 'ga_listens',
           is_collab: false,
+          isGroup: true,
           color: CHART_COLORS[index % CHART_COLORS.length],
-          points: gaMonths.map(month => ({ month, value: gaPivot[name]?.[month] ?? 0 })),
+          points: gaMonths.map(m => ({ month: m, value: aggregatedByMonth[m] || 0 })),
         };
-      });
-  }, [gaListensMode, selectedAccounts, gaPivot, gaMonths]);
+      }
+
+      // Regular account
+      const data = gaPivot[entry.account_name] || {};
+      return {
+        key,
+        account_name: entry.account_name,
+        platform: 'ga_listens',
+        is_collab: false,
+        isGroup: false,
+        color: CHART_COLORS[index % CHART_COLORS.length],
+        points: gaMonths.map(month => ({ month, value: data[month] ?? 0 })),
+      };
+    }).filter(Boolean);
+  }, [gaListensMode, selectedAccounts, gaPivot, gaMonths, gaAccountListWithGroups]);
 
   const gaYAxisConfig = useMemo(() => {
     if (gaChartLines.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
@@ -286,23 +442,28 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
   const displayYAxisConfig = gaListensMode ? gaYAxisConfig : yAxisConfig;
 
   // Filter account list based on selected metric (account_reach = FB only)
+  // Groups are always kept in the list regardless of metric filter
   const filteredAccountList = useMemo(() => {
     if (selectedMetric === 'account_reach') {
-      return accountList.filter(a => a.platform === 'facebook');
+      return accountListWithGroups.filter(a => a.isGroup || a.platform === 'facebook');
     }
-    return accountList;
-  }, [accountList, selectedMetric]);
+    return accountListWithGroups;
+  }, [accountListWithGroups, selectedMetric]);
 
   // When metric changes to account_reach, remove non-FB accounts from selection
   useEffect(() => {
     if (!gaListensMode && selectedMetric === 'account_reach') {
-      const fbKeys = new Set(accountList.filter(a => a.platform === 'facebook').map(a => a.key));
+      const fbKeys = new Set(
+        accountListWithGroups
+          .filter(a => a.isGroup || a.platform === 'facebook')
+          .map(a => a.key)
+      );
       setSelectedAccounts(prev => prev.filter(k => fbKeys.has(k)));
     }
-  }, [gaListensMode, selectedMetric, accountList]);
+  }, [gaListensMode, selectedMetric, accountListWithGroups]);
 
-  // Final display account list (resolved after filteredAccountList is available)
-  const activeAccountList = gaListensMode ? gaAccountList : filteredAccountList;
+  // Final display account list
+  const activeAccountList = gaListensMode ? gaAccountListWithGroups : filteredAccountList;
 
   const handleAccountToggle = (key) => {
     setSelectedAccounts(current =>
@@ -311,13 +472,15 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
   };
 
   const handleToggleAllAccounts = () => {
-    const allKeys = activeAccountList.map(a => a.key);
-    const allSelected = allKeys.length > 0 && allKeys.every(k => selectedAccounts.includes(k));
-    setSelectedAccounts(allSelected ? [] : allKeys);
+    const selectableKeys = activeAccountList.filter(a => !a.disabled).map(a => a.key);
+    const allSelected = selectableKeys.length > 0 && selectableKeys.every(k => selectedAccounts.includes(k));
+    setSelectedAccounts(allSelected ? [] : selectableKeys);
   };
 
-  const allAccountsSelected = activeAccountList.length > 0 &&
-    activeAccountList.every(a => selectedAccounts.includes(a.key));
+  const allAccountsSelected = (() => {
+    const selectableKeys = activeAccountList.filter(a => !a.disabled).map(a => a.key);
+    return selectableKeys.length > 0 && selectableKeys.every(k => selectedAccounts.includes(k));
+  })();
 
   const handleMouseMove = (event, point) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -361,22 +524,60 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
                 </Button>
               </div>
               <div className="max-h-48 overflow-y-auto border rounded-md p-3 space-y-2 bg-gray-50">
-                {activeAccountList.map(account => (
-                  <Label key={account.key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-2 rounded">
-                    <input
-                      type="checkbox"
-                      checked={selectedAccounts.includes(account.key)}
-                      onChange={() => handleAccountToggle(account.key)}
-                      className="h-4 w-4 accent-blue-600"
-                    />
-                    <span className="text-sm font-medium flex items-center gap-1.5">
-                      {account.account_name}
-                      <PlatformBadge platform={account.platform} />
-                      {account.is_collab ? <CollabBadge compact /> : null}
-                    </span>
-                  </Label>
-                ))}
+                {activeAccountList.map((account, idx) => {
+                  const isGroup = account.isGroup;
+                  const prevIsGroup = idx > 0 && activeAccountList[idx - 1].isGroup;
+                  const showDivider = !isGroup && idx > 0 && prevIsGroup;
+                  return (
+                    <React.Fragment key={account.key}>
+                      {showDivider && <hr className="border-border my-1" />}
+                      <Label
+                        className={`flex items-center gap-2 cursor-pointer p-2 rounded ${
+                          account.disabled
+                            ? 'opacity-40 cursor-not-allowed'
+                            : isGroup
+                            ? 'hover:bg-blue-50 bg-blue-50/50'
+                            : 'hover:bg-white'
+                        }`}
+                        title={account.disabled ? 'Inga matchande konton i vald period' : undefined}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedAccounts.includes(account.key)}
+                          onChange={() => !account.disabled && handleAccountToggle(account.key)}
+                          disabled={account.disabled}
+                          className="h-4 w-4 accent-blue-600"
+                        />
+                        <span className="text-sm font-medium flex items-center gap-1.5">
+                          {isGroup && <Users className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                          {account.account_name}
+                          {isGroup ? (
+                            <span className="text-xs text-muted-foreground font-normal">
+                              {account.matchedCount}/{account.memberCount}
+                            </span>
+                          ) : (
+                            <>
+                              <PlatformBadge platform={account.platform} />
+                              {account.is_collab ? <CollabBadge compact /> : null}
+                            </>
+                          )}
+                        </span>
+                      </Label>
+                    </React.Fragment>
+                  );
+                })}
               </div>
+              {/* Skapa grupp button */}
+              <button
+                onClick={() => {
+                  setGroupDialogAccounts(gaListensMode ? gaAccountList : accountList);
+                  setGroupDialogOpen(true);
+                }}
+                className="mt-2 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <Users className="w-3.5 h-3.5" />
+                Skapa kontogrupp
+              </button>
             </div>
 
             {/* Metric selector — hidden in GA mode (metric is fixed: Lyssningar) */}
@@ -394,23 +595,35 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
               <div>
                 <Label className="text-base font-medium mb-3 block">Välj datapunkt att analysera</Label>
                 <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3 bg-gray-50">
-                  {Object.entries(availableMetrics).map(([key, label]) => (
-                    <Label key={key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded">
-                      <input
-                        type="radio"
-                        name="trendMetric"
-                        value={key}
-                        checked={selectedMetric === key}
-                        onChange={() => setSelectedMetric(key)}
-                        className="h-4 w-4 border-gray-300 accent-primary"
-                      />
-                      <span className="text-sm flex items-center gap-1.5">
-                        {label}
-                        {['account_reach', 'total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
-                        {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
-                      </span>
-                    </Label>
-                  ))}
+                  {Object.entries(availableMetrics).map(([key, label]) => {
+                    const disabledByGroup = hasGroupSelected && NON_SUMMABLE_METRICS.has(key);
+                    return (
+                      <Label
+                        key={key}
+                        className={`flex items-center gap-2 p-1 rounded ${
+                          disabledByGroup
+                            ? 'opacity-40 cursor-not-allowed'
+                            : 'cursor-pointer hover:bg-white'
+                        }`}
+                        title={disabledByGroup ? 'Kan ej aggregeras för kontogrupper' : undefined}
+                      >
+                        <input
+                          type="radio"
+                          name="trendMetric"
+                          value={key}
+                          checked={selectedMetric === key}
+                          onChange={() => !disabledByGroup && setSelectedMetric(key)}
+                          disabled={disabledByGroup}
+                          className="h-4 w-4 border-gray-300 accent-primary"
+                        />
+                        <span className="text-sm flex items-center gap-1.5">
+                          {label}
+                          {['account_reach', 'total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
+                          {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
+                        </span>
+                      </Label>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -425,16 +638,32 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
             </div>
           )}
 
+          {groupNotice && (
+            <Alert className="py-2">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{groupNotice}</AlertDescription>
+            </Alert>
+          )}
+
           {showChart ? (
             <div className="space-y-4">
               {/* Legend */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
                 {displayChartLines.map(line => (
-                  <div key={line.key} className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full border flex-shrink-0" style={{ backgroundColor: line.color }} />
+                  <div key={line.key} className={`flex items-center gap-2 px-1 py-0.5 rounded ${line.isGroup ? 'bg-blue-50' : ''}`}>
+                    <div
+                      className="flex-shrink-0 border"
+                      style={{
+                        backgroundColor: line.color,
+                        width: line.isGroup ? '14px' : '12px',
+                        height: line.isGroup ? '14px' : '12px',
+                        borderRadius: line.isGroup ? '2px' : '50%',
+                      }}
+                    />
                     <span className="text-sm font-medium truncate flex items-center gap-1" title={line.account_name}>
+                      {line.isGroup && <Users className="w-3 h-3 text-blue-600 shrink-0" />}
                       {line.account_name.length > 20 ? line.account_name.substring(0, 17) + '...' : line.account_name}
-                      <PlatformBadge platform={line.platform} />
+                      {!line.isGroup && <PlatformBadge platform={line.platform} />}
                       {line.is_collab ? <CollabBadge compact /> : null}
                     </span>
                   </div>
@@ -484,11 +713,27 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
                     return (
                       <g key={line.key}>
                         {line.points.length > 1 && (
-                          <path d={createSmoothPath(pathPoints)} fill="none" stroke={line.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                          <path
+                            d={createSmoothPath(pathPoints)}
+                            fill="none"
+                            stroke={line.color}
+                            strokeWidth={line.isGroup ? '4' : '2.5'}
+                            strokeDasharray={line.isGroup ? '10 4' : undefined}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
                         )}
                         {pathPoints.map(({ x, y, point }, index) => (
-                          <circle key={index} cx={x} cy={y} r="5" fill={line.color} stroke="white" strokeWidth="2" className="cursor-pointer"
-                            onMouseEnter={(e) => handleMouseMove(e, { ...point, account_name: line.account_name, platform: line.platform, color: line.color })} />
+                          <circle
+                            key={index}
+                            cx={x} cy={y}
+                            r={line.isGroup ? '6' : '5'}
+                            fill={line.color}
+                            stroke="white"
+                            strokeWidth="2"
+                            className="cursor-pointer"
+                            onMouseEnter={(e) => handleMouseMove(e, { ...point, account_name: line.account_name, platform: line.platform, color: line.color, isGroup: line.isGroup })}
+                          />
                         ))}
                       </g>
                     );
@@ -530,6 +775,15 @@ const TrendAnalysisView = ({ platform, periodParams = {}, gaListensMode = false 
           )}
         </CardContent>
       </Card>
+
+      <GroupCreateDialog
+        open={groupDialogOpen}
+        onOpenChange={setGroupDialogOpen}
+        source={gaListensMode ? 'ga_listens' : 'posts'}
+        availableAccounts={groupDialogAccounts}
+        editGroup={null}
+        onSave={() => { if (onGroupsChanged) onGroupsChanged(); }}
+      />
     </div>
   );
 };

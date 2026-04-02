@@ -9,7 +9,7 @@ import InfoTooltip from '../ui/InfoTooltip';
 import CollabBadge from '../ui/CollabBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, Trash2, AlertCircle } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, Trash2, AlertCircle, Users } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
@@ -21,6 +21,7 @@ import {
   ENGAGEMENT_INFO
 } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
+import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 
 // P4 Lokalt regional channel names, kept as an explicit Set for O(1) membership
 // lookup. Explicit enumeration is intentional — the list is stable and finite.
@@ -109,7 +110,23 @@ const PAGE_SIZE_OPTIONS = [
   { value: '50', label: '50 per sida' }
 ];
 
-const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMode = false }) => {
+// Fields that cannot be meaningfully summed across accounts in a group
+const GROUP_NON_SUMMABLE = new Set(['reach', 'average_reach', 'account_reach', 'posts_per_day']);
+
+// Fields that CAN be summed
+const GROUP_SUMMABLE = new Set([
+  'views', 'likes', 'comments', 'shares', 'saves', 'follows',
+  'total_clicks', 'link_clicks', 'other_clicks', 'interactions', 'engagement', 'post_count',
+]);
+
+const AccountView = ({
+  selectedFields,
+  platform,
+  periodParams = {},
+  gaListensMode = false,
+  accountGroups = [],
+  onGroupsChanged = null,
+}) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -139,6 +156,10 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
   const [gaSelectedAccounts, setGaSelectedAccounts] = useState(new Set());
   const [gaShowDeleteColumn, setGaShowDeleteColumn] = useState(false);
   const [gaDeleteLoading, setGaDeleteLoading] = useState(false);
+
+  // Group create dialog state
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [groupDialogAccounts, setGroupDialogAccounts] = useState([]);
 
   // Fetch account data from API
   useEffect(() => {
@@ -298,9 +319,11 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     );
   };
 
-  // Client-side sorting and pagination
+  // Client-side sorting and pagination — groups always stay at top
   const paginatedData = useMemo(() => {
-    let sorted = [...accountData];
+    const groupRows = accountDataWithGroups.filter(a => a.isGroup);
+    const individualRows = accountDataWithGroups.filter(a => !a.isGroup);
+    let sorted = [...individualRows];
 
     if (sortConfig.key) {
       sorted.sort((a, b) => {
@@ -330,8 +353,10 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     }
 
     const startIndex = (currentPage - 1) * pageSize;
-    return sorted.slice(startIndex, startIndex + pageSize);
-  }, [accountData, sortConfig, currentPage, pageSize, reachByAccount]);
+    const paginatedIndividuals = sorted.slice(startIndex, startIndex + pageSize);
+    // Groups always appear before individual accounts, unpaginated
+    return [...groupRows, ...paginatedIndividuals];
+  }, [accountDataWithGroups, sortConfig, currentPage, pageSize, reachByAccount]);
 
   const totalPages = Math.ceil(accountData.length / pageSize);
 
@@ -364,6 +389,104 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       return gaMonthlySortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
     });
   }, [gaPivot, gaMonthlySortConfig]);
+
+  // Synthetic group rows for GA summary mode
+  const gaSummaryWithGroups = useMemo(() => {
+    if (!gaSummary?.programmes) return { programmes: [], grandTotal: 0 };
+    const gaGroups = accountGroups.filter(g => g.source === 'ga_listens');
+    if (gaGroups.length === 0) return gaSummary;
+
+    const progMap = {};
+    for (const p of gaSummary.programmes) progMap[p.account_name] = p;
+
+    const syntheticRows = gaGroups.map(group => {
+      const memberNames = group.members.map(k => k.split('::')[0]);
+      const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
+      const totalListens = memberRows.reduce((sum, p) => sum + p.total_listens, 0);
+      const maxMonthCount = memberRows.length > 0 ? Math.max(...memberRows.map(p => p.month_count)) : 0;
+      return {
+        account_name: group.name,
+        total_listens: totalListens,
+        month_count: maxMonthCount,
+        isGroup: true,
+        groupId: group.id,
+        memberCount: memberNames.length,
+        matchedCount: memberRows.length,
+      };
+    });
+
+    return {
+      programmes: [...syntheticRows, ...gaSummary.programmes],
+      grandTotal: gaSummary.grandTotal,
+    };
+  }, [gaSummary, accountGroups]);
+
+  // Synthetic group rows for GA monthly mode
+  const gaSortedProgramsWithGroups = useMemo(() => {
+    const gaGroups = accountGroups.filter(g => g.source === 'ga_listens');
+    if (gaGroups.length === 0) return gaSortedPrograms;
+
+    const syntheticGroupNames = gaGroups.map(group => {
+      // We'll prefix with __group__ so we can identify them in rendering
+      return `__group__${group.id}`;
+    });
+
+    return [...syntheticGroupNames, ...gaSortedPrograms];
+  }, [gaSortedPrograms, accountGroups]);
+
+  // Build a map of groupId → aggregated monthly pivot for GA monthly mode
+  const gaGroupPivots = useMemo(() => {
+    const gaGroups = accountGroups.filter(g => g.source === 'ga_listens');
+    if (gaGroups.length === 0) return {};
+    const result = {};
+    for (const group of gaGroups) {
+      const memberNames = group.members.map(k => k.split('::')[0]);
+      const agg = {};
+      for (const name of memberNames) {
+        const memberData = gaPivot[name];
+        if (!memberData) continue;
+        for (const [month, val] of Object.entries(memberData)) {
+          agg[month] = (agg[month] || 0) + val;
+        }
+      }
+      result[`__group__${group.id}`] = { pivot: agg, group };
+    }
+    return result;
+  }, [accountGroups, gaPivot]);
+
+  // Synthetic group rows for posts mode
+  const accountDataWithGroups = useMemo(() => {
+    const postGroups = accountGroups.filter(g => g.source === 'posts');
+    if (postGroups.length === 0) return accountData;
+
+    const accountMap = {};
+    for (const a of accountData) {
+      accountMap[`${a.account_name}::${a.platform}`] = a;
+    }
+
+    const syntheticRows = postGroups.map(group => {
+      const memberRows = group.members.map(k => accountMap[k]).filter(Boolean);
+      const matchedCount = memberRows.length;
+      const row = {
+        account_name: group.name,
+        platform: 'group',
+        isGroup: true,
+        groupId: group.id,
+        memberCount: group.members.length,
+        matchedCount,
+        is_collab: false,
+      };
+      // Sum summable fields
+      for (const field of GROUP_SUMMABLE) {
+        row[field] = memberRows.reduce((sum, a) => sum + (a[field] || 0), 0);
+      }
+      // Map average_reach → reach for display purposes
+      row.reach = null;
+      return row;
+    });
+
+    return [...syntheticRows, ...accountData];
+  }, [accountData, accountGroups]);
 
   const getFieldValue = (account, field) => {
     // Map average_reach → reach from API
@@ -726,34 +849,81 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                     {formatValue(gaSummary.grandTotal)}
                   </TableCell>
                 </TableRow>
-                {gaSummary.programmes.map((prog, idx) => (
-                  <TableRow key={prog.account_name}>
-                    {gaShowDeleteColumn && (
-                      <TableCell className="text-center">
-                        <input
-                          type="checkbox"
-                          checked={gaSelectedAccounts.has(prog.account_name)}
-                          onChange={() => handleGAToggleAccount(prog.account_name)}
-                          className="rounded border-gray-300"
-                        />
-                      </TableCell>
-                    )}
-                    <TableCell className="text-center font-medium">{idx + 1}</TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <ProfileIcon accountName={prog.account_name} />
-                        <span>{prog.account_name}</span>
-                        <PlatformBadge platform="ga_listens" />
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatValue(prog.total_listens)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {gaSummaryWithGroups.programmes.map((prog, idx) => {
+                  const prevIsGroup = idx > 0 && gaSummaryWithGroups.programmes[idx - 1].isGroup;
+                  const showDivider = !prog.isGroup && idx > 0 && prevIsGroup;
+                  return (
+                    <React.Fragment key={prog.isGroup ? `group-${prog.groupId}` : prog.account_name}>
+                      {showDivider && (
+                        <TableRow>
+                          <TableCell colSpan={gaShowDeleteColumn ? 4 : 3} className="p-0">
+                            <hr className="border-border" />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      <TableRow className={prog.isGroup ? 'bg-blue-50/60 hover:bg-blue-50' : ''}>
+                        {gaShowDeleteColumn && (
+                          <TableCell className="text-center">
+                            {!prog.isGroup && (
+                              <input
+                                type="checkbox"
+                                checked={gaSelectedAccounts.has(prog.account_name)}
+                                onChange={() => handleGAToggleAccount(prog.account_name)}
+                                className="rounded border-gray-300"
+                              />
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-center font-medium">
+                          {prog.isGroup ? '' : idx + 1 - gaSummaryWithGroups.programmes.filter((p, i) => i < idx && p.isGroup).length}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {prog.isGroup ? (
+                            <div className="flex items-center gap-2">
+                              <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                              <div>
+                                <div className="font-semibold">{prog.account_name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {prog.matchedCount === prog.memberCount
+                                    ? `${prog.memberCount} konton`
+                                    : `${prog.matchedCount} av ${prog.memberCount} konton i aktuell data`}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <ProfileIcon accountName={prog.account_name} />
+                              <span>{prog.account_name}</span>
+                              <PlatformBadge platform="ga_listens" />
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatValue(prog.total_listens)}
+                        </TableCell>
+                      </TableRow>
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
+          <button
+            onClick={() => {
+              setGroupDialogAccounts(
+                gaSummary.programmes.map(p => ({
+                  account_name: p.account_name,
+                  platform: 'ga_listens',
+                  key: `${p.account_name}::ga_listens`,
+                }))
+              );
+              setGroupDialogOpen(true);
+            }}
+            className="mt-3 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+          >
+            <Users className="w-3.5 h-3.5" />
+            Skapa kontogrupp
+          </button>
         </Card>
       );
     }
@@ -832,40 +1002,81 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                 ))}
                 {showDeleteColumn && <TableCell />}
               </TableRow>
-              {gaSortedPrograms.map((prog, idx) => (
-                <TableRow key={prog}>
-                  <TableCell className="text-center font-medium">{idx + 1}</TableCell>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
-                      <ProfileIcon accountName={prog} />
-                      <span>{prog}</span>
-                      <PlatformBadge platform="ga_listens" />
-                    </div>
-                  </TableCell>
-                  {gaMonths.map(month => (
-                    <TableCell key={month} className="text-right">
-                      {gaPivot[prog][month] !== undefined
-                        ? formatValue(gaPivot[prog][month])
-                        : <span className="text-muted-foreground">&mdash;</span>}
-                    </TableCell>
-                  ))}
-                  {showDeleteColumn && (
-                    <TableCell className="text-center">
-                      <button
-                        onClick={() => setDeleteConfirm({
-                          accountName: prog,
-                          type: 'ga_listens',
-                          listenCount: Object.values(gaPivot[prog]).reduce((sum, v) => sum + v, 0),
-                        })}
-                        className="text-red-500 hover:text-red-700"
-                        title="Radera lyssningar för detta program"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
+              {gaSortedProgramsWithGroups.map((prog, idx) => {
+                const isGroupKey = prog.startsWith('__group__');
+                const prevIsGroup = idx > 0 && gaSortedProgramsWithGroups[idx - 1].startsWith('__group__');
+                const showDivider = !isGroupKey && idx > 0 && prevIsGroup;
+
+                if (isGroupKey) {
+                  const { pivot: groupPivotData, group } = gaGroupPivots[prog] || {};
+                  if (!group) return null;
+                  return (
+                    <TableRow key={prog} className="bg-blue-50/60 hover:bg-blue-50">
+                      <TableCell className="text-center font-medium"></TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                          <span className="font-semibold">{group.name}</span>
+                        </div>
+                      </TableCell>
+                      {gaMonths.map(month => (
+                        <TableCell key={month} className="text-right font-medium">
+                          {groupPivotData && groupPivotData[month] !== undefined
+                            ? formatValue(groupPivotData[month])
+                            : <span className="text-muted-foreground">&mdash;</span>}
+                        </TableCell>
+                      ))}
+                      {showDeleteColumn && <TableCell />}
+                    </TableRow>
+                  );
+                }
+
+                return (
+                  <React.Fragment key={prog}>
+                    {showDivider && (
+                      <TableRow>
+                        <TableCell colSpan={gaMonths.length + 2 + (showDeleteColumn ? 1 : 0)} className="p-0">
+                          <hr className="border-border" />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    <TableRow>
+                      <TableCell className="text-center font-medium">
+                        {idx + 1 - Object.keys(gaGroupPivots).length}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <ProfileIcon accountName={prog} />
+                          <span>{prog}</span>
+                          <PlatformBadge platform="ga_listens" />
+                        </div>
+                      </TableCell>
+                      {gaMonths.map(month => (
+                        <TableCell key={month} className="text-right">
+                          {gaPivot[prog]?.[month] !== undefined
+                            ? formatValue(gaPivot[prog][month])
+                            : <span className="text-muted-foreground">&mdash;</span>}
+                        </TableCell>
+                      ))}
+                      {showDeleteColumn && (
+                        <TableCell className="text-center">
+                          <button
+                            onClick={() => setDeleteConfirm({
+                              accountName: prog,
+                              type: 'ga_listens',
+                              listenCount: Object.values(gaPivot[prog] || {}).reduce((sum, v) => sum + v, 0),
+                            })}
+                            className="text-red-500 hover:text-red-700"
+                            title="Radera lyssningar för detta program"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  </React.Fragment>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -1034,81 +1245,144 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
               <TableCell></TableCell>
             </TableRow>
 
-            {paginatedData.map((account, index) => (
-              <TableRow
-                key={`${account.account_name}::${account.platform}`}
-                className={account._reachOnly ? 'bg-gray-50/50 opacity-60' : account.is_collab ? 'bg-amber-50/50 opacity-75' : ''}
-              >
-                <TableCell className="text-center font-medium">{(currentPage - 1) * pageSize + index + 1}</TableCell>
-                <TableCell className="font-medium">
-                  <div className="flex items-center space-x-2">
-                    <ProfileIcon accountName={account.account_name} />
-                    <span>{account.account_name || 'Unknown'}</span>
-                    <PlatformBadge platform={account.platform} />
-                    {account.is_collab ? <CollabBadge /> : null}
-                  </div>
-                </TableCell>
-                {selectedFields.filter(f => f !== 'account_reach').map(field => (
-                  <TableCell key={field} className="text-right">
-                    <div className="flex items-center justify-end group">
-                      <span>{renderCellContent(account, field)}</span>
-                      {getCellValue(account, field) !== null && (
-                        <CopyButton value={getFieldValue(account, field)} field={field} rowId={`${account.account_id}-${field}`} />
-                      )}
-                    </div>
-                  </TableCell>
-                ))}
-                {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => {
-                  const reachMap = account.platform === 'facebook' ? reachByAccount[account.account_name] : undefined;
-                  const reachValue = reachMap ? reachMap[month] : undefined;
+            {paginatedData.map((account, index) => {
+              const isGroup = account.isGroup;
+              const groupIndividualsBefore = paginatedData.filter((a, i) => i < index && !a.isGroup).length;
+              const prevIsGroup = index > 0 && paginatedData[index - 1].isGroup;
+              const showDivider = !isGroup && index > 0 && prevIsGroup;
 
-                  return (
-                    <TableCell key={`reach-${month}`} className="text-right">
-                      {reachValue !== undefined ? (
-                        <div className="flex items-center justify-end group">
-                          <span>{formatValue(reachValue)}</span>
-                          <CopyButton value={reachValue} field={`reach-${month}`} rowId={`${account.account_id}-reach-${month}`} />
+              const rowKey = isGroup
+                ? `__group__${account.groupId}`
+                : `${account.account_name}::${account.platform}`;
+
+              const rowCls = isGroup
+                ? 'bg-blue-50/60 hover:bg-blue-50'
+                : account._reachOnly
+                ? 'bg-gray-50/50 opacity-60'
+                : account.is_collab
+                ? 'bg-amber-50/50 opacity-75'
+                : '';
+
+              return (
+                <React.Fragment key={rowKey}>
+                  {showDivider && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={
+                          2 +
+                          selectedFields.filter(f => f !== 'account_reach').length +
+                          (selectedFields.includes('account_reach') ? Math.max(reachMonths.length, 1) : 0) +
+                          (showDeleteColumn ? 1 : 0) +
+                          1
+                        }
+                        className="p-0"
+                      >
+                        <hr className="border-border" />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  <TableRow className={rowCls}>
+                    <TableCell className="text-center font-medium">
+                      {isGroup ? '' : (currentPage - 1) * pageSize + groupIndividualsBefore + 1}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {isGroup ? (
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                          <div>
+                            <div className="font-semibold">{account.account_name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {account.matchedCount === account.memberCount
+                                ? `${account.memberCount} konton`
+                                : `${account.matchedCount} av ${account.memberCount} konton i aktuell data`}
+                            </div>
+                          </div>
                         </div>
                       ) : (
-                        <span
-                          className="text-muted-foreground cursor-help"
-                          title="Kontoräckvidd saknas för denna månad"
-                        >
-                          —
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          <ProfileIcon accountName={account.account_name} />
+                          <span>{account.account_name || 'Unknown'}</span>
+                          <PlatformBadge platform={account.platform} />
+                          {account.is_collab ? <CollabBadge /> : null}
+                        </div>
                       )}
                     </TableCell>
-                  );
-                })}
-                {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
-                  <TableCell className="text-right">
-                    <span className="text-muted-foreground text-xs">Saknas</span>
-                  </TableCell>
-                )}
-                {showDeleteColumn && (
-                  <TableCell className="text-center">
-                    {!account._reachOnly && (
-                      <button
-                        onClick={() => setDeleteConfirm({
-                          accountName: account.account_name,
-                          platform: account.platform,
-                          postCount: account.post_count,
-                        })}
-                        className="inline-flex items-center justify-center text-red-400 hover:text-red-600 transition-colors"
-                        title={`Radera ${account.account_name} från vald period`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                    {selectedFields.filter(f => f !== 'account_reach').map(field => (
+                      <TableCell key={field} className="text-right">
+                        {isGroup ? (
+                          GROUP_NON_SUMMABLE.has(field) ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <div className="flex items-center justify-end group">
+                              <span>{formatValue(account[field])}</span>
+                            </div>
+                          )
+                        ) : (
+                          <div className="flex items-center justify-end group">
+                            <span>{renderCellContent(account, field)}</span>
+                            {getCellValue(account, field) !== null && (
+                              <CopyButton value={getFieldValue(account, field)} field={field} rowId={`${account.account_id}-${field}`} />
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+                    ))}
+                    {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => {
+                      if (isGroup) {
+                        return (
+                          <TableCell key={`reach-${month}`} className="text-right">
+                            <span className="text-muted-foreground">—</span>
+                          </TableCell>
+                        );
+                      }
+                      const reachMap = account.platform === 'facebook' ? reachByAccount[account.account_name] : undefined;
+                      const reachValue = reachMap ? reachMap[month] : undefined;
+                      return (
+                        <TableCell key={`reach-${month}`} className="text-right">
+                          {reachValue !== undefined ? (
+                            <div className="flex items-center justify-end group">
+                              <span>{formatValue(reachValue)}</span>
+                              <CopyButton value={reachValue} field={`reach-${month}`} rowId={`${account.account_id}-reach-${month}`} />
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground cursor-help" title="Kontoräckvidd saknas för denna månad">—</span>
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                    {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
+                      <TableCell className="text-right">
+                        <span className="text-muted-foreground text-xs">{isGroup ? '—' : 'Saknas'}</span>
+                      </TableCell>
                     )}
-                  </TableCell>
-                )}
-                <TableCell className="text-center">
-                  <button onClick={() => handleExternalLink(account)} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
-                    <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna konto</span>
-                  </button>
-                </TableCell>
-              </TableRow>
-            ))}
+                    {showDeleteColumn && (
+                      <TableCell className="text-center">
+                        {!isGroup && !account._reachOnly && (
+                          <button
+                            onClick={() => setDeleteConfirm({
+                              accountName: account.account_name,
+                              platform: account.platform,
+                              postCount: account.post_count,
+                            })}
+                            className="inline-flex items-center justify-center text-red-400 hover:text-red-600 transition-colors"
+                            title={`Radera ${account.account_name} från vald period`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell className="text-center">
+                      {!isGroup && (
+                        <button onClick={() => handleExternalLink(account)} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
+                          <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna konto</span>
+                        </button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                </React.Fragment>
+              );
+            })}
           </TableBody>
         </Table>
 
@@ -1137,6 +1411,33 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
           </div>
         </div>
       </div>
+      {accountData.length > 0 && (
+        <button
+          onClick={() => {
+            setGroupDialogAccounts(
+              accountData.map(a => ({
+                account_name: a.account_name,
+                platform: a.platform,
+                key: `${a.account_name}::${a.platform}`,
+              }))
+            );
+            setGroupDialogOpen(true);
+          }}
+          className="mt-3 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+        >
+          <Users className="w-3.5 h-3.5" />
+          Skapa kontogrupp
+        </button>
+      )}
+
+      <GroupCreateDialog
+        open={groupDialogOpen}
+        onOpenChange={setGroupDialogOpen}
+        source={gaListensMode ? 'ga_listens' : 'posts'}
+        availableAccounts={groupDialogAccounts}
+        editGroup={null}
+        onSave={() => { if (onGroupsChanged) onGroupsChanged(); }}
+      />
     </Card>
   );
 };
