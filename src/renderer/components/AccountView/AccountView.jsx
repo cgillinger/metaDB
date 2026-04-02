@@ -319,47 +319,6 @@ const AccountView = ({
     );
   };
 
-  // Client-side sorting and pagination — groups always stay at top
-  const paginatedData = useMemo(() => {
-    const groupRows = accountDataWithGroups.filter(a => a.isGroup);
-    const individualRows = accountDataWithGroups.filter(a => !a.isGroup);
-    let sorted = [...individualRows];
-
-    if (sortConfig.key) {
-      sorted.sort((a, b) => {
-        let aVal, bVal;
-
-        if (sortConfig.key.startsWith('reach_')) {
-          const month = sortConfig.key.replace('reach_', '');
-          // Account reach is Facebook-only
-          aVal = a.platform === 'facebook' ? (reachByAccount[a.account_name]?.[month] ?? -1) : -1;
-          bVal = b.platform === 'facebook' ? (reachByAccount[b.account_name]?.[month] ?? -1) : -1;
-        } else if (sortConfig.key === 'account_name') {
-          aVal = (a.account_name || '').toLowerCase();
-          bVal = (b.account_name || '').toLowerCase();
-          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-          return 0;
-        } else {
-          aVal = a[sortConfig.key];
-          bVal = b[sortConfig.key];
-        }
-
-        if (aVal == null) aVal = -1;
-        if (bVal == null) bVal = -1;
-
-        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
-      });
-    }
-
-    const startIndex = (currentPage - 1) * pageSize;
-    const paginatedIndividuals = sorted.slice(startIndex, startIndex + pageSize);
-    // Groups always appear before individual accounts, unpaginated
-    return [...groupRows, ...paginatedIndividuals];
-  }, [accountDataWithGroups, sortConfig, currentPage, pageSize, reachByAccount]);
-
-  const totalPages = Math.ceil(accountData.length / pageSize);
-
   // GA monthly pivot memos
   const gaPivot = useMemo(() => {
     const map = {};
@@ -487,6 +446,45 @@ const AccountView = ({
 
     return [...syntheticRows, ...accountData];
   }, [accountData, accountGroups]);
+
+  // Client-side sorting and pagination — groups always stay at top
+  const paginatedData = useMemo(() => {
+    const groupRows = accountDataWithGroups.filter(a => a.isGroup);
+    const individualRows = accountDataWithGroups.filter(a => !a.isGroup);
+    let sorted = [...individualRows];
+
+    if (sortConfig.key) {
+      sorted.sort((a, b) => {
+        let aVal, bVal;
+
+        if (sortConfig.key.startsWith('reach_')) {
+          const month = sortConfig.key.replace('reach_', '');
+          aVal = a.platform === 'facebook' ? (reachByAccount[a.account_name]?.[month] ?? -1) : -1;
+          bVal = b.platform === 'facebook' ? (reachByAccount[b.account_name]?.[month] ?? -1) : -1;
+        } else if (sortConfig.key === 'account_name') {
+          aVal = (a.account_name || '').toLowerCase();
+          bVal = (b.account_name || '').toLowerCase();
+          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+        } else {
+          aVal = a[sortConfig.key];
+          bVal = b[sortConfig.key];
+        }
+
+        if (aVal == null) aVal = -1;
+        if (bVal == null) bVal = -1;
+
+        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      });
+    }
+
+    const startIndex = (currentPage - 1) * pageSize;
+    const paginatedIndividuals = sorted.slice(startIndex, startIndex + pageSize);
+    return [...groupRows, ...paginatedIndividuals];
+  }, [accountDataWithGroups, sortConfig, currentPage, pageSize, reachByAccount]);
+
+  const totalPages = Math.ceil(accountData.length / pageSize);
 
   const getFieldValue = (account, field) => {
     // Map average_reach → reach from API
