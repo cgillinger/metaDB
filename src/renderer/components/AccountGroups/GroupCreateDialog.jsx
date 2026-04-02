@@ -25,7 +25,7 @@ const GroupCreateDialog = ({ open, onOpenChange, source, availableAccounts, edit
   const [error, setError] = useState(null);
 
   const sortedAccounts = useMemo(
-    () => [...availableAccounts].sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv')),
+    () => [...availableAccounts].sort((a, b) => (a.account_name || '').localeCompare(b.account_name || '', 'sv')),
     [availableAccounts]
   );
 
