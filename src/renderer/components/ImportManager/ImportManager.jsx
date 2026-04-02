@@ -243,6 +243,159 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
         </CardContent>
       </Card>
 
+      {/* Account groups */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <FolderOpen className="h-5 w-5" />
+            Kontogrupper
+          </CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowSourcePicker(v => !v)}
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Ny grupp
+          </Button>
+        </CardHeader>
+
+        <CardContent className="space-y-3">
+          {/* Source picker — shown when "+ Ny grupp" is clicked */}
+          {showSourcePicker && (
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-md border">
+              <span className="text-sm font-medium">Källa:</span>
+              {['ga_listens', 'posts'].map(src => (
+                <label key={src} className="flex items-center gap-1.5 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="new-group-source"
+                    value={src}
+                    checked={newGroupSource === src}
+                    onChange={() => setNewGroupSource(src)}
+                    className="accent-primary"
+                  />
+                  {SOURCE_LABELS[src]}
+                </label>
+              ))}
+              <Button
+                size="sm"
+                onClick={handleOpenCreateDialog}
+                disabled={loadingAccounts}
+                className="ml-auto"
+              >
+                {loadingAccounts ? <RefreshCw className="w-4 h-4 animate-spin mr-1" /> : null}
+                Fortsätt
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowSourcePicker(false)}
+              >
+                Avbryt
+              </Button>
+            </div>
+          )}
+
+          {/* Delete-all confirmation */}
+          {showDeleteAllConfirm && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Bekräfta</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">Ta bort alla kontogrupper? Denna åtgärd kan inte ångras.</p>
+                <div className="flex gap-2 mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowDeleteAllConfirm(false)}>Avbryt</Button>
+                  <Button variant="destructive" size="sm" onClick={handleDeleteAllGroups}>Ja, rensa alla</Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Delete single group confirmation */}
+          {deleteGroupConfirm !== null && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Bekräfta borttagning</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">
+                  Ta bort gruppen &quot;{accountGroups.find(g => g.id === deleteGroupConfirm)?.name}&quot;?{' '}
+                  Underliggande konton påverkas inte.
+                </p>
+                <div className="flex gap-2 mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setDeleteGroupConfirm(null)}>Avbryt</Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDeleteGroup(deleteGroupConfirm)}>Ta bort</Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Group list */}
+          {accountGroups.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-2">Inga grupper skapade ännu.</p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {accountGroups.map(group => (
+                  <div
+                    key={group.id}
+                    className="flex items-center justify-between p-3 rounded-md border bg-muted/30"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{group.name}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                          group.source === 'ga_listens'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {SOURCE_LABELS[group.source]}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {group.members.length} konton
+                        {group.created_at ? ` · Skapad ${formatDate(group.created_at)}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 ml-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenEditDialog(group)}
+                        disabled={loadingAccounts}
+                        title="Redigera"
+                      >
+                        <Pencil className="w-3.5 h-3.5 mr-1" />
+                        Redigera
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setDeleteGroupConfirm(group.id)}
+                        title="Ta bort grupp"
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive"
+                onClick={() => setShowDeleteAllConfirm(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                Rensa alla grupper
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Coverage map */}
       {coverage && coverage.months && coverage.months.length > 0 && (
         <Card>
@@ -435,158 +588,6 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
                 </TableBody>
               </Table>
             </div>
-          )}
-        </CardContent>
-      </Card>
-      {/* Account groups */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <FolderOpen className="h-5 w-5" />
-            Kontogrupper
-          </CardTitle>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setShowSourcePicker(v => !v)}
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            Ny grupp
-          </Button>
-        </CardHeader>
-
-        <CardContent className="space-y-3">
-          {/* Source picker — shown when "+ Ny grupp" is clicked */}
-          {showSourcePicker && (
-            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-md border">
-              <span className="text-sm font-medium">Källa:</span>
-              {['ga_listens', 'posts'].map(src => (
-                <label key={src} className="flex items-center gap-1.5 cursor-pointer text-sm">
-                  <input
-                    type="radio"
-                    name="new-group-source"
-                    value={src}
-                    checked={newGroupSource === src}
-                    onChange={() => setNewGroupSource(src)}
-                    className="accent-primary"
-                  />
-                  {SOURCE_LABELS[src]}
-                </label>
-              ))}
-              <Button
-                size="sm"
-                onClick={handleOpenCreateDialog}
-                disabled={loadingAccounts}
-                className="ml-auto"
-              >
-                {loadingAccounts ? <RefreshCw className="w-4 h-4 animate-spin mr-1" /> : null}
-                Fortsätt
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowSourcePicker(false)}
-              >
-                Avbryt
-              </Button>
-            </div>
-          )}
-
-          {/* Delete-all confirmation */}
-          {showDeleteAllConfirm && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Bekräfta</AlertTitle>
-              <AlertDescription>
-                <p className="mb-2">Ta bort alla kontogrupper? Denna åtgärd kan inte ångras.</p>
-                <div className="flex gap-2 mt-2">
-                  <Button variant="outline" size="sm" onClick={() => setShowDeleteAllConfirm(false)}>Avbryt</Button>
-                  <Button variant="destructive" size="sm" onClick={handleDeleteAllGroups}>Ja, rensa alla</Button>
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Delete single group confirmation */}
-          {deleteGroupConfirm !== null && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Bekräfta borttagning</AlertTitle>
-              <AlertDescription>
-                <p className="mb-2">
-                  Ta bort gruppen &quot;{accountGroups.find(g => g.id === deleteGroupConfirm)?.name}&quot;?{' '}
-                  Underliggande konton påverkas inte.
-                </p>
-                <div className="flex gap-2 mt-2">
-                  <Button variant="outline" size="sm" onClick={() => setDeleteGroupConfirm(null)}>Avbryt</Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDeleteGroup(deleteGroupConfirm)}>Ta bort</Button>
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Group list */}
-          {accountGroups.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-2">Inga grupper skapade ännu.</p>
-          ) : (
-            <>
-              <div className="space-y-2">
-                {accountGroups.map(group => (
-                  <div
-                    key={group.id}
-                    className="flex items-center justify-between p-3 rounded-md border bg-muted/30"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{group.name}</span>
-                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                          group.source === 'ga_listens'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {SOURCE_LABELS[group.source]}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {group.members.length} konton
-                        {group.created_at ? ` · Skapad ${formatDate(group.created_at)}` : ''}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 ml-2 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleOpenEditDialog(group)}
-                        disabled={loadingAccounts}
-                        title="Redigera"
-                      >
-                        <Pencil className="w-3.5 h-3.5 mr-1" />
-                        Redigera
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => setDeleteGroupConfirm(group.id)}
-                        title="Ta bort grupp"
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive"
-                onClick={() => setShowDeleteAllConfirm(true)}
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1" />
-                Rensa alla grupper
-              </Button>
-            </>
           )}
         </CardContent>
       </Card>
