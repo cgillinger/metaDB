@@ -16,6 +16,7 @@ import trendsRouter from './routes/trends.js';
 import reachRouter from './routes/reach.js';
 import gaListensRouter from './routes/gaListens.js';
 import accountGroupsRouter from './routes/accountGroups.js';
+import hiddenAccountsRouter from './routes/hiddenAccounts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,6 +74,7 @@ app.get('/api/maintenance/backup', backupLimiter, (req, res, next) => {
 // require X-Admin-Token header when ADMIN_TOKEN env var is set
 app.use('/api/maintenance', requireAdmin, maintenanceRouter);
 
+app.use('/api/hidden-accounts', hiddenAccountsRouter);
 app.use('/api/imports', importsRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/accounts', accountsRouter);
