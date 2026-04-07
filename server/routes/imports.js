@@ -266,6 +266,8 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
       },
       stats: {
         totalRowsInFile: parsed.stats.totalRows,
+        parsedPosts: parsed.stats.parsedPosts,
+        duplicatesRemoved: parsed.stats.duplicatesRemoved,
         postsInserted: result.inserted,
         postsUpdated: result.updated,
         collabDetection: collabResult,

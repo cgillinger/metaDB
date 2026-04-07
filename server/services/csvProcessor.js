@@ -237,6 +237,25 @@ export function parseCSV(csvContent, filename) {
     });
   }
 
+  // --- Deduplicate by post_id: keep the row with highest interactions ---
+  const postMap = new Map();
+  let dupCount = 0;
+  for (const post of posts) {
+    if (!post.post_id) continue;
+    const existing = postMap.get(post.post_id);
+    if (existing) {
+      dupCount++;
+      if (post.interactions > existing.interactions) {
+        postMap.set(post.post_id, post);
+      }
+    } else {
+      postMap.set(post.post_id, post);
+    }
+  }
+  const dedupedPosts = [...postMap.values()];
+  const noIdPosts = posts.filter(p => !p.post_id);
+  const finalPosts = [...dedupedPosts, ...noIdPosts];
+
   // Derive month from post dates
   let month = 'unknown';
   let dateRangeStart = null;
@@ -258,7 +277,7 @@ export function parseCSV(csvContent, filename) {
 
   // Count unique accounts
   const uniqueAccounts = new Set(
-    posts.map(p => p.account_id).filter(Boolean)
+    finalPosts.map(p => p.account_id).filter(Boolean)
   );
 
   return {
@@ -266,10 +285,11 @@ export function parseCSV(csvContent, filename) {
     month,
     dateRangeStart,
     dateRangeEnd,
-    posts,
+    posts: finalPosts,
     stats: {
       totalRows: result.data.length,
-      parsedPosts: posts.length,
+      parsedPosts: finalPosts.length,
+      duplicatesRemoved: dupCount,
       accountCount: uniqueAccounts.size || 1,
     },
   };

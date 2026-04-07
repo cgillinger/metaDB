@@ -25,6 +25,8 @@
 - **Export** — Ladda ned tabeller som CSV eller Excel (.xlsx)
 - **Docker-stöd** — Kör i container med `docker compose up`
 - **Databasbackup** — Ladda ned .db-filen direkt från gränssnittet
+- **Deterministisk deduplicering** — Dubletter i CSV-exporter hanteras automatiskt (behåller raden med högst interaktioner)
+- **Om appen** — Inbyggd mätpunktsreferens och dokumentation om datahantering
 
 ---
 
