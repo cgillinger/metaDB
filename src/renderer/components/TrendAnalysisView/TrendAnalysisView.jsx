@@ -170,7 +170,7 @@ const TrendAnalysisView = ({
           platform: 'ga_listens',
           is_collab: false,
           key: `__group__${g.id}`,
-          isGroup: true,
+          _isGroup: true,
           groupId: g.id,
           memberKeys: g.members,
           memberCount: g.members.length,
@@ -193,7 +193,7 @@ const TrendAnalysisView = ({
           platform: 'group',
           is_collab: false,
           key: `__group__${g.id}`,
-          isGroup: true,
+          _isGroup: true,
           groupId: g.id,
           memberKeys: g.members,
           memberCount: g.members.length,
@@ -299,7 +299,7 @@ const TrendAnalysisView = ({
       const entry = accountListWithGroups.find(a => a.key === selectedKey);
       if (!entry) return null;
 
-      if (entry.isGroup) {
+      if (entry._isGroup) {
         // Sum member series element-wise
         const summedData = trendData.months.map((_, mIndex) =>
           entry.memberKeys.reduce((sum, memberKey) => {
@@ -312,7 +312,7 @@ const TrendAnalysisView = ({
           account_name: entry.account_name,
           platform: 'group',
           is_collab: false,
-          isGroup: true,
+          _isGroup: true,
           color: CHART_COLORS[colorIndex++ % CHART_COLORS.length],
           points: trendData.months.map((monthKey, mIndex) => ({
             month: monthKey,
@@ -329,7 +329,7 @@ const TrendAnalysisView = ({
         account_name: series.account_name,
         platform: series.platform,
         is_collab: series.is_collab || false,
-        isGroup: false,
+        _isGroup: false,
         color: CHART_COLORS[colorIndex++ % CHART_COLORS.length],
         points: trendData.months.map((monthKey, mIndex) => ({
           month: monthKey,
@@ -394,7 +394,7 @@ const TrendAnalysisView = ({
       const entry = gaAccountListWithGroups.find(a => a.key === key);
       if (!entry) return null;
 
-      if (entry.isGroup) {
+      if (entry._isGroup) {
         // Aggregate listens across all member accounts per month
         const aggregatedByMonth = {};
         for (const memberKey of entry.memberKeys) {
@@ -410,7 +410,7 @@ const TrendAnalysisView = ({
           account_name: entry.account_name,
           platform: 'ga_listens',
           is_collab: false,
-          isGroup: true,
+          _isGroup: true,
           color: CHART_COLORS[index % CHART_COLORS.length],
           points: gaMonths.map(m => ({ month: m, value: aggregatedByMonth[m] || 0 })),
         };
@@ -423,7 +423,7 @@ const TrendAnalysisView = ({
         account_name: entry.account_name,
         platform: 'ga_listens',
         is_collab: false,
-        isGroup: false,
+        _isGroup: false,
         color: CHART_COLORS[index % CHART_COLORS.length],
         points: gaMonths.map(month => ({ month, value: data[month] ?? 0 })),
       };
@@ -445,7 +445,7 @@ const TrendAnalysisView = ({
   // Groups are always kept in the list regardless of metric filter
   const filteredAccountList = useMemo(() => {
     if (selectedMetric === 'account_reach') {
-      return accountListWithGroups.filter(a => a.isGroup || a.platform === 'facebook');
+      return accountListWithGroups.filter(a => a._isGroup || a.platform === 'facebook');
     }
     return accountListWithGroups;
   }, [accountListWithGroups, selectedMetric]);
@@ -455,7 +455,7 @@ const TrendAnalysisView = ({
     if (!gaListensMode && selectedMetric === 'account_reach') {
       const fbKeys = new Set(
         accountListWithGroups
-          .filter(a => a.isGroup || a.platform === 'facebook')
+          .filter(a => a._isGroup || a.platform === 'facebook')
           .map(a => a.key)
       );
       setSelectedAccounts(prev => prev.filter(k => fbKeys.has(k)));
@@ -525,8 +525,8 @@ const TrendAnalysisView = ({
               </div>
               <div className="max-h-48 overflow-y-auto border rounded-md p-3 space-y-2 bg-gray-50">
                 {activeAccountList.map((account, idx) => {
-                  const isGroup = account.isGroup;
-                  const prevIsGroup = idx > 0 && activeAccountList[idx - 1].isGroup;
+                  const isGroup = account._isGroup;
+                  const prevIsGroup = idx > 0 && activeAccountList[idx - 1]._isGroup;
                   const showDivider = !isGroup && idx > 0 && prevIsGroup;
                   return (
                     <React.Fragment key={account.key}>
@@ -650,20 +650,20 @@ const TrendAnalysisView = ({
               {/* Legend */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
                 {displayChartLines.map(line => (
-                  <div key={line.key} className={`flex items-center gap-2 px-1 py-0.5 rounded ${line.isGroup ? 'bg-blue-50' : ''}`}>
+                  <div key={line.key} className={`flex items-center gap-2 px-1 py-0.5 rounded ${line._isGroup ? 'bg-blue-50' : ''}`}>
                     <div
                       className="flex-shrink-0 border"
                       style={{
                         backgroundColor: line.color,
-                        width: line.isGroup ? '14px' : '12px',
-                        height: line.isGroup ? '14px' : '12px',
-                        borderRadius: line.isGroup ? '2px' : '50%',
+                        width: line._isGroup ? '14px' : '12px',
+                        height: line._isGroup ? '14px' : '12px',
+                        borderRadius: line._isGroup ? '2px' : '50%',
                       }}
                     />
                     <span className="text-sm font-medium truncate flex items-center gap-1" title={line.account_name}>
-                      {line.isGroup && <Users className="w-3 h-3 text-blue-600 shrink-0" />}
+                      {line._isGroup && <Users className="w-3 h-3 text-blue-600 shrink-0" />}
                       {line.account_name.length > 20 ? line.account_name.substring(0, 17) + '...' : line.account_name}
-                      {!line.isGroup && <PlatformBadge platform={line.platform} />}
+                      {!line._isGroup && <PlatformBadge platform={line.platform} />}
                       {line.is_collab ? <CollabBadge compact /> : null}
                     </span>
                   </div>
@@ -717,8 +717,8 @@ const TrendAnalysisView = ({
                             d={createSmoothPath(pathPoints)}
                             fill="none"
                             stroke={line.color}
-                            strokeWidth={line.isGroup ? '4' : '2.5'}
-                            strokeDasharray={line.isGroup ? '10 4' : undefined}
+                            strokeWidth={line._isGroup ? '4' : '2.5'}
+                            strokeDasharray={line._isGroup ? '10 4' : undefined}
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           />
@@ -727,12 +727,12 @@ const TrendAnalysisView = ({
                           <circle
                             key={index}
                             cx={x} cy={y}
-                            r={line.isGroup ? '6' : '5'}
+                            r={line._isGroup ? '6' : '5'}
                             fill={line.color}
                             stroke="white"
                             strokeWidth="2"
                             className="cursor-pointer"
-                            onMouseEnter={(e) => handleMouseMove(e, { ...point, account_name: line.account_name, platform: line.platform, color: line.color, isGroup: line.isGroup })}
+                            onMouseEnter={(e) => handleMouseMove(e, { ...point, account_name: line.account_name, platform: line.platform, color: line.color, _isGroup: line._isGroup })}
                           />
                         ))}
                       </g>
