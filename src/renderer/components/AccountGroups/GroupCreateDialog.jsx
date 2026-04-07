@@ -23,11 +23,25 @@ const GroupCreateDialog = ({ open, onOpenChange, source, availableAccounts, edit
   const [selected, setSelected] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [platformFilter, setPlatformFilter] = useState('all');
 
   const sortedAccounts = useMemo(
     () => [...availableAccounts].sort((a, b) => (a.account_name || '').localeCompare(b.account_name || '', 'sv')),
     [availableAccounts]
   );
+
+  // Distinct platforms among available accounts — used to decide whether to show filter buttons
+  const distinctPlatforms = useMemo(() => {
+    const s = new Set(availableAccounts.map(a => a.platform));
+    return [...s];
+  }, [availableAccounts]);
+
+  const showPlatformFilter = distinctPlatforms.length > 1;
+
+  const filteredAccounts = useMemo(() => {
+    if (platformFilter === 'all') return sortedAccounts;
+    return sortedAccounts.filter(a => a.platform === platformFilter);
+  }, [sortedAccounts, platformFilter]);
 
   const availableKeys = useMemo(
     () => new Set(availableAccounts.map(a => a.key)),
@@ -57,15 +71,20 @@ const GroupCreateDialog = ({ open, onOpenChange, source, availableAccounts, edit
     }
   }, [open, editGroup, availableAccounts, availableKeys]);
 
-  const allChecked = sortedAccounts.length > 0 && sortedAccounts.every(a => selected.has(a.key));
-  const someChecked = !allChecked && sortedAccounts.some(a => selected.has(a.key));
+  // allChecked / someChecked operate on the filtered (visible) accounts only
+  const allChecked = filteredAccounts.length > 0 && filteredAccounts.every(a => selected.has(a.key));
+  const someChecked = !allChecked && filteredAccounts.some(a => selected.has(a.key));
 
   const toggleAll = () => {
-    if (allChecked) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(sortedAccounts.map(a => a.key)));
-    }
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (allChecked) {
+        filteredAccounts.forEach(a => next.delete(a.key));
+      } else {
+        filteredAccounts.forEach(a => next.add(a.key));
+      }
+      return next;
+    });
   };
 
   const toggleAccount = (key) => {
@@ -129,6 +148,30 @@ const GroupCreateDialog = ({ open, onOpenChange, source, availableAccounts, edit
               Välj konton ({selected.size} valda)
             </Label>
 
+            {/* Platform filter buttons */}
+            {showPlatformFilter && (
+              <div className="flex gap-1 mb-2">
+                {[
+                  { value: 'all', label: 'Alla' },
+                  { value: 'facebook', label: 'Facebook' },
+                  { value: 'instagram', label: 'Instagram' },
+                ].map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setPlatformFilter(value)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                      platformFilter === value
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background text-muted-foreground border-border hover:border-primary/60'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Select-all toggle */}
             <div className="flex items-center gap-2 mb-2 pb-2 border-b">
               <Checkbox
@@ -143,10 +186,10 @@ const GroupCreateDialog = ({ open, onOpenChange, source, availableAccounts, edit
 
             {/* Scrollable account list */}
             <div className="overflow-y-auto border rounded-md" style={{ maxHeight: '320px' }}>
-              {sortedAccounts.length === 0 ? (
+              {filteredAccounts.length === 0 ? (
                 <p className="text-sm text-muted-foreground p-3">Inga konton tillgängliga.</p>
               ) : (
-                sortedAccounts.map(account => (
+                filteredAccounts.map(account => (
                   <div
                     key={account.key}
                     className="flex items-center justify-between px-3 py-2 hover:bg-muted/50 border-b last:border-0"
