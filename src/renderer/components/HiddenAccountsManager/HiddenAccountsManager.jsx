@@ -35,16 +35,24 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [accountsRes, hiddenRes] = await Promise.all([
+      const [accountsRes, hiddenRes, gaRes] = await Promise.all([
         api.getAccounts({ fields: 'post_count' }),
         api.getHiddenAccounts(),
+        api.getGAListensSummary(null, 'desc'),
       ]);
 
       const hiddenKeys = new Set(
         (hiddenRes.accounts || []).map(h => makeKey(h.account_name, h.platform))
       );
 
-      const visibleAccounts = (accountsRes.accounts || []).filter(
+      const gaAccounts = (gaRes.programmes || []).map(p => ({
+        account_name: p.account_name,
+        platform: 'ga_listens',
+        post_count: p.total_listens,
+      }));
+
+      const allAccounts = [...(accountsRes.accounts || []), ...gaAccounts];
+      const visibleAccounts = allAccounts.filter(
         a => !hiddenKeys.has(makeKey(a.account_name, a.platform))
       );
 
