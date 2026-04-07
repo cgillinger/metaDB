@@ -109,7 +109,14 @@ function mapRow(rawRow, columnMappings, platform) {
         break;
       }
     }
-    mapped[internalName || originalCol] = value;
+    const key = internalName || originalCol;
+    // First-non-empty-wins: skip overwriting a valid mapped value with null/empty.
+    // Handles CSVs with duplicate SV+EN columns where the English column may be
+    // empty (null via dynamicTyping).
+    if (internalName && key in mapped && mapped[key] != null && mapped[key] !== '') {
+      if (value == null || value === '') continue;
+    }
+    mapped[key] = value;
   }
 
   // Fallback for account fields that sometimes appear in English
