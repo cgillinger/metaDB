@@ -8,13 +8,15 @@ import {
   CalendarIcon,
   Plus,
   TrendingUp,
-  Database
+  Database,
+  HelpCircle
 } from 'lucide-react';
 import AccountView from '../AccountView';
 import PostView from '../PostView';
 import PostTypeView from '../PostTypeView';
 import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
 import ImportManager from '../ImportManager/ImportManager';
+import AboutView from '../AboutView/AboutView';
 import PeriodSelector from '../PeriodSelector';
 import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
@@ -448,6 +450,10 @@ const MainView = ({ onShowUploader }) => {
             <Database className="w-4 h-4 mr-1" />
             Databas
           </TabsTrigger>
+          <TabsTrigger value="about">
+            <HelpCircle className="w-4 h-4 mr-1" />
+            Om appen
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="account">
@@ -489,6 +495,10 @@ const MainView = ({ onShowUploader }) => {
             accountGroups={accountGroups}
             onGroupsChanged={refreshAccountGroups}
           />
+        </TabsContent>
+
+        <TabsContent value="about">
+          <AboutView />
         </TabsContent>
       </Tabs>
     </div>
