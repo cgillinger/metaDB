@@ -171,6 +171,21 @@ export const api = {
     return fetch('/api/account-groups/all', { method: 'DELETE' }).then(handleResponse);
   },
 
+  // Hidden accounts
+  getHiddenAccounts: () => fetch('/api/hidden-accounts').then(handleResponse),
+  hideAccount: (accountName, platform) =>
+    fetch('/api/hidden-accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountName, platform }),
+    }).then(handleResponse),
+  unhideAccount: (accountName, platform) =>
+    fetch('/api/hidden-accounts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountName, platform }),
+    }).then(handleResponse),
+
   // Posts — delete by account + period
   deleteAccountPosts: (accountName, platform, periodParams) => {
     const params = new URLSearchParams({ accountName, platform, ...periodParams });

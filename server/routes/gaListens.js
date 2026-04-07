@@ -15,6 +15,7 @@ import {
   deleteGaListensByAccount,
   deleteGaListensAccounts,
 } from '../services/gaListensImporter.js';
+import { hiddenGAFilter } from '../services/hiddenAccounts.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 
 const router = Router();
@@ -81,7 +82,10 @@ router.get('/summary', (req, res) => {
     }
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  // Hidden accounts filter
+  conditions.push(hiddenGAFilter().slice(4));
+
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
   const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
 
   const rows = db.prepare(`

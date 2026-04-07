@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
+import HiddenAccountsManager from '../HiddenAccountsManager/HiddenAccountsManager';
 
 const PLATFORM_LABELS = {
   facebook: { label: 'Facebook', className: 'bg-blue-100 text-blue-800' },
@@ -591,6 +592,9 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
           )}
         </CardContent>
       </Card>
+
+      {/* Hidden accounts management */}
+      <HiddenAccountsManager onImportsChanged={onImportsChanged} />
 
       {/* Group create/edit dialog */}
       <GroupCreateDialog

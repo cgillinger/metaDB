@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
+import { hiddenPostsFilter } from '../services/hiddenAccounts.js';
 
 const router = Router();
 
@@ -37,6 +38,9 @@ router.get('/', (req, res) => {
   if (req.query.excludeCollab === 'true') {
     conditions.push('is_collab = 0');
   }
+
+  // Hidden accounts filter
+  conditions.push(hiddenPostsFilter().slice(4));
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 

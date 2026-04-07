@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
+import { hiddenPostsFilter, hiddenReachFilter } from '../services/hiddenAccounts.js';
 
 const router = Router();
 
@@ -75,7 +76,10 @@ router.get('/', (req, res) => {
       reachParams.push(...names);
     }
 
-    const reachWhere = reachConditions.length > 0 ? `WHERE ${reachConditions.join(' AND ')}` : '';
+    // Hidden accounts filter
+    reachConditions.push(hiddenReachFilter('ar').slice(4));
+
+    const reachWhere = `WHERE ${reachConditions.join(' AND ')}`;
     const reachQuery = `
       SELECT
         ar.month AS period,
@@ -146,6 +150,9 @@ router.get('/', (req, res) => {
   if (req.query.excludeCollab === 'true') {
     conditions.push('is_collab = 0');
   }
+
+  // Hidden accounts filter
+  conditions.push(hiddenPostsFilter().slice(4));
 
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
 

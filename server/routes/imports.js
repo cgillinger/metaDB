@@ -5,6 +5,7 @@ import { getDb } from '../db/connection.js';
 import { parseCSV } from '../services/csvProcessor.js';
 import { redetectAllCollabs } from '../services/collabDetector.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
+import { hiddenPostsFilter, hiddenGAFilter } from '../services/hiddenAccounts.js';
 
 const router = Router();
 
@@ -47,6 +48,7 @@ router.get('/coverage', (req, res) => {
       SUM(CASE WHEN platform = 'instagram' THEN 1 ELSE 0 END) AS ig_count
     FROM posts
     WHERE publish_time IS NOT NULL
+    ${hiddenPostsFilter()} -- Hidden accounts filter
     GROUP BY strftime('%Y-%m', publish_time)
     ORDER BY month ASC
   `).all();
@@ -69,6 +71,8 @@ router.get('/coverage', (req, res) => {
     const gaCountRows = db.prepare(`
       SELECT month, COUNT(DISTINCT account_name) AS ga_listens_count
       FROM ga_listens
+      WHERE 1=1
+      ${hiddenGAFilter()} -- Hidden accounts filter
       GROUP BY month
     `).all();
     for (const r of gaCountRows) gaListensCountMap.set(r.month, r.ga_listens_count);
