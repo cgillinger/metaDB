@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
+import { hiddenPostsFilter, hiddenReachFilter } from '../services/hiddenAccounts.js';
 
 const router = Router();
 
@@ -50,6 +51,9 @@ router.get('/', (req, res) => {
   if (req.query.excludeCollab === 'true') {
     conditions.push('is_collab = 0');
   }
+
+  // Hidden accounts filter
+  conditions.push(hiddenPostsFilter().slice(4));
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -137,6 +141,7 @@ router.get('/', (req, res) => {
       SELECT account_name, month, reach
       FROM account_reach
       WHERE month IN (${placeholders})
+      ${hiddenReachFilter()} -- Hidden accounts filter
       ORDER BY account_name, month
     `).all(...reachMonths);
   } else {
@@ -144,6 +149,8 @@ router.get('/', (req, res) => {
     reachData = db.prepare(`
       SELECT account_name, month, reach
       FROM account_reach
+      WHERE 1=1
+      ${hiddenReachFilter()} -- Hidden accounts filter
       ORDER BY account_name, month
     `).all();
   }
@@ -173,6 +180,7 @@ router.get('/', (req, res) => {
       FROM account_reach ar
       WHERE ar.month IN (${reachPlaceholders})
       AND LOWER(ar.account_name) NOT LIKE 'srholder%'
+      ${hiddenReachFilter('ar')} -- Hidden accounts filter
     `).all(...reachMonthsAvailable);
 
     for (const row of reachOnlyAccounts) {
