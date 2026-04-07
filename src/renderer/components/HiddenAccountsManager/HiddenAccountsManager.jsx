@@ -132,6 +132,7 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
   }
 
   return (
+    <>
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-lg">
@@ -169,55 +170,6 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
               </div>
             </AlertDescription>
           </Alert>
-        )}
-
-        {/* Confirm bulk hide */}
-        {confirmHide === 'bulk' && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Dölj {selected.size} konton</AlertTitle>
-            <AlertDescription>
-              <p className="mb-2">
-                De valda kontona döljs från alla vyer. Data raderas inte.
-              </p>
-              <div className="flex gap-2 mt-2">
-                <Button variant="outline" size="sm" onClick={() => setConfirmHide(null)}>
-                  Avbryt
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={busy}
-                  onClick={doHideBulk}
-                >
-                  Dölj valda
-                </Button>
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Bulk action bar */}
-        {selected.size > 0 && !confirmHide && (
-          <div className="flex items-center gap-3 px-3 py-2 bg-muted/60 rounded-md border">
-            <span className="text-sm font-medium">{selected.size} valda</span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="ml-auto"
-              onClick={() => setConfirmHide('bulk')}
-            >
-              <EyeOff className="w-3.5 h-3.5 mr-1" />
-              Dölj valda
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelected(new Set())}
-            >
-              Avmarkera
-            </Button>
-          </div>
         )}
 
         {/* Visible accounts table */}
@@ -340,6 +292,48 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
         )}
       </CardContent>
     </Card>
+
+    {/* Sticky bulk action bar — visible when ≥1 row is selected */}
+    {selected.size > 0 && (
+      <div className="sticky bottom-0 z-20 bg-background border-t shadow-[0_-2px_8px_rgba(0,0,0,0.10)] px-4 py-3">
+        {confirmHide === 'bulk' ? (
+          /* Confirmation state */
+          <div className="flex flex-wrap items-center gap-3">
+            <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+            <span className="text-sm">
+              <strong>{selected.size} konton</strong> döljs från alla vyer. Data raderas inte.
+            </span>
+            <div className="flex gap-2 ml-auto">
+              <Button size="sm" variant="outline" onClick={() => setConfirmHide(null)}>
+                Avbryt
+              </Button>
+              <Button size="sm" variant="destructive" disabled={busy} onClick={doHideBulk}>
+                {busy ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+                Bekräfta
+              </Button>
+            </div>
+          </div>
+        ) : (
+          /* Default state */
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">{selected.size} valda</span>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="ml-auto"
+              onClick={() => setConfirmHide('bulk')}
+            >
+              <EyeOff className="w-3.5 h-3.5 mr-1" />
+              Dölj valda ({selected.size} st)
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              Avmarkera
+            </Button>
+          </div>
+        )}
+      </div>
+    )}
+    </>
   );
 };
 
