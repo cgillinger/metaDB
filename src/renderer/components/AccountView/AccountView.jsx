@@ -367,7 +367,7 @@ const AccountView = ({
         account_name: group.name,
         total_listens: totalListens,
         month_count: maxMonthCount,
-        isGroup: true,
+        _isGroup: true,
         groupId: group.id,
         memberCount: memberNames.length,
         matchedCount: memberRows.length,
@@ -429,7 +429,7 @@ const AccountView = ({
       const row = {
         account_name: group.name,
         platform: 'group',
-        isGroup: true,
+        _isGroup: true,
         groupId: group.id,
         memberCount: group.members.length,
         matchedCount,
@@ -449,8 +449,8 @@ const AccountView = ({
 
   // Client-side sorting and pagination — groups always stay at top
   const paginatedData = useMemo(() => {
-    const groupRows = accountDataWithGroups.filter(a => a.isGroup);
-    const individualRows = accountDataWithGroups.filter(a => !a.isGroup);
+    const groupRows = accountDataWithGroups.filter(a => a._isGroup);
+    const individualRows = accountDataWithGroups.filter(a => !a._isGroup);
     let sorted = [...individualRows];
 
     if (sortConfig.key) {
@@ -543,7 +543,8 @@ const AccountView = ({
 
   const handleExportToExcel = async () => {
     try {
-      const exportData = formatDataForExport(accountData);
+      // Exclude group rows — they are display-only aggregations
+      const exportData = formatDataForExport(accountData.filter(a => !a._isGroup));
       await downloadExcel(exportData, 'meta-statistik-konton.xlsx');
     } catch (error) {
       console.error('Export till Excel misslyckades:', error);
@@ -552,7 +553,8 @@ const AccountView = ({
 
   const handleExportToCSV = () => {
     try {
-      const exportData = formatDataForExport(accountData);
+      // Exclude group rows — they are display-only aggregations
+      const exportData = formatDataForExport(accountData.filter(a => !a._isGroup));
       if (!exportData || exportData.length === 0) return;
       const headers = Object.keys(exportData[0]);
       const rows = exportData.map(row =>
@@ -848,10 +850,10 @@ const AccountView = ({
                   </TableCell>
                 </TableRow>
                 {gaSummaryWithGroups.programmes.map((prog, idx) => {
-                  const prevIsGroup = idx > 0 && gaSummaryWithGroups.programmes[idx - 1].isGroup;
-                  const showDivider = !prog.isGroup && idx > 0 && prevIsGroup;
+                  const prevIsGroup = idx > 0 && gaSummaryWithGroups.programmes[idx - 1]._isGroup;
+                  const showDivider = !prog._isGroup && idx > 0 && prevIsGroup;
                   return (
-                    <React.Fragment key={prog.isGroup ? `group-${prog.groupId}` : prog.account_name}>
+                    <React.Fragment key={prog._isGroup ? `group-${prog.groupId}` : prog.account_name}>
                       {showDivider && (
                         <TableRow>
                           <TableCell colSpan={gaShowDeleteColumn ? 4 : 3} className="p-0">
@@ -859,10 +861,10 @@ const AccountView = ({
                           </TableCell>
                         </TableRow>
                       )}
-                      <TableRow className={prog.isGroup ? 'bg-blue-50/60 hover:bg-blue-50' : ''}>
+                      <TableRow className={prog._isGroup ? 'bg-blue-50/60 hover:bg-blue-50' : ''}>
                         {gaShowDeleteColumn && (
                           <TableCell className="text-center">
-                            {!prog.isGroup && (
+                            {!prog._isGroup && (
                               <input
                                 type="checkbox"
                                 checked={gaSelectedAccounts.has(prog.account_name)}
@@ -873,10 +875,10 @@ const AccountView = ({
                           </TableCell>
                         )}
                         <TableCell className="text-center font-medium">
-                          {prog.isGroup ? '' : idx + 1 - gaSummaryWithGroups.programmes.filter((p, i) => i < idx && p.isGroup).length}
+                          {prog._isGroup ? '' : idx + 1 - gaSummaryWithGroups.programmes.filter((p, i) => i < idx && p._isGroup).length}
                         </TableCell>
                         <TableCell className="font-medium">
-                          {prog.isGroup ? (
+                          {prog._isGroup ? (
                             <div className="flex items-center gap-2">
                               <Users className="w-4 h-4 text-blue-600 shrink-0" />
                               <div>
@@ -1244,9 +1246,9 @@ const AccountView = ({
             </TableRow>
 
             {paginatedData.map((account, index) => {
-              const isGroup = account.isGroup;
-              const groupIndividualsBefore = paginatedData.filter((a, i) => i < index && !a.isGroup).length;
-              const prevIsGroup = index > 0 && paginatedData[index - 1].isGroup;
+              const isGroup = account._isGroup;
+              const groupIndividualsBefore = paginatedData.filter((a, i) => i < index && !a._isGroup).length;
+              const prevIsGroup = index > 0 && paginatedData[index - 1]._isGroup;
               const showDivider = !isGroup && index > 0 && prevIsGroup;
 
               const rowKey = isGroup
