@@ -268,7 +268,7 @@ const TrendAnalysisView = ({
           metric: selectedMetric,
           accountKeys: uniqueKeys.join('||'),
           granularity: 'month',
-          ...(selectedMetric !== 'account_reach' ? periodParams : {}),
+          ...periodParams,
         };
         if (platform) params.platform = platform;
         const data = await api.getTrends(params);
