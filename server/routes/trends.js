@@ -80,9 +80,9 @@ router.get('/', (req, res) => {
     reachConditions.push(hiddenReachFilter('ar').slice(4));
 
     // Period filtering for account_reach
-    const { months } = req.query;
+    const { months: monthsParam } = req.query;
     if (months) {
-      const monthList = months.split(',').map(m => m.trim()).filter(Boolean);
+      const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
       if (monthList.length > 0) {
         const placeholders = monthList.map(() => '?').join(',');
         reachConditions.push(`ar.month IN (${placeholders})`);
