@@ -81,7 +81,7 @@ router.get('/', (req, res) => {
 
     // Period filtering for account_reach
     const { months: monthsParam } = req.query;
-    if (months) {
+    if (monthsParam) {
       const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
       if (monthList.length > 0) {
         const placeholders = monthList.map(() => '?').join(',');
