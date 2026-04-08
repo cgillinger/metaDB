@@ -79,6 +79,17 @@ router.get('/', (req, res) => {
     // Hidden accounts filter
     reachConditions.push(hiddenReachFilter('ar').slice(4));
 
+    // Period filtering for account_reach
+    const { months } = req.query;
+    if (months) {
+      const monthList = months.split(',').map(m => m.trim()).filter(Boolean);
+      if (monthList.length > 0) {
+        const placeholders = monthList.map(() => '?').join(',');
+        reachConditions.push(`ar.month IN (${placeholders})`);
+        reachParams.push(...monthList);
+      }
+    }
+
     const reachWhere = `WHERE ${reachConditions.join(' AND ')}`;
     const reachQuery = `
       SELECT
