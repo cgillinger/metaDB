@@ -178,9 +178,9 @@ const TrendAnalysisView = ({
           disabled: matchedCount === 0,
         };
       })
-      .sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
+      .sort((a, b) => (a.account_name || '').localeCompare((b.account_name || ''), 'sv'));
     const sortedGaList = [...gaAccountList].sort((a, b) =>
-      a.account_name.localeCompare(b.account_name, 'sv')
+      (a.account_name || '').localeCompare((b.account_name || ''), 'sv')
     );
     return [...gaGroups, ...sortedGaList];
   }, [accountGroups, gaAccountList]);
@@ -205,9 +205,9 @@ const TrendAnalysisView = ({
           disabled: matchedCount === 0,
         };
       })
-      .sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
+      .sort((a, b) => (a.account_name || '').localeCompare((b.account_name || ''), 'sv'));
     const sorted = [...accountList].sort((a, b) =>
-      a.account_name.localeCompare(b.account_name, 'sv')
+      (a.account_name || '').localeCompare((b.account_name || ''), 'sv')
     );
     return [...postGroups, ...sorted];
   }, [accountGroups, accountList]);

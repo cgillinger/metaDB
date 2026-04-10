@@ -359,7 +359,7 @@ const AccountView = ({
     for (const p of gaSummary.programmes) progMap[p.account_name] = p;
 
     const syntheticRows = [...gaGroups]
-      .sort((a, b) => a.name.localeCompare(b.name, 'sv'))
+      .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'))
       .map(group => {
         const memberNames = group.members.map(k => k.split('::')[0]);
         const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
@@ -388,7 +388,7 @@ const AccountView = ({
     if (gaGroups.length === 0) return gaSortedPrograms;
 
     const syntheticGroupNames = [...gaGroups]
-      .sort((a, b) => a.name.localeCompare(b.name, 'sv'))
+      .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'))
       .map(group => `__group__${group.id}`);
 
     return [...syntheticGroupNames, ...gaSortedPrograms];
@@ -451,7 +451,7 @@ const AccountView = ({
   // Client-side sorting and pagination — groups always stay at top
   const paginatedData = useMemo(() => {
     const groupRows = [...accountDataWithGroups.filter(a => a._isGroup)]
-      .sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
+      .sort((a, b) => (a.account_name || '').localeCompare((b.account_name || ''), 'sv'));
     const individualRows = accountDataWithGroups.filter(a => !a._isGroup);
     let sorted = [...individualRows];
 
@@ -480,7 +480,7 @@ const AccountView = ({
         return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
       });
     } else {
-      sorted.sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
+      sorted.sort((a, b) => (a.account_name || '').localeCompare((b.account_name || ''), 'sv'));
     }
 
     const startIndex = (currentPage - 1) * pageSize;
