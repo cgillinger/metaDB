@@ -392,9 +392,30 @@ const TrendAnalysisView = ({
     return map;
   }, [gaListensMode, gaRawData]);
 
-  const gaMonths = useMemo(() =>
-    gaListensMode ? [...new Set(gaRawData.map(r => r.month))].sort() : []
-  , [gaListensMode, gaRawData]);
+  // Build the full month span for the GA chart x-axis so months without
+  // any listens still render as zero. Falls back to the set of months that
+  // actually have data when no period filter is active.
+  const gaMonths = useMemo(() => {
+    if (!gaListensMode) return [];
+
+    if (periodParams.months) {
+      return periodParams.months.split(',').map(m => m.trim()).filter(Boolean).sort();
+    }
+    if (periodParams.dateFrom && periodParams.dateTo) {
+      const start = periodParams.dateFrom.slice(0, 7);
+      const end = periodParams.dateTo.slice(0, 7);
+      const months = [];
+      let current = start;
+      while (current <= end) {
+        months.push(current);
+        const [y, m] = current.split('-').map(Number);
+        current = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+      }
+      return months;
+    }
+
+    return [...new Set(gaRawData.map(r => r.month))].sort();
+  }, [gaListensMode, gaRawData, periodParams]);
 
   const gaChartLines = useMemo(() => {
     if (!gaListensMode || selectedAccounts.length === 0) return [];
