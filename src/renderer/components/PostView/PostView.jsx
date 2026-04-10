@@ -124,7 +124,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
             isCollab: a.is_collab,
             key: `${a.account_name}::${a.platform}`,
           }))
-          .sort((a, b) => a.name.localeCompare(b.name, 'sv'));
+          .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'));
         setUniqueAccounts(accounts);
         const platforms = new Set(accounts.map(a => a.platform));
         setHasMixedData(platforms.size > 1);
