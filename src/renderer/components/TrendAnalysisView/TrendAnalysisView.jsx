@@ -177,8 +177,12 @@ const TrendAnalysisView = ({
           matchedCount,
           disabled: matchedCount === 0,
         };
-      });
-    return [...gaGroups, ...gaAccountList];
+      })
+      .sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
+    const sortedGaList = [...gaAccountList].sort((a, b) =>
+      a.account_name.localeCompare(b.account_name, 'sv')
+    );
+    return [...gaGroups, ...sortedGaList];
   }, [accountGroups, gaAccountList]);
 
   // Inject posts groups into the posts account list
@@ -200,8 +204,12 @@ const TrendAnalysisView = ({
           matchedCount,
           disabled: matchedCount === 0,
         };
-      });
-    return [...postGroups, ...accountList];
+      })
+      .sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
+    const sorted = [...accountList].sort((a, b) =>
+      a.account_name.localeCompare(b.account_name, 'sv')
+    );
+    return [...postGroups, ...sorted];
   }, [accountGroups, accountList]);
 
   // True when any selected account is a group

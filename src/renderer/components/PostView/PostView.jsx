@@ -117,12 +117,14 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
         const params = { fields: 'views', ...periodParams };
         if (platform) params.platform = platform;
         const data = await api.getAccounts(params);
-        const accounts = (data.accounts || []).map(a => ({
-          name: a.account_name,
-          platform: a.platform,
-          isCollab: a.is_collab,
-          key: `${a.account_name}::${a.platform}`,
-        }));
+        const accounts = (data.accounts || [])
+          .map(a => ({
+            name: a.account_name,
+            platform: a.platform,
+            isCollab: a.is_collab,
+            key: `${a.account_name}::${a.platform}`,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name, 'sv'));
         setUniqueAccounts(accounts);
         const platforms = new Set(accounts.map(a => a.platform));
         setHasMixedData(platforms.size > 1);
