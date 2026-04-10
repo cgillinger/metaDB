@@ -28,6 +28,32 @@ const METRIC_SQL_MAP = {
   posts_per_day:  'COUNT(*)',
 };
 
+/**
+ * Build a complete 'YYYY-MM' month span from period filter query params.
+ * Returns the full list of months covered by the period filter so that the
+ * client can render zero-value months that have no matching posts.
+ * Returns null when no period filter is set — callers should then fall back
+ * to the months that actually have data.
+ */
+function buildMonthSpan(query) {
+  if (query.months) {
+    return query.months.split(',').map(m => m.trim()).filter(Boolean).sort();
+  }
+  if (query.dateFrom && query.dateTo) {
+    const start = query.dateFrom.slice(0, 7);
+    const end = query.dateTo.slice(0, 7);
+    const months = [];
+    let current = start;
+    while (current <= end) {
+      months.push(current);
+      const [y, m] = current.split('-').map(Number);
+      current = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    }
+    return months;
+  }
+  return null;
+}
+
 // Parse composite keys "name::platform" into {name, platform} pairs.
 // Keys are separated by "||" to avoid conflicts with commas in account names.
 function parseAccountKeys(keysParam) {
@@ -120,7 +146,11 @@ router.get('/', (req, res) => {
       byAccount[key].dataMap[row.period] = row.value;
     }
 
-    const months = Array.from(monthSet).sort();
+    // Prefer the full period span so that months without reach data still
+    // appear on the x-axis as zero values. Fall back to months with data
+    // when no period filter was supplied.
+    const spanMonths = buildMonthSpan(req.query);
+    const months = spanMonths || Array.from(monthSet).sort();
     const series = Object.values(byAccount).map(account => ({
       account_id: account.account_name,
       account_name: account.account_name,
@@ -217,7 +247,11 @@ router.get('/', (req, res) => {
     byAccount[key].dataMap[row.period] = value;
   }
 
-  const months = Array.from(monthSet).sort();
+  // Use the complete month span from the period filter so months without
+  // posts still render as zero. Week granularity keeps the legacy behaviour
+  // (only periods with data) since we don't generate week spans.
+  const spanMonths = granularity === 'month' ? buildMonthSpan(req.query) : null;
+  const months = spanMonths || Array.from(monthSet).sort();
 
   const series = Object.values(byAccount).map(account => ({
     account_id: account.account_id,
