@@ -358,21 +358,23 @@ const AccountView = ({
     const progMap = {};
     for (const p of gaSummary.programmes) progMap[p.account_name] = p;
 
-    const syntheticRows = gaGroups.map(group => {
-      const memberNames = group.members.map(k => k.split('::')[0]);
-      const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
-      const totalListens = memberRows.reduce((sum, p) => sum + p.total_listens, 0);
-      const maxMonthCount = memberRows.length > 0 ? Math.max(...memberRows.map(p => p.month_count)) : 0;
-      return {
-        account_name: group.name,
-        total_listens: totalListens,
-        month_count: maxMonthCount,
-        _isGroup: true,
-        groupId: group.id,
-        memberCount: memberNames.length,
-        matchedCount: memberRows.length,
-      };
-    });
+    const syntheticRows = [...gaGroups]
+      .sort((a, b) => a.name.localeCompare(b.name, 'sv'))
+      .map(group => {
+        const memberNames = group.members.map(k => k.split('::')[0]);
+        const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
+        const totalListens = memberRows.reduce((sum, p) => sum + p.total_listens, 0);
+        const maxMonthCount = memberRows.length > 0 ? Math.max(...memberRows.map(p => p.month_count)) : 0;
+        return {
+          account_name: group.name,
+          total_listens: totalListens,
+          month_count: maxMonthCount,
+          _isGroup: true,
+          groupId: group.id,
+          memberCount: memberNames.length,
+          matchedCount: memberRows.length,
+        };
+      });
 
     return {
       programmes: [...syntheticRows, ...gaSummary.programmes],
@@ -385,10 +387,9 @@ const AccountView = ({
     const gaGroups = accountGroups.filter(g => g.source === 'ga_listens');
     if (gaGroups.length === 0) return gaSortedPrograms;
 
-    const syntheticGroupNames = gaGroups.map(group => {
-      // We'll prefix with __group__ so we can identify them in rendering
-      return `__group__${group.id}`;
-    });
+    const syntheticGroupNames = [...gaGroups]
+      .sort((a, b) => a.name.localeCompare(b.name, 'sv'))
+      .map(group => `__group__${group.id}`);
 
     return [...syntheticGroupNames, ...gaSortedPrograms];
   }, [gaSortedPrograms, accountGroups]);
@@ -449,7 +450,8 @@ const AccountView = ({
 
   // Client-side sorting and pagination — groups always stay at top
   const paginatedData = useMemo(() => {
-    const groupRows = accountDataWithGroups.filter(a => a._isGroup);
+    const groupRows = [...accountDataWithGroups.filter(a => a._isGroup)]
+      .sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
     const individualRows = accountDataWithGroups.filter(a => !a._isGroup);
     let sorted = [...individualRows];
 
@@ -477,6 +479,8 @@ const AccountView = ({
 
         return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
       });
+    } else {
+      sorted.sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
     }
 
     const startIndex = (currentPage - 1) * pageSize;
