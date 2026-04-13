@@ -197,6 +197,7 @@ router.get('/', (req, res) => {
       byAccount[key].dataMap[row.month] = {
         value: row.estimated_unique_upper !== null ? Math.round(row.estimated_unique_upper) : null,
         lower: row.estimated_unique_lower !== null ? Math.round(row.estimated_unique_lower) : null,
+        quality: row.quality || 'suppressed',
       };
     }
 

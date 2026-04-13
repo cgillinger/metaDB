@@ -508,12 +508,24 @@ const AccountView = ({
     if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
     if (field === 'estimated_unique_clicks' && plat === 'facebook') {
       const est = estimatedClicksByAccount[account.account_name];
-      if (!est || est.upper === null) {
-        return <span className="text-muted-foreground cursor-help" title="Kräver kontoräckvidd (API-import)">—</span>;
+      if (!est || est.upper === null || est.quality === 'suppressed') {
+        return <span className="text-muted-foreground cursor-help" title="Kräver kontoräckvidd (API-import) och minst 5 inlägg">—</span>;
       }
       const upper = Math.round(est.upper).toLocaleString('sv-SE');
       const lower = est.lower !== null ? Math.round(est.lower).toLocaleString('sv-SE') : null;
-      return <span>~{lower !== null ? `${lower} – ${upper}` : upper}</span>;
+      const rangeText = `~${lower !== null ? `${lower} – ${upper}` : upper}`;
+      if (est.quality === 'uncertain') {
+        return (
+          <span className="flex items-center gap-1">
+            {rangeText}
+            <span
+              className="text-amber-500 cursor-help"
+              title="Hög osäkerhet — kontot har mycket trogen publik (överlappsfaktor > 5)"
+            >⚠</span>
+          </span>
+        );
+      }
+      return <span>{rangeText}</span>;
     }
     return formatValue(getFieldValue(account, field));
   };

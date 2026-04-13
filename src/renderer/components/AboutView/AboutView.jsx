@@ -50,7 +50,7 @@ const FB_METRICS = [
     desc: 'Uppskattat antal unika personer som klickat minst en länk under månaden. '
         + 'Beräknas genom att dividera totala länkklick med överlappsfaktorn '
         + '(summa inläggsräckvidd ÷ kontoräckvidd). Visas som intervall. '
-        + 'Kräver kontoräckvidd (API) för samma månad.',
+        + 'Kräver kontoräckvidd (API) för samma månad och minst 5 inlägg.',
     source: 'Beräknad (post-CSV + API-räckvidd)',
     summable: 'Nej — uppskattning per konto',
   },
@@ -159,15 +159,19 @@ const AboutView = () => (
               hur många gånger den genomsnittliga personen "räknas om".
             </p>
             <p className="text-muted-foreground mt-2">
-              Uppskattningen visas som ett intervall. Övre gränsen antar att
-              länkklickare överlappar i samma takt som den allmänna publiken. Undre
-              gränsen korrigerar med faktor 1,5 för att klickare typiskt är mer
-              engagerade och ser fler inlägg.
+              Uppskattningen visas som ett intervall. Det övre värdet antar att
+              länkklickare beter sig som den genomsnittliga personen i publiken. Det
+              undre värdet justerar för att klickare typiskt är mer aktiva följare som
+              ser fler inlägg. Det verkliga antalet ligger sannolikt i eller strax
+              under detta spann.
             </p>
             <p className="text-muted-foreground mt-2">
-              <strong>Krav:</strong> Kontoräckvidd (API-import) måste finnas för samma
-              konto och månad. Utan den kan överlappsfaktorn inte beräknas och
-              värdet visas inte.
+              <strong>Visningsregler:</strong> Uppskattningen visas inte om
+              kontoräckvidd (API) saknas, om kontot har färre än 5 inlägg under
+              månaden, eller om datan är inkonsekvent (överlappsfaktor under 1).
+              Vid mycket hög överlapp (faktor över 5) visas uppskattningen med
+              en varningssymbol — den är mer osäker för konton med väldigt
+              trogen publik.
             </p>
           </section>
 

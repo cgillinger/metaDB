@@ -178,14 +178,10 @@ router.get('/', (req, res) => {
   const estRows = db.prepare(`
     SELECT
       p.account_name,
-      CASE WHEN SUM(ar.reach) > 0 AND SUM(p.reach) > 0
-        THEN ROUND(CAST(SUM(p.link_clicks) AS REAL) / (CAST(SUM(p.reach) AS REAL) / SUM(ar.reach)))
-        ELSE NULL
-      END AS estimated_unique_upper,
-      CASE WHEN SUM(ar.reach) > 0 AND SUM(p.reach) > 0
-        THEN ROUND(CAST(SUM(p.link_clicks) AS REAL) / (CAST(SUM(p.reach) AS REAL) / SUM(ar.reach) * 1.5))
-        ELSE NULL
-      END AS estimated_unique_lower
+      COUNT(*) AS post_count,
+      SUM(p.link_clicks) AS total_link_clicks,
+      SUM(p.reach) AS sum_post_reach,
+      SUM(ar.reach) AS sum_account_reach
     FROM posts p
     LEFT JOIN account_reach ar
       ON p.account_name = ar.account_name
@@ -196,9 +192,22 @@ router.get('/', (req, res) => {
 
   const estimatedClicksByAccount = {};
   for (const row of estRows) {
+    const { post_count, total_link_clicks, sum_post_reach, sum_account_reach } = row;
+    if (!sum_account_reach || sum_account_reach <= 0 || !sum_post_reach || sum_post_reach <= 0) {
+      estimatedClicksByAccount[row.account_name] = { upper: null, lower: null, quality: 'suppressed' };
+      continue;
+    }
+    const overlap_factor = sum_post_reach / sum_account_reach;
+    if (overlap_factor < 1 || post_count < 5) {
+      estimatedClicksByAccount[row.account_name] = { upper: null, lower: null, quality: 'suppressed' };
+      continue;
+    }
+    const upper = Math.round(total_link_clicks / overlap_factor);
+    const lower = Math.round(upper / 1.5);
     estimatedClicksByAccount[row.account_name] = {
-      upper: row.estimated_unique_upper,
-      lower: row.estimated_unique_lower,
+      upper,
+      lower,
+      quality: overlap_factor > 5 ? 'uncertain' : 'ok',
     };
   }
 
