@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
 import { hiddenPostsFilter, hiddenReachFilter } from '../services/hiddenAccounts.js';
+import { getEstimatedUniqueClicks } from '../services/estimatedUniqueClicks.js';
 
 const router = Router();
 
@@ -157,6 +158,55 @@ router.get('/', (req, res) => {
       platform: account.platform,
       is_collab: account.is_collab,
       data: months.map(m => account.dataMap[m] || 0),
+    }));
+
+    return res.json({ metric, granularity: 'month', months, series });
+  }
+
+  // estimated_unique_clicks: computed from posts + account_reach join
+  if (metric === 'estimated_unique_clicks') {
+    const accountNames = accountPairs.map(p => p.name);
+    const spanMonths = buildMonthSpan(req.query);
+
+    let filterMonths = null;
+    if (req.query.months) {
+      filterMonths = req.query.months.split(',').map(m => m.trim()).filter(Boolean);
+    } else if (spanMonths) {
+      filterMonths = spanMonths;
+    }
+
+    const rows = getEstimatedUniqueClicks({
+      accountNames: accountNames.length > 0 ? accountNames : undefined,
+      months: filterMonths || undefined,
+    });
+
+    const monthSet = new Set();
+    const byAccount = {};
+
+    for (const row of rows) {
+      monthSet.add(row.month);
+      const key = row.account_name;
+      if (!byAccount[key]) {
+        byAccount[key] = {
+          account_name: row.account_name,
+          platform: 'facebook',
+          is_collab: false,
+          dataMap: {},
+        };
+      }
+      byAccount[key].dataMap[row.month] = {
+        value: row.estimated_unique_upper !== null ? Math.round(row.estimated_unique_upper) : null,
+        lower: row.estimated_unique_lower !== null ? Math.round(row.estimated_unique_lower) : null,
+      };
+    }
+
+    const months = spanMonths || Array.from(monthSet).sort();
+    const series = Object.values(byAccount).map(account => ({
+      account_id: account.account_name,
+      account_name: account.account_name,
+      platform: 'facebook',
+      is_collab: account.is_collab,
+      data: months.map(m => account.dataMap[m] ?? null),
     }));
 
     return res.json({ metric, granularity: 'month', months, series });

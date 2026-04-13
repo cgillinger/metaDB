@@ -164,6 +164,44 @@ router.get('/', (req, res) => {
     reachByAccount[row.account_name][row.month] = row.reach;
   }
 
+  // Estimated unique clicks for Facebook accounts (period total)
+  const estPeriodFilter = buildPeriodConditions(req.query);
+  const estConditions = [
+    "p.platform = 'facebook'",
+    ...estPeriodFilter.conditions,
+    hiddenPostsFilter('p').slice(4),
+  ];
+  if (req.query.excludeCollab === 'true') {
+    estConditions.push('p.is_collab = 0');
+  }
+
+  const estRows = db.prepare(`
+    SELECT
+      p.account_name,
+      CASE WHEN SUM(ar.reach) > 0 AND SUM(p.reach) > 0
+        THEN ROUND(CAST(SUM(p.link_clicks) AS REAL) / (CAST(SUM(p.reach) AS REAL) / SUM(ar.reach)))
+        ELSE NULL
+      END AS estimated_unique_upper,
+      CASE WHEN SUM(ar.reach) > 0 AND SUM(p.reach) > 0
+        THEN ROUND(CAST(SUM(p.link_clicks) AS REAL) / (CAST(SUM(p.reach) AS REAL) / SUM(ar.reach) * 1.5))
+        ELSE NULL
+      END AS estimated_unique_lower
+    FROM posts p
+    LEFT JOIN account_reach ar
+      ON p.account_name = ar.account_name
+      AND strftime('%Y-%m', p.publish_time) = ar.month
+    WHERE ${estConditions.join(' AND ')}
+    GROUP BY p.account_name
+  `).all(...estPeriodFilter.params);
+
+  const estimatedClicksByAccount = {};
+  for (const row of estRows) {
+    estimatedClicksByAccount[row.account_name] = {
+      upper: row.estimated_unique_upper,
+      lower: row.estimated_unique_lower,
+    };
+  }
+
   // Available reach months (only months that actually have data)
   const reachMonthsAvailable = [...new Set(reachData.map(r => r.month))].sort();
 
@@ -201,7 +239,7 @@ router.get('/', (req, res) => {
     }
   }
 
-  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable });
+  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, estimatedClicksByAccount });
 });
 
 export default router;

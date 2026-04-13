@@ -52,7 +52,7 @@ const TREND_METRICS_COMMON = {
   'post_count': 'Antal publiceringar',
   'posts_per_day': 'Publiceringar per dag'
 };
-const TREND_METRICS_FB = { 'account_reach': 'Kontoräckvidd (API)', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'other_clicks': 'Övriga klick' };
+const TREND_METRICS_FB = { 'account_reach': 'Kontoräckvidd (API)', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'other_clicks': 'Övriga klick', 'estimated_unique_clicks': 'Uppsk. unika länkklickare' };
 const TREND_METRICS_IG = { 'saves': 'Sparade', 'follows': 'Följare' };
 
 const CHART_COLORS = [
@@ -62,7 +62,7 @@ const CHART_COLORS = [
 
 // Metrics that cannot be meaningfully summed across accounts in a group
 const NON_SUMMABLE_METRICS = new Set([
-  'reach', 'average_reach', 'account_reach', 'posts_per_day',
+  'reach', 'average_reach', 'account_reach', 'posts_per_day', 'estimated_unique_clicks',
 ]);
 
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
@@ -332,6 +332,7 @@ const TrendAnalysisView = ({
       // Regular account
       const series = seriesByKey[selectedKey];
       if (!series) return null;
+      const isEstimatedMetric = selectedMetric === 'estimated_unique_clicks';
       return {
         key: selectedKey,
         account_name: series.account_name,
@@ -339,19 +340,30 @@ const TrendAnalysisView = ({
         is_collab: series.is_collab || false,
         _isGroup: false,
         color: CHART_COLORS[colorIndex++ % CHART_COLORS.length],
-        points: trendData.months.map((monthKey, mIndex) => ({
-          month: monthKey,
-          value: series.data[mIndex] || 0,
-        })),
+        points: trendData.months.map((monthKey, mIndex) => {
+          if (isEstimatedMetric) {
+            const datum = series.data[mIndex];
+            return {
+              month: monthKey,
+              value: datum?.value ?? null,
+              valueLower: datum?.lower ?? null,
+            };
+          }
+          return {
+            month: monthKey,
+            value: series.data[mIndex] ?? 0,
+          };
+        }),
       };
     }).filter(Boolean);
 
     return { months: trendData.months, chartLines: lines };
-  }, [trendData, selectedAccounts, accountListWithGroups]);
+  }, [trendData, selectedAccounts, accountListWithGroups, selectedMetric]);
 
   const yAxisConfig = useMemo(() => {
     if (chartLines.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
-    const allValues = chartLines.flatMap(line => line.points.map(p => p.value));
+    const allValues = chartLines.flatMap(line => line.points.map(p => p.value).filter(v => v !== null && v !== undefined));
+    if (allValues.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
     return calculateNiceYAxis(Math.max(...allValues));
   }, [chartLines]);
 
@@ -473,15 +485,15 @@ const TrendAnalysisView = ({
   // Filter account list based on selected metric (account_reach = FB only)
   // Groups are always kept in the list regardless of metric filter
   const filteredAccountList = useMemo(() => {
-    if (selectedMetric === 'account_reach') {
+    if (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks') {
       return accountListWithGroups.filter(a => a._isGroup || a.platform === 'facebook');
     }
     return accountListWithGroups;
   }, [accountListWithGroups, selectedMetric]);
 
-  // When metric changes to account_reach, remove non-FB accounts from selection
+  // When metric changes to account_reach or estimated_unique_clicks, remove non-FB accounts from selection
   useEffect(() => {
-    if (!gaListensMode && selectedMetric === 'account_reach') {
+    if (!gaListensMode && (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks')) {
       const fbKeys = new Set(
         accountListWithGroups
           .filter(a => a._isGroup || a.platform === 'facebook')
@@ -647,7 +659,7 @@ const TrendAnalysisView = ({
                         />
                         <span className="text-sm flex items-center gap-1.5">
                           {label}
-                          {['account_reach', 'total_clicks', 'link_clicks', 'other_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
+                          {['account_reach', 'total_clicks', 'link_clicks', 'other_clicks', 'estimated_unique_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
                           {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
                         </span>
                       </Label>
@@ -734,16 +746,52 @@ const TrendAnalysisView = ({
 
                   {displayChartLines.map(line => {
                     if (line.points.length < 1) return null;
-                    const pathPoints = line.points.map((point, index) => ({
-                      x: 70 + (index / Math.max(1, displayMonths.length - 1)) * 860,
-                      y: 450 - ((point.value - displayYAxisConfig.min) / (displayYAxisConfig.max - displayYAxisConfig.min)) * 380,
-                      point
-                    }));
+                    const isEstimated = !gaListensMode && selectedMetric === 'estimated_unique_clicks';
+                    const yRange = displayYAxisConfig.max - displayYAxisConfig.min;
+                    const toY = (val) => yRange > 0 ? 450 - ((val - displayYAxisConfig.min) / yRange) * 380 : 450;
+
+                    const pathPoints = line.points.map((point, index) => {
+                      const x = 70 + (index / Math.max(1, displayMonths.length - 1)) * 860;
+                      if (isEstimated && point.value === null) {
+                        return { x, y: null, yLower: null, point };
+                      }
+                      return {
+                        x,
+                        y: toY(point.value ?? 0),
+                        yLower: isEstimated && point.valueLower !== null ? toY(point.valueLower) : null,
+                        point,
+                      };
+                    });
+
+                    const visiblePoints = isEstimated ? pathPoints.filter(p => p.y !== null) : pathPoints;
+
+                    const bandPath = isEstimated && visiblePoints.length > 1
+                      ? (() => {
+                          const upper = visiblePoints.map(p => `${p.x} ${p.y}`).join(' L ');
+                          const lower = [...visiblePoints].reverse().map(p => `${p.x} ${p.yLower ?? p.y}`).join(' L ');
+                          return `M ${upper} L ${lower} Z`;
+                        })()
+                      : null;
+
                     return (
                       <g key={line.key}>
-                        {line.points.length > 1 && (
+                        {bandPath && (
+                          <path d={bandPath} fill={line.color} fillOpacity="0.12" stroke="none" />
+                        )}
+                        {isEstimated && visiblePoints.length > 1 && (
                           <path
-                            d={createSmoothPath(pathPoints)}
+                            d={createSmoothPath(visiblePoints.map(p => ({ x: p.x, y: p.yLower ?? p.y })))}
+                            fill="none"
+                            stroke={line.color}
+                            strokeWidth="1.5"
+                            strokeDasharray="4 3"
+                            strokeOpacity="0.5"
+                            strokeLinecap="round"
+                          />
+                        )}
+                        {visiblePoints.length > 1 && (
+                          <path
+                            d={createSmoothPath(visiblePoints.map(p => ({ x: p.x, y: p.y })))}
                             fill="none"
                             stroke={line.color}
                             strokeWidth={line._isGroup ? '4' : '2.5'}
@@ -752,7 +800,7 @@ const TrendAnalysisView = ({
                             strokeLinejoin="round"
                           />
                         )}
-                        {pathPoints.map(({ x, y, point }, index) => (
+                        {visiblePoints.map(({ x, y, point }, index) => (
                           <circle
                             key={index}
                             cx={x} cy={y}
@@ -776,13 +824,23 @@ const TrendAnalysisView = ({
                     if (tooltipY + tooltipHeight > 480) tooltipY = mousePosition.y - tooltipHeight - 15;
                     const [year, month] = hoveredDataPoint.month.split('-').map(Number);
                     const tooltipMetric = gaListensMode ? 'Lyssningar' : availableMetrics[selectedMetric];
+                    const isEstimatedTooltip = !gaListensMode && selectedMetric === 'estimated_unique_clicks';
+                    const tooltipValueText = isEstimatedTooltip
+                      ? (() => {
+                          const upper = hoveredDataPoint.value;
+                          const lower = hoveredDataPoint.valueLower;
+                          if (upper === null) return 'Saknar kontoräckvidd';
+                          if (lower !== null) return `~${Math.round(lower).toLocaleString('sv-SE')} – ${Math.round(upper).toLocaleString('sv-SE')}`;
+                          return `~${Math.round(upper).toLocaleString('sv-SE')}`;
+                        })()
+                      : (hoveredDataPoint.value ?? 0).toLocaleString('sv-SE');
                     return (
                       <g>
                         <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} fill="rgba(0,0,0,0.85)" rx="6" />
                         <text x={tooltipX + 12} y={tooltipY + 20} fill="white" fontSize="13" fontWeight="bold">{hoveredDataPoint.account_name}</text>
                         <text x={tooltipX + 12} y={tooltipY + 38} fill="white" fontSize="12">{getMonthName(month)} {year}</text>
                         <text x={tooltipX + 12} y={tooltipY + 55} fill="white" fontSize="11">{tooltipMetric}</text>
-                        <text x={tooltipX + 12} y={tooltipY + 73} fill="white" fontSize="14" fontWeight="bold">{hoveredDataPoint.value.toLocaleString()}</text>
+                        <text x={tooltipX + 12} y={tooltipY + 73} fill="white" fontSize={isEstimatedTooltip ? '13' : '14'} fontWeight="bold">{tooltipValueText}</text>
                       </g>
                     );
                   })()}

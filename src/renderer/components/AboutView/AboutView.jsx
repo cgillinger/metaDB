@@ -44,6 +44,16 @@ const FB_METRICS = [
   { name: 'Länkklick', key: 'link_clicks', desc: 'Klick på länkar i inlägget.', source: 'CSV: "Länkklick"', summable: 'Ja' },
   { name: 'Övriga klick', key: 'other_clicks', desc: 'Klick som inte är länkklick (t.ex. klick för att expandera bild).', source: 'CSV: "Övriga klick"', summable: 'Ja' },
   { name: 'Kontoräckvidd', key: 'account_reach', desc: 'Månatlig räckvidd per konto. Separat datakälla (Graph API), inte från post-CSV.', source: 'API-export', summable: 'Nej — kan inte summeras meningsfullt' },
+  {
+    name: 'Uppsk. unika länkklickare',
+    key: 'estimated_unique_clicks',
+    desc: 'Uppskattat antal unika personer som klickat minst en länk under månaden. '
+        + 'Beräknas genom att dividera totala länkklick med överlappsfaktorn '
+        + '(summa inläggsräckvidd ÷ kontoräckvidd). Visas som intervall. '
+        + 'Kräver kontoräckvidd (API) för samma månad.',
+    source: 'Beräknad (post-CSV + API-räckvidd)',
+    summable: 'Nej — uppskattning per konto',
+  },
 ];
 
 const IG_METRICS = [
@@ -135,6 +145,29 @@ const AboutView = () => (
             <p className="text-muted-foreground mt-2">
               Kontoräckvidd (account_reach) från Graph API är en helt separat datakälla med egen
               import och kan inte jämföras direkt med postbaserad räckvidd.
+            </p>
+          </section>
+
+          <section>
+            <h4 className="text-base font-semibold mb-2">Uppskattade unika länkklickare</h4>
+            <p className="text-muted-foreground">
+              Meta redovisar länkklick som totalt antal, inte unika. Appen uppskattar
+              antalet unika klickare genom att använda förhållandet mellan summerad
+              inläggsräckvidd och månatlig kontoräckvidd (överlappsfaktorn). Samma
+              person som nås av flera inlägg räknas flera gånger i summan av
+              inläggsräckvidd men bara en gång i kontoräckvidden — kvoten visar
+              hur många gånger den genomsnittliga personen "räknas om".
+            </p>
+            <p className="text-muted-foreground mt-2">
+              Uppskattningen visas som ett intervall. Övre gränsen antar att
+              länkklickare överlappar i samma takt som den allmänna publiken. Undre
+              gränsen korrigerar med faktor 1,5 för att klickare typiskt är mer
+              engagerade och ser fler inlägg.
+            </p>
+            <p className="text-muted-foreground mt-2">
+              <strong>Krav:</strong> Kontoräckvidd (API-import) måste finnas för samma
+              konto och månad. Utan den kan överlappsfaktorn inte beräknas och
+              värdet visas inte.
             </p>
           </section>
 
