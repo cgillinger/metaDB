@@ -62,10 +62,11 @@ const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'link_clicks': 'Länkklick',
   'other_clicks': 'Övriga klick',
   'post_count': 'Antal publiceringar',
-  'posts_per_day': 'Publiceringar per dag'
+  'posts_per_day': 'Publiceringar per dag',
+  'estimated_unique_clicks': 'Uppsk. unika klickare',
 };
 
-const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
+const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'estimated_unique_clicks'];
 const IG_ONLY_FIELDS = ['saves', 'follows'];
 
 const CHANNEL_COLORS = {
@@ -94,7 +95,7 @@ const ProfileIcon = ({ accountName }) => {
   );
 };
 
-const FIELDS_WITHOUT_TOTALS = ['average_reach', 'posts_per_day'];
+const FIELDS_WITHOUT_TOTALS = ['average_reach', 'posts_per_day', 'estimated_unique_clicks'];
 
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun',
                          'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
@@ -111,7 +112,7 @@ const PAGE_SIZE_OPTIONS = [
 ];
 
 // Fields that cannot be meaningfully summed across accounts in a group
-const GROUP_NON_SUMMABLE = new Set(['reach', 'average_reach', 'account_reach', 'posts_per_day']);
+const GROUP_NON_SUMMABLE = new Set(['reach', 'average_reach', 'account_reach', 'posts_per_day', 'estimated_unique_clicks']);
 
 // Fields that CAN be summed
 const GROUP_SUMMABLE = new Set([
@@ -135,6 +136,7 @@ const AccountView = ({
   const [totalSummary, setTotalSummary] = useState({});
   const [reachByAccount, setReachByAccount] = useState({});
   const [reachMonths, setReachMonths] = useState([]);
+  const [estimatedClicksByAccount, setEstimatedClicksByAccount] = useState({});
   const [showReachOnlyAccounts, setShowReachOnlyAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showDeleteColumn, setShowDeleteColumn] = useState(false);
@@ -186,6 +188,7 @@ const AccountView = ({
         setTotalSummary(data.totals || {});
         setReachByAccount(data.reachByAccount || {});
         setReachMonths(data.reachMonths || []);
+        setEstimatedClicksByAccount(data.estimatedClicksByAccount || {});
       } catch (error) {
         console.error('Fel vid hämtning av kontodata:', error);
       } finally {
@@ -253,7 +256,7 @@ const AccountView = ({
     prevFieldsRef.current = selectedFields;
     if (selectedFields.length > prev.length) {
       const newField = selectedFields.find(f => !prev.includes(f));
-      if (newField && newField !== 'account_reach') {
+      if (newField && newField !== 'account_reach' && newField !== 'estimated_unique_clicks') {
         const sortKey = newField === 'average_reach' ? 'reach' : newField;
         setSortConfig({ key: sortKey, direction: 'desc' });
       }
@@ -463,6 +466,9 @@ const AccountView = ({
           const month = sortConfig.key.replace('reach_', '');
           aVal = a.platform === 'facebook' ? (reachByAccount[a.account_name]?.[month] ?? -1) : -1;
           bVal = b.platform === 'facebook' ? (reachByAccount[b.account_name]?.[month] ?? -1) : -1;
+        } else if (sortConfig.key === 'estimated_unique_clicks') {
+          aVal = a.platform === 'facebook' ? (estimatedClicksByAccount[a.account_name]?.upper ?? -1) : -1;
+          bVal = b.platform === 'facebook' ? (estimatedClicksByAccount[b.account_name]?.upper ?? -1) : -1;
         } else if (sortConfig.key === 'account_name') {
           aVal = (a.account_name || '').toLowerCase();
           bVal = (b.account_name || '').toLowerCase();
@@ -491,8 +497,8 @@ const AccountView = ({
   const totalPages = Math.ceil(accountData.length / pageSize);
 
   const getFieldValue = (account, field) => {
-    // Map average_reach → reach from API
     if (field === 'average_reach') return account.reach;
+    if (field === 'estimated_unique_clicks') return estimatedClicksByAccount[account.account_name]?.upper ?? null;
     return account[field];
   };
 
@@ -500,6 +506,15 @@ const AccountView = ({
     const plat = account.platform;
     if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
     if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
+    if (field === 'estimated_unique_clicks' && plat === 'facebook') {
+      const est = estimatedClicksByAccount[account.account_name];
+      if (!est || est.upper === null) {
+        return <span className="text-muted-foreground cursor-help" title="Kräver kontoräckvidd (API-import)">—</span>;
+      }
+      const upper = Math.round(est.upper).toLocaleString('sv-SE');
+      const lower = est.lower !== null ? Math.round(est.lower).toLocaleString('sv-SE') : null;
+      return <span>~{lower !== null ? `${lower} – ${upper}` : upper}</span>;
+    }
     return formatValue(getFieldValue(account, field));
   };
 

@@ -114,7 +114,8 @@ export const DISPLAY_NAMES = {
   'other_clicks': 'Övriga klick',
   'link_clicks': 'Länkklick',
   'post_count': 'Antal publiceringar',
-  'posts_per_day': 'Publiceringar per dag'
+  'posts_per_day': 'Publiceringar per dag',
+  'estimated_unique_clicks': 'Uppsk. unika klickare',
 };
 
 // Info tooltips explaining what engagement means per platform
