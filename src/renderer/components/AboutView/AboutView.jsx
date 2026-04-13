@@ -33,43 +33,43 @@ const MetricTable = ({ caption, rows }) => (
 );
 
 const FB_METRICS = [
-  { name: 'Visningar', key: 'views', desc: 'Antal gånger inlägget visats (inklusive upprepade visningar av samma person).', source: 'CSV: "Visningar"', summable: 'Ja' },
-  { name: 'Räckvidd', key: 'reach', desc: 'Uppskattat antal unika personer som sett inlägget.', source: 'CSV: "Räckvidd"', summable: 'Nej — genomsnitt vid aggregering' },
-  { name: 'Reaktioner', key: 'likes', desc: 'Antal reaktioner (gilla, hjärta, haha, arg, etc.).', source: 'CSV: "Reaktioner"', summable: 'Ja' },
-  { name: 'Kommentarer', key: 'comments', desc: 'Antal kommentarer på inlägget.', source: 'CSV: "Kommentarer"', summable: 'Ja' },
-  { name: 'Delningar', key: 'shares', desc: 'Antal gånger inlägget delats.', source: 'CSV: "Delningar"', summable: 'Ja' },
-  { name: 'Interaktioner', key: 'interactions', desc: 'Reaktioner + kommentarer + delningar. Beräknas alltid från delvärdena, inte från Metas sammansatta kolumn.', source: 'Beräknad', summable: 'Ja' },
-  { name: 'Engagemang', key: 'engagement', desc: 'Interaktioner + totalt antal klick. Bredare mått som inkluderar alla typer av användaraktivitet.', source: 'Beräknad', summable: 'Ja' },
-  { name: 'Totalt antal klick', key: 'total_clicks', desc: 'Alla klick på inlägget (länkklick + övriga klick).', source: 'CSV: "Totalt antal klick"', summable: 'Ja' },
-  { name: 'Länkklick', key: 'link_clicks', desc: 'Klick på länkar i inlägget.', source: 'CSV: "Länkklick"', summable: 'Ja' },
-  { name: 'Övriga klick', key: 'other_clicks', desc: 'Klick som inte är länkklick (t.ex. klick för att expandera bild).', source: 'CSV: "Övriga klick"', summable: 'Ja' },
-  { name: 'Kontoräckvidd', key: 'account_reach', desc: 'Månatlig räckvidd per konto. Separat datakälla (Graph API), inte från post-CSV.', source: 'API-export', summable: 'Nej — kan inte summeras meningsfullt' },
+  { name: 'Visningar', key: 'views', desc: 'Hur många gånger inlägget visats — oavsett om det är samma person som sett det flera gånger. Samma person kan räknas flera gånger.', source: 'CSV: "Visningar"', summable: 'Ja' },
+  { name: 'Räckvidd', key: 'reach', desc: 'Hur många unika personer som sett inlägget. Varje person räknas bara en gång, oavsett hur många gånger de sett det.', source: 'CSV: "Räckvidd"', summable: 'Nej — genomsnitt vid aggregering' },
+  { name: 'Reaktioner', key: 'likes', desc: 'Hur många gånger någon reagerat på inlägget med gilla, hjärta, haha, arg eller liknande.', source: 'CSV: "Reaktioner"', summable: 'Ja' },
+  { name: 'Kommentarer', key: 'comments', desc: 'Hur många kommentarer inlägget fått.', source: 'CSV: "Kommentarer"', summable: 'Ja' },
+  { name: 'Delningar', key: 'shares', desc: 'Hur många gånger inlägget delats vidare av en användare.', source: 'CSV: "Delningar"', summable: 'Ja' },
+  { name: 'Interaktioner', key: 'interactions', desc: 'Summan av reaktioner, kommentarer och delningar. Appen räknar alltid ihop dessa tre direkt — inte från Metas egna sammanslagna siffra.', source: 'Beräknad', summable: 'Ja' },
+  { name: 'Engagemang', key: 'engagement', desc: 'Summan av reaktioner, kommentarer, delningar och alla typer av klick. Ett bredare mått som fångar all aktivitet på inlägget.', source: 'Beräknad', summable: 'Ja' },
+  { name: 'Totalt antal klick', key: 'total_clicks', desc: 'Hur många gånger någon klickat var som helst på inlägget — på en länk, på bilden, på kontonamnet och så vidare.', source: 'CSV: "Totalt antal klick"', summable: 'Ja' },
+  { name: 'Länkklick', key: 'link_clicks', desc: 'Hur många gånger någon klickat på en länk i inlägget och lämnat Facebook.', source: 'CSV: "Länkklick"', summable: 'Ja' },
+  { name: 'Övriga klick', key: 'other_clicks', desc: 'Klick på inlägget som inte gick till en extern länk — till exempel att klicka för att se hela bilden eller expandera texten.', source: 'CSV: "Övriga klick"', summable: 'Ja' },
+  { name: 'Kontoräckvidd', key: 'account_reach', desc: 'Hur många unika personer som sett något av kontots inlägg under en hel månad. Hämtas separat från Meta, inte från exportfilerna för enskilda inlägg.', source: 'API-export', summable: 'Nej — kan inte summeras meningsfullt' },
   {
     name: 'Uppsk. unika länkklickare',
     key: 'estimated_unique_clicks',
-    desc: 'Uppskattat antal unika personer som klickat minst en länk under månaden. '
-        + 'Beräknas genom att dividera totala länkklick med överlappsfaktorn '
-        + '(summa inläggsräckvidd ÷ kontoräckvidd). Visas som intervall. '
-        + 'Kräver kontoräckvidd (API) för samma månad och minst 5 inlägg.',
+    desc: 'Uppskattning av hur många unika personer som klickade på minst en länk under månaden. '
+        + 'Meta redovisar bara totalt antal länkklick — inte hur många unika personer som klickade. '
+        + 'Appen uppskattar detta utifrån kontoräckvidden. Visas som ett spann. '
+        + 'Kräver att kontoräckvidd är importerad för samma månad och att kontot har minst 5 inlägg.',
     source: 'Beräknad (post-CSV + API-räckvidd)',
     summable: 'Nej — uppskattning per konto',
   },
 ];
 
 const IG_METRICS = [
-  { name: 'Visningar', key: 'views', desc: 'Antal gånger inlägget visats.', source: 'CSV: "Visningar"', summable: 'Ja' },
-  { name: 'Räckvidd', key: 'reach', desc: 'Uppskattat antal unika konton som sett inlägget.', source: 'CSV: "Räckvidd"', summable: 'Nej' },
-  { name: 'Gilla-markeringar', key: 'likes', desc: 'Antal gilla-markeringar.', source: 'CSV: "Gilla-markeringar"', summable: 'Ja' },
-  { name: 'Kommentarer', key: 'comments', desc: 'Antal kommentarer.', source: 'CSV: "Kommentarer"', summable: 'Ja' },
-  { name: 'Delningar', key: 'shares', desc: 'Antal gånger inlägget delats.', source: 'CSV: "Delningar"', summable: 'Ja' },
-  { name: 'Sparade', key: 'saves', desc: 'Antal gånger inlägget sparats.', source: 'CSV: "Sparade objekt"', summable: 'Ja' },
-  { name: 'Följer', key: 'follows', desc: 'Antal nya följare från inlägget.', source: 'CSV: "Följer"', summable: 'Ja' },
-  { name: 'Interaktioner', key: 'interactions', desc: 'Gilla + kommentarer + delningar.', source: 'Beräknad', summable: 'Ja' },
-  { name: 'Engagemang', key: 'engagement', desc: 'Gilla + kommentarer + delningar + sparade + följer. Bredare mått anpassat för Instagram.', source: 'Beräknad', summable: 'Ja' },
+  { name: 'Visningar', key: 'views', desc: 'Hur många gånger inlägget visats. Samma person kan räknas flera gånger om de sett det vid olika tillfällen.', source: 'CSV: "Visningar"', summable: 'Ja' },
+  { name: 'Räckvidd', key: 'reach', desc: 'Hur många unika konton som sett inlägget. Varje konto räknas bara en gång.', source: 'CSV: "Räckvidd"', summable: 'Nej' },
+  { name: 'Gilla-markeringar', key: 'likes', desc: 'Hur många gånger inlägget fått en gilla-markering.', source: 'CSV: "Gilla-markeringar"', summable: 'Ja' },
+  { name: 'Kommentarer', key: 'comments', desc: 'Hur många kommentarer inlägget fått.', source: 'CSV: "Kommentarer"', summable: 'Ja' },
+  { name: 'Delningar', key: 'shares', desc: 'Hur många gånger inlägget delats vidare.', source: 'CSV: "Delningar"', summable: 'Ja' },
+  { name: 'Sparade', key: 'saves', desc: 'Hur många gånger någon sparat inlägget för att titta på det senare.', source: 'CSV: "Sparade objekt"', summable: 'Ja' },
+  { name: 'Följer', key: 'follows', desc: 'Hur många nya följare kontot fick som direkt följd av detta inlägg.', source: 'CSV: "Följer"', summable: 'Ja' },
+  { name: 'Interaktioner', key: 'interactions', desc: 'Summan av gilla-markeringar, kommentarer och delningar.', source: 'Beräknad', summable: 'Ja' },
+  { name: 'Engagemang', key: 'engagement', desc: 'Summan av gilla-markeringar, kommentarer, delningar, sparade och nya följare. Fångar all aktivitet på inlägget.', source: 'Beräknad', summable: 'Ja' },
 ];
 
 const GA_METRICS = [
-  { name: 'Lyssningar', key: 'listens', desc: 'Antal lyssningar per program och månad.', source: 'GA CSV-export', summable: 'Ja' },
+  { name: 'Lyssningar', key: 'listens', desc: 'Hur många gånger ett program lyssnats på under en månad, enligt Google Analytics.', source: 'GA CSV-export', summable: 'Ja' },
 ];
 
 const AboutView = () => (
@@ -81,7 +81,7 @@ const AboutView = () => (
       <CardContent className="pt-6">
         <h3 className="text-lg font-semibold mb-4">Mätpunkter</h3>
         <p className="text-sm text-muted-foreground mb-6">
-          Referens över alla mätpunkter som appen visar, grupperade per plattform.
+          Här förklaras alla siffror som appen visar — vad de betyder, var de kommer ifrån, och vilka som kan jämföras och läggas ihop.
         </p>
 
         <MetricTable caption="Facebook-mätpunkter" rows={FB_METRICS} />
@@ -89,8 +89,8 @@ const AboutView = () => (
         <MetricTable caption="Google Analytics (GA-lyssningar)" rows={GA_METRICS} />
 
         <div className="p-3 bg-muted/50 border border-border rounded-md text-sm text-muted-foreground">
-          <strong>Notering:</strong> GA-lyssningsdata har ingen datumgranularitet — det är alltid hela månader.
-          Anpassade datumintervall har ingen effekt på GA-data.
+          <strong>Notering:</strong> Lyssningsdata från Google Analytics finns bara per hel månad.
+          Om du väljer ett datumintervall som inte är hela månader påverkas inte lyssningssiffrorna.
         </div>
       </CardContent>
     </Card>
@@ -102,12 +102,13 @@ const AboutView = () => (
 
         <div className="space-y-6 text-sm leading-relaxed">
           <section>
-            <h4 className="text-base font-semibold mb-2">Deduplicering</h4>
+            <h4 className="text-base font-semibold mb-2">Dubbletter i exportfiler</h4>
             <p className="text-muted-foreground">
-              Meta Business Suites CSV-exporter kan innehålla dubletter — samma inläggs-id
-              förekommer på flera rader, ibland med olika värden. Appen hanterar detta genom
-              att behålla den rad som har högst interaktionsvärde per inläggs-id. Detta ger
-              ett deterministiskt resultat: samma CSV-fil ger alltid samma total oavsett radordning.
+              Metas exportfiler kan innehålla samma inlägg på flera rader — ibland med olika siffror.
+              Det beror på att Meta uppdaterar statistiken löpande, och olika versioner av samma
+              inlägg kan hamna i samma export. Appen hittar dessa dubbletter automatiskt och
+              behåller versionen med de högsta interaktionssiffrorna. Det gör att samma fil
+              alltid ger samma resultat i appen.
             </p>
             <p className="text-muted-foreground mt-2">
               Antalet borttagna dubbletter visas i importsammanfattningen.
@@ -115,72 +116,77 @@ const AboutView = () => (
           </section>
 
           <section>
-            <h4 className="text-base font-semibold mb-2">Kolumn-fallback (svenska/engelska)</h4>
+            <h4 className="text-base font-semibold mb-2">Svenska och engelska kolumner</h4>
             <p className="text-muted-foreground">
-              Vissa Meta-exporter innehåller kolumner på både svenska och engelska. Om den svenska
-              kolumnen saknar data men den engelska har ett värde, används det engelska värdet.
-              Detta innebär att appens total ibland kan vara högre än om man bara summerar de
-              svenska kolumnerna manuellt i CSV-filen.
+              Metas exportfiler innehåller ibland statistikkolumner med rubriker på både svenska
+              och engelska. Det händer att den svenska kolumnen är tom medan den engelska har ett
+              värde. Appen använder alltid den svenska siffran i första hand, men fyller automatiskt
+              i med den engelska om den svenska saknas. Det kan göra att appens totalsiffra är
+              något högre än om man summerar bara de svenska kolumnerna i exportfilen för hand.
             </p>
           </section>
 
           <section>
-            <h4 className="text-base font-semibold mb-2">Upsert vid reimport</h4>
+            <h4 className="text-base font-semibold mb-2">Vad händer om man importerar samma data igen?</h4>
             <p className="text-muted-foreground">
-              När samma data importeras igen uppdateras befintliga poster baserat på inläggs-id.
-              Poster som fanns i en tidigare import men saknas i den nya filen behålls — databasen
-              reflekterar alltså den mest kompletta bilden av all importerad data, inte nödvändigtvis
-              en enskild CSV-export.
+              Om man laddar in en fil som innehåller inlägg som redan finns i appen uppdateras
+              befintliga siffror med de nya värdena. Inlägg som importerades tidigare men inte
+              finns med i den nya filen behålls som de är. Appen samlar alltså på sig en så
+              komplett bild som möjligt av allt som importerats — det senaste värdet gäller
+              för inlägg som uppdaterats.
             </p>
           </section>
 
           <section>
-            <h4 className="text-base font-semibold mb-2">Summerbara och icke-summerbara mätpunkter</h4>
+            <h4 className="text-base font-semibold mb-2">Vilka siffror kan läggas ihop?</h4>
             <p className="text-muted-foreground">
-              Mätpunkter som visningar, interaktioner och klick kan summeras meningsfullt över
-              flera konton. Räckvidd (reach) kan <strong>inte</strong> summeras — en person som
-              följer tre konton räknas i alla tre kontons räckvidd men är fortfarande en unik person.
-              Appen visar genomsnitt istället för summa för räckviddsmått vid aggregering.
+              Siffror som visningar, reaktioner, kommentarer och klick kan läggas ihop mellan
+              konton — 1 000 visningar på ett konto plus 2 000 på ett annat är verkligen
+              3 000 visningar totalt.
             </p>
             <p className="text-muted-foreground mt-2">
-              Kontoräckvidd (account_reach) från Graph API är en helt separat datakälla med egen
-              import och kan inte jämföras direkt med postbaserad räckvidd.
+              Räckvidd fungerar annorlunda. En person som följer tre konton räknas i räckvidden
+              för vart och ett av dem, men det är ändå bara en person. Att lägga ihop
+              räckviddssiffrorna ger därför en överskattning. Appen visar genomsnitt istället
+              för summa när räckvidd från flera konton visas tillsammans.
+            </p>
+            <p className="text-muted-foreground mt-2">
+              Kontoräckvidd — den månatliga siffran som hämtas separat från Meta — kan inte
+              jämföras direkt med räckvidden per inlägg, eftersom de kommer från olika datakällor.
             </p>
           </section>
 
           <section>
             <h4 className="text-base font-semibold mb-2">Uppskattade unika länkklickare</h4>
             <p className="text-muted-foreground">
-              Meta redovisar länkklick som totalt antal, inte unika. Appen uppskattar
-              antalet unika klickare genom att använda förhållandet mellan summerad
-              inläggsräckvidd och månatlig kontoräckvidd (överlappsfaktorn). Samma
-              person som nås av flera inlägg räknas flera gånger i summan av
-              inläggsräckvidd men bara en gång i kontoräckvidden — kvoten visar
-              hur många gånger den genomsnittliga personen "räknas om".
+              Meta redovisar länkklick som totalt antal — man kan inte se hur många unika
+              personer som faktiskt klickade. Appen uppskattar antalet unika klickare genom
+              att titta på hur många gånger en genomsnittlig följare räknas i inläggsstatistiken
+              jämfört med i den månatliga kontoräckvidden. Om en person har sett tre inlägg
+              räknas hen tre gånger i inläggsstatistiken men bara en gång i kontoräckvidden.
+              Den kvoten visar hur stor "uppräkning" som skett.
             </p>
             <p className="text-muted-foreground mt-2">
-              Uppskattningen visas som ett intervall. Det övre värdet antar att
-              länkklickare beter sig som den genomsnittliga personen i publiken. Det
-              undre värdet justerar för att klickare typiskt är mer aktiva följare som
-              ser fler inlägg. Det verkliga antalet ligger sannolikt i eller strax
-              under detta spann.
+              Uppskattningen visas som ett intervall. Det övre värdet antar att de som klickar
+              beter sig som genomsnittspersonen i publiken. Det undre värdet justerar för att
+              den som klickar på en länk troligen är en mer aktiv följare som ser fler inlägg.
+              Det verkliga antalet unika klickare ligger sannolikt i eller strax under detta spann.
             </p>
             <p className="text-muted-foreground mt-2">
-              <strong>Visningsregler:</strong> Uppskattningen visas inte om
-              kontoräckvidd (API) saknas, om kontot har färre än 5 inlägg under
-              månaden, eller om datan är inkonsekvent (överlappsfaktor under 1).
-              Vid mycket hög överlapp (faktor över 5) visas uppskattningen med
-              en varningssymbol — den är mer osäker för konton med väldigt
-              trogen publik.
+              <strong>Visningsregler:</strong> Uppskattningen visas inte om den månatliga
+              kontoräckvidden saknas, om kontot publicerat färre än 5 inlägg under månaden,
+              eller om siffrorna inte är logiskt sammanhängande. Konton med mycket hög andel
+              återkommande läsare — de som ser nästan alla inlägg — visas med en varningssymbol,
+              eftersom uppskattningen är mer osäker för sådana konton.
             </p>
           </section>
 
           <section>
-            <h4 className="text-base font-semibold mb-2">Samarbetsinlägg (collabs)</h4>
+            <h4 className="text-base font-semibold mb-2">Samarbetsinlägg</h4>
             <p className="text-muted-foreground">
-              Inlägg som publicerats som samarbete mellan flera konton detekteras automatiskt och
-              flaggas. Detta förhindrar dubbelräkning vid aggregering — ett samarbetsinlägg räknas
-              bara en gång, inte en gång per deltagande konto.
+              När två konton publicerar samma inlägg tillsammans märker appen upp detta
+              automatiskt. Inlägget räknas bara en gång i statistiken, oavsett att det syns
+              på båda kontona. Det förhindrar att siffrorna räknas dubbelt.
             </p>
           </section>
         </div>
