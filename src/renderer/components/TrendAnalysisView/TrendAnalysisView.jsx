@@ -347,6 +347,7 @@ const TrendAnalysisView = ({
               month: monthKey,
               value: datum?.value ?? null,
               valueLower: datum?.lower ?? null,
+              quality: datum?.quality ?? 'suppressed',
             };
           }
           return {
@@ -829,9 +830,12 @@ const TrendAnalysisView = ({
                       ? (() => {
                           const upper = hoveredDataPoint.value;
                           const lower = hoveredDataPoint.valueLower;
-                          if (upper === null) return 'Saknar kontoräckvidd';
-                          if (lower !== null) return `~${Math.round(lower).toLocaleString('sv-SE')} – ${Math.round(upper).toLocaleString('sv-SE')}`;
-                          return `~${Math.round(upper).toLocaleString('sv-SE')}`;
+                          const quality = hoveredDataPoint.quality;
+                          if (upper === null || quality === 'suppressed') return 'Kan ej beräknas';
+                          const range = lower !== null
+                            ? `~${Math.round(lower).toLocaleString('sv-SE')} – ${Math.round(upper).toLocaleString('sv-SE')}`
+                            : `~${Math.round(upper).toLocaleString('sv-SE')}`;
+                          return quality === 'uncertain' ? `${range} ⚠ Hög osäkerhet` : range;
                         })()
                       : (hoveredDataPoint.value ?? 0).toLocaleString('sv-SE');
                     return (
