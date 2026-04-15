@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
 import { hiddenPostsFilter, hiddenReachFilter } from '../services/hiddenAccounts.js';
+import { periodDays } from '../utils/dateHelpers.js';
 
 const router = Router();
 
@@ -248,7 +249,16 @@ router.get('/', (req, res) => {
     }
   }
 
-  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, estimatedClicksByAccount });
+  // Compute avg_daily_link_clicks for each account and totals
+  const days = periodDays(req.query);
+  if (days && days > 0) {
+    for (const row of accounts) {
+      row.avg_daily_link_clicks = Math.round(((row.link_clicks || 0) / days) * 10) / 10;
+    }
+    totals.avg_daily_link_clicks = Math.round(((totals.link_clicks || 0) / days) * 10) / 10;
+  }
+
+  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, estimatedClicksByAccount, totalPeriodDays: days || 0 });
 });
 
 export default router;

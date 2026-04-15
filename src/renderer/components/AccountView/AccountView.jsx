@@ -135,6 +135,7 @@ const AccountView = ({
   const [copyStatus, setCopyStatus] = useState({ field: null, rowId: null, copied: false });
   const [accountData, setAccountData] = useState([]);
   const [totalSummary, setTotalSummary] = useState({});
+  const [totalPeriodDays, setTotalPeriodDays] = useState(0);
   const [reachByAccount, setReachByAccount] = useState({});
   const [reachMonths, setReachMonths] = useState([]);
   const [estimatedClicksByAccount, setEstimatedClicksByAccount] = useState({});
@@ -188,6 +189,7 @@ const AccountView = ({
         const data = await api.getAccounts(params);
         setAccountData(data.accounts || []);
         setTotalSummary(data.totals || {});
+        setTotalPeriodDays(data.totalPeriodDays || 0);
         setReachByAccount(data.reachByAccount || {});
         setReachMonths(data.reachMonths || []);
         setEstimatedClicksByAccount(data.estimatedClicksByAccount || {});
@@ -461,11 +463,26 @@ const AccountView = ({
       }
       // Map average_reach → reach for display purposes
       row.reach = null;
+      if (totalPeriodDays > 0) {
+        row.avg_daily_link_clicks = Math.round(((row.link_clicks || 0) / totalPeriodDays) * 10) / 10;
+      }
       return row;
     });
 
     return [...syntheticRows, ...accountData];
-  }, [accountData, accountGroups]);
+  }, [accountData, accountGroups, totalPeriodDays]);
+
+  // Fields to display in the posts table — injects avg_daily_link_clicks after link_clicks
+  const displayFields = useMemo(() => {
+    const base = selectedFields.filter(f => f !== 'account_reach');
+    if (!base.includes('link_clicks') || !totalPeriodDays) return base;
+    const result = [];
+    for (const f of base) {
+      result.push(f);
+      if (f === 'link_clicks') result.push('avg_daily_link_clicks');
+    }
+    return result;
+  }, [selectedFields, totalPeriodDays]);
 
   // Client-side sorting and pagination — groups always stay at top
   const paginatedData = useMemo(() => {
@@ -520,6 +537,11 @@ const AccountView = ({
 
   const renderCellContent = (account, field) => {
     const plat = account.platform;
+    if (field === 'avg_daily_link_clicks') {
+      if (plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
+      const val = account.avg_daily_link_clicks;
+      return <span>{val != null ? val.toFixed(1) : '—'}</span>;
+    }
     if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
     if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
     if (field === 'estimated_unique_clicks' && plat === 'facebook') {
@@ -1260,7 +1282,7 @@ const AccountView = ({
               <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort('account_name')}>
                 <div className="flex items-center">Kontonamn {getSortIcon('account_name')}</div>
               </TableHead>
-              {selectedFields.filter(f => f !== 'account_reach').map(field => (
+              {displayFields.map(field => (
                 <TableHead key={field} className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort(field === 'average_reach' ? 'reach' : field)}>
                   <div className="flex items-center justify-end">
                     {getDisplayName(field)}
@@ -1307,9 +1329,11 @@ const AccountView = ({
                 <Calculator className="w-4 h-4 mr-2 text-primary" />
                 <span className="text-primary">Totalt</span>
               </TableCell>
-              {selectedFields.filter(f => f !== 'account_reach').map(field => (
+              {displayFields.map(field => (
                 <TableCell key={field} className="text-right font-semibold text-primary">
-                  {!FIELDS_WITHOUT_TOTALS.includes(field) ? (
+                  {field === 'avg_daily_link_clicks' ? (
+                    <span>{totalSummary.avg_daily_link_clicks != null ? totalSummary.avg_daily_link_clicks.toFixed(1) : '—'}</span>
+                  ) : !FIELDS_WITHOUT_TOTALS.includes(field) ? (
                     <div className="flex items-center justify-end group">
                       <span>{formatValue(field === 'average_reach' ? totalSummary.reach : totalSummary[field])}</span>
                       <CopyButton value={field === 'average_reach' ? totalSummary.reach : totalSummary[field]} field={field} rowId="total" />
@@ -1354,7 +1378,7 @@ const AccountView = ({
                       <TableCell
                         colSpan={
                           2 +
-                          selectedFields.filter(f => f !== 'account_reach').length +
+                          displayFields.length +
                           (selectedFields.includes('account_reach') ? Math.max(reachMonths.length, 1) : 0) +
                           (showDeleteColumn ? 1 : 0) +
                           1
@@ -1391,10 +1415,12 @@ const AccountView = ({
                         </div>
                       )}
                     </TableCell>
-                    {selectedFields.filter(f => f !== 'account_reach').map(field => (
+                    {displayFields.map(field => (
                       <TableCell key={field} className="text-right">
                         {isGroup ? (
-                          GROUP_NON_SUMMABLE.has(field) ? (
+                          field === 'avg_daily_link_clicks' ? (
+                            <span>{account.avg_daily_link_clicks != null ? account.avg_daily_link_clicks.toFixed(1) : '—'}</span>
+                          ) : GROUP_NON_SUMMABLE.has(field) ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (
                             <div className="flex items-center justify-end group">
@@ -1404,7 +1430,7 @@ const AccountView = ({
                         ) : (
                           <div className="flex items-center justify-end group">
                             <span>{renderCellContent(account, field)}</span>
-                            {getCellValue(account, field) !== null && (
+                            {field !== 'avg_daily_link_clicks' && getCellValue(account, field) !== null && (
                               <CopyButton value={getFieldValue(account, field)} field={field} rowId={`${account.account_id}-${field}`} />
                             )}
                           </div>
