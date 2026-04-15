@@ -540,7 +540,7 @@ const AccountView = ({
     if (field === 'avg_daily_link_clicks') {
       if (plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
       const val = account.avg_daily_link_clicks;
-      return <span>{val != null ? val.toFixed(1) : '—'}</span>;
+      return <span>{val != null ? val.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span>;
     }
     if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
     if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
@@ -943,7 +943,7 @@ const AccountView = ({
                     {formatValue(gaSummary.grandTotal)}
                   </TableCell>
                   <TableCell className="text-right font-semibold text-primary">
-                    {gaSummary.grandAvgDaily != null ? gaSummary.grandAvgDaily.toFixed(1) : '—'}
+                    {gaSummary.grandAvgDaily != null ? gaSummary.grandAvgDaily.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}
                   </TableCell>
                 </TableRow>
                 {gaSummaryWithGroups.programmes.map((prog, idx) => {
@@ -999,7 +999,7 @@ const AccountView = ({
                           {formatValue(prog.total_listens)}
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          {prog.avg_daily_listens != null ? prog.avg_daily_listens.toFixed(1) : '—'}
+                          {prog.avg_daily_listens != null ? prog.avg_daily_listens.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}
                         </TableCell>
                       </TableRow>
                     </React.Fragment>
@@ -1154,7 +1154,7 @@ const AccountView = ({
                       {gaMonths.map(month => {
                         const listens = gaPivot[prog]?.[month];
                         const avgDay = listens !== undefined
-                          ? (listens / daysInMonth(month)).toFixed(1)
+                          ? (listens / daysInMonth(month)).toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
                           : null;
                         return (
                           <TableCell key={month} className="text-right" title={avgDay != null ? `Snitt/dag: ${avgDay}` : undefined}>
@@ -1332,7 +1332,7 @@ const AccountView = ({
               {displayFields.map(field => (
                 <TableCell key={field} className="text-right font-semibold text-primary">
                   {field === 'avg_daily_link_clicks' ? (
-                    <span>{totalSummary.avg_daily_link_clicks != null ? totalSummary.avg_daily_link_clicks.toFixed(1) : '—'}</span>
+                    <span>{totalSummary.avg_daily_link_clicks != null ? totalSummary.avg_daily_link_clicks.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span>
                   ) : !FIELDS_WITHOUT_TOTALS.includes(field) ? (
                     <div className="flex items-center justify-end group">
                       <span>{formatValue(field === 'average_reach' ? totalSummary.reach : totalSummary[field])}</span>
@@ -1419,7 +1419,7 @@ const AccountView = ({
                       <TableCell key={field} className="text-right">
                         {isGroup ? (
                           field === 'avg_daily_link_clicks' ? (
-                            <span>{account.avg_daily_link_clicks != null ? account.avg_daily_link_clicks.toFixed(1) : '—'}</span>
+                            <span>{account.avg_daily_link_clicks != null ? account.avg_daily_link_clicks.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span>
                           ) : GROUP_NON_SUMMABLE.has(field) ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (

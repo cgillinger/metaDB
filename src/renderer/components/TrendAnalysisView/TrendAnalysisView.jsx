@@ -17,6 +17,7 @@ import {
   Users,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
+import { daysInMonth } from '@/utils/dateHelpers';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 
 // P4 Lokalt regional channel names — explicit Set for O(1) membership lookup.
@@ -52,7 +53,7 @@ const TREND_METRICS_COMMON = {
   'post_count': 'Antal publiceringar',
   'posts_per_day': 'Publiceringar per dag'
 };
-const TREND_METRICS_FB = { 'account_reach': 'Kontoräckvidd (API)', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'other_clicks': 'Övriga klick', 'estimated_unique_clicks': 'Uppsk. unika länkklickare' };
+const TREND_METRICS_FB = { 'account_reach': 'Kontoräckvidd (API)', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'avg_daily_link_clicks': 'Länkklick snitt/dag', 'other_clicks': 'Övriga klick', 'estimated_unique_clicks': 'Uppsk. unika länkklickare' };
 const TREND_METRICS_IG = { 'saves': 'Sparade', 'follows': 'Följare' };
 
 const CHART_COLORS = [
@@ -133,6 +134,7 @@ const TrendAnalysisView = ({
   // GA Listens state — populated only when gaListensMode is true
   const [gaRawData, setGaRawData] = useState([]);       // flat rows from API
   const [gaAccountList, setGaAccountList] = useState([]); // sorted account objects
+  const [gaMetric, setGaMetric] = useState('listens'); // 'listens' | 'avg_daily_listens'
 
   // Group create dialog state
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
@@ -272,8 +274,9 @@ const TrendAnalysisView = ({
         const uniqueKeys = [...new Set(expandedKeys)];
         if (uniqueKeys.length === 0) { setTrendData(null); return; }
 
+        const backendMetric = selectedMetric === 'avg_daily_link_clicks' ? 'link_clicks' : selectedMetric;
         const params = {
-          metric: selectedMetric,
+          metric: backendMetric,
           accountKeys: uniqueKeys.join('||'),
           granularity: 'month',
           ...periodParams,
@@ -357,6 +360,21 @@ const TrendAnalysisView = ({
         }),
       };
     }).filter(Boolean);
+
+    if (selectedMetric === 'avg_daily_link_clicks') {
+      return {
+        months: trendData.months,
+        chartLines: lines.map(line => ({
+          ...line,
+          points: line.points.map(p => ({
+            ...p,
+            value: p.value != null
+              ? Math.round((p.value / daysInMonth(p.month)) * 10) / 10
+              : null,
+          })),
+        })),
+      };
+    }
 
     return { months: trendData.months, chartLines: lines };
   }, [trendData, selectedAccounts, accountListWithGroups, selectedMetric]);
@@ -470,7 +488,18 @@ const TrendAnalysisView = ({
         points: gaMonths.map(month => ({ month, value: data[month] ?? 0 })),
       };
     }).filter(Boolean);
-  }, [gaListensMode, selectedAccounts, gaPivot, gaMonths, gaAccountListWithGroups]);
+
+    if (gaMetric === 'avg_daily_listens') {
+      return lines.map(line => ({
+        ...line,
+        points: line.points.map(p => ({
+          ...p,
+          value: Math.round((p.value / daysInMonth(p.month)) * 10) / 10,
+        })),
+      }));
+    }
+    return lines;
+  }, [gaListensMode, selectedAccounts, gaPivot, gaMonths, gaAccountListWithGroups, gaMetric]);
 
   const gaYAxisConfig = useMemo(() => {
     if (gaChartLines.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
@@ -622,15 +651,29 @@ const TrendAnalysisView = ({
               </button>
             </div>
 
-            {/* Metric selector — hidden in GA mode (metric is fixed: Lyssningar) */}
+            {/* Metric selector */}
             {gaListensMode ? (
               <div>
                 <Label className="text-base font-medium mb-3 block">Datapunkt</Label>
-                <div className="border rounded-md p-3 bg-gray-50">
-                  <span className="text-sm flex items-center gap-1.5 font-medium">
-                    <PlatformBadge platform="ga_listens" />
-                    Lyssningar
-                  </span>
+                <div className="space-y-2 border rounded-md p-3 bg-gray-50">
+                  {[
+                    { key: 'listens', label: 'Lyssningar' },
+                    { key: 'avg_daily_listens', label: 'Lyssningar snitt/dag' },
+                  ].map(({ key, label }) => (
+                    <Label key={key} className="flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-white">
+                      <input
+                        type="radio"
+                        name="gaMetric"
+                        checked={gaMetric === key}
+                        onChange={() => setGaMetric(key)}
+                        className="h-4 w-4 accent-blue-600"
+                      />
+                      <span className="text-sm flex items-center gap-1.5 font-medium">
+                        <PlatformBadge platform="ga_listens" />
+                        {label}
+                      </span>
+                    </Label>
+                  ))}
                 </div>
               </div>
             ) : (
@@ -660,7 +703,7 @@ const TrendAnalysisView = ({
                         />
                         <span className="text-sm flex items-center gap-1.5">
                           {label}
-                          {['account_reach', 'total_clicks', 'link_clicks', 'other_clicks', 'estimated_unique_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
+                          {['account_reach', 'total_clicks', 'link_clicks', 'avg_daily_link_clicks', 'other_clicks', 'estimated_unique_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
                           {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
                         </span>
                       </Label>
@@ -674,7 +717,9 @@ const TrendAnalysisView = ({
           {(gaListensMode || selectedMetric) && (
             <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-center">
               <h3 className="text-lg font-bold text-primary">
-                Visar: {gaListensMode ? 'Lyssningar (GA)' : availableMetrics[selectedMetric]}
+                Visar: {gaListensMode
+                  ? (gaMetric === 'avg_daily_listens' ? 'Lyssningar snitt/dag (GA)' : 'Lyssningar (GA)')
+                  : availableMetrics[selectedMetric]}
               </h3>
               <p className="text-sm text-primary/70 mt-1">Utveckling över tid för valda {gaListensMode ? 'program' : 'konton'}</p>
             </div>
@@ -824,7 +869,9 @@ const TrendAnalysisView = ({
                     if (tooltipY < 15) tooltipY = mousePosition.y + 15;
                     if (tooltipY + tooltipHeight > 480) tooltipY = mousePosition.y - tooltipHeight - 15;
                     const [year, month] = hoveredDataPoint.month.split('-').map(Number);
-                    const tooltipMetric = gaListensMode ? 'Lyssningar' : availableMetrics[selectedMetric];
+                    const tooltipMetric = gaListensMode
+                      ? (gaMetric === 'avg_daily_listens' ? 'Lyssningar snitt/dag' : 'Lyssningar')
+                      : availableMetrics[selectedMetric];
                     const isEstimatedTooltip = !gaListensMode && selectedMetric === 'estimated_unique_clicks';
                     const tooltipValueText = isEstimatedTooltip
                       ? (() => {
