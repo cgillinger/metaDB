@@ -17,6 +17,7 @@ import {
 } from '../services/gaListensImporter.js';
 import { hiddenGAFilter } from '../services/hiddenAccounts.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
+import { daysInMonth } from '../utils/dateHelpers.js';
 
 const router = Router();
 
@@ -105,9 +106,37 @@ router.get('/summary', (req, res) => {
     ${whereClause}
   `).get(...params);
 
+  // Fetch per-month breakdown to compute avg_daily_listens
+  const monthRows = db.prepare(`
+    SELECT account_name, month, listens
+    FROM ga_listens
+    ${whereClause}
+  `).all(...params);
+
+  // Build map: account_name → total days across selected months
+  const totalDaysPerAccount = {};
+  for (const mr of monthRows) {
+    if (!totalDaysPerAccount[mr.account_name]) totalDaysPerAccount[mr.account_name] = 0;
+    totalDaysPerAccount[mr.account_name] += daysInMonth(mr.month);
+  }
+
+  for (const row of rows) {
+    const totalDays = totalDaysPerAccount[row.account_name] || 30;
+    row.avg_daily_listens = Math.round((row.total_listens / totalDays) * 10) / 10;
+  }
+
+  // Grand total avg daily across the unique months in the result
+  const uniqueMonths = [...new Set(monthRows.map(r => r.month))];
+  const totalPeriodDays = uniqueMonths.reduce((sum, m) => sum + daysInMonth(m), 0);
+  const grandAvgDaily = totalPeriodDays > 0
+    ? Math.round(((totalRow?.grand_total || 0) / totalPeriodDays) * 10) / 10
+    : 0;
+
   res.json({
     programmes: rows,
     grandTotal: totalRow?.grand_total || 0,
+    grandAvgDaily,
+    totalPeriodDays,
   });
 });
 
