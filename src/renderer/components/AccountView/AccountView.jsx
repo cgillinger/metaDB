@@ -21,6 +21,7 @@ import {
   ENGAGEMENT_INFO
 } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
+import { daysInMonth } from '@/utils/dateHelpers';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 
 // P4 Lokalt regional channel names, kept as an explicit Set for O(1) membership
@@ -146,8 +147,9 @@ const AccountView = ({
 
   // GA Listens state
   const [gaViewMode, setGaViewMode] = useState('summary'); // 'summary' | 'monthly'
-  const [gaSummary, setGaSummary] = useState({ programmes: [], grandTotal: 0 });
+  const [gaSummary, setGaSummary] = useState({ programmes: [], grandTotal: 0, grandAvgDaily: 0, totalPeriodDays: 0 });
   const [gaSortDir, setGaSortDir] = useState('desc');
+  const [gaSortKey, setGaSortKey] = useState('total_listens'); // 'total_listens' | 'avg_daily_listens'
   const [gaLoading, setGaLoading] = useState(false);
   // Monthly pivot state
   const [gaData, setGaData] = useState([]);
@@ -208,6 +210,14 @@ const AccountView = ({
           ? periodParams.months.split(',').map(m => m.trim())
           : null;
         const result = await api.getGAListensSummary(months, gaSortDir);
+        // Sort client-side if sorting by avg_daily_listens (backend always sorts by total_listens)
+        if (gaSortKey === 'avg_daily_listens') {
+          result.programmes = [...result.programmes].sort((a, b) =>
+            gaSortDir === 'asc'
+              ? (a.avg_daily_listens ?? 0) - (b.avg_daily_listens ?? 0)
+              : (b.avg_daily_listens ?? 0) - (a.avg_daily_listens ?? 0)
+          );
+        }
         setGaSummary(result);
       } catch (err) {
         console.error('Fel vid hämtning av GA-lyssningar:', err);
@@ -216,7 +226,7 @@ const AccountView = ({
       }
     };
     fetchGASummary();
-  }, [gaListensMode, periodParams, gaSortDir, refreshCounter]);
+  }, [gaListensMode, periodParams, gaSortDir, gaSortKey, refreshCounter]);
 
   // Fetch GA listens per-month data (for monthly pivot view)
   useEffect(() => {
@@ -354,7 +364,7 @@ const AccountView = ({
 
   // Synthetic group rows for GA summary mode
   const gaSummaryWithGroups = useMemo(() => {
-    if (!gaSummary?.programmes) return { programmes: [], grandTotal: 0 };
+    if (!gaSummary?.programmes) return { programmes: [], grandTotal: 0, grandAvgDaily: 0, totalPeriodDays: 0 };
     const gaGroups = accountGroups.filter(g => g.source === 'ga_listens');
     if (gaGroups.length === 0) return gaSummary;
 
@@ -368,10 +378,14 @@ const AccountView = ({
         const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
         const totalListens = memberRows.reduce((sum, p) => sum + p.total_listens, 0);
         const maxMonthCount = memberRows.length > 0 ? Math.max(...memberRows.map(p => p.month_count)) : 0;
+        const avgDaily = gaSummary.totalPeriodDays > 0
+          ? Math.round((totalListens / gaSummary.totalPeriodDays) * 10) / 10
+          : 0;
         return {
           account_name: group.name,
           total_listens: totalListens,
           month_count: maxMonthCount,
+          avg_daily_listens: avgDaily,
           _isGroup: true,
           groupId: group.id,
           memberCount: memberNames.length,
@@ -382,6 +396,8 @@ const AccountView = ({
     return {
       programmes: [...syntheticRows, ...gaSummary.programmes],
       grandTotal: gaSummary.grandTotal,
+      grandAvgDaily: gaSummary.grandAvgDaily,
+      totalPeriodDays: gaSummary.totalPeriodDays,
     };
   }, [gaSummary, accountGroups]);
 
@@ -857,13 +873,38 @@ const AccountView = ({
                   <TableHead>Programnamn</TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setGaSortDir(prev => prev === 'asc' ? 'desc' : 'asc')}
+                    onClick={() => {
+                      if (gaSortKey === 'total_listens') {
+                        setGaSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setGaSortKey('total_listens');
+                        setGaSortDir('desc');
+                      }
+                    }}
                   >
                     <div className="flex items-center justify-end whitespace-nowrap">
                       Lyssningar
-                      {gaSortDir === 'asc'
-                        ? <ArrowUp className="h-4 w-4 ml-1" />
-                        : <ArrowDown className="h-4 w-4 ml-1" />}
+                      {gaSortKey === 'total_listens'
+                        ? (gaSortDir === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />)
+                        : <ArrowUpDown className="h-4 w-4 ml-1" />}
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => {
+                      if (gaSortKey === 'avg_daily_listens') {
+                        setGaSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setGaSortKey('avg_daily_listens');
+                        setGaSortDir('desc');
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-end whitespace-nowrap">
+                      Snitt/dag
+                      {gaSortKey === 'avg_daily_listens'
+                        ? (gaSortDir === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />)
+                        : <ArrowUpDown className="h-4 w-4 ml-1" />}
                     </div>
                   </TableHead>
                 </TableRow>
@@ -879,6 +920,9 @@ const AccountView = ({
                   <TableCell className="text-right font-semibold text-primary">
                     {formatValue(gaSummary.grandTotal)}
                   </TableCell>
+                  <TableCell className="text-right font-semibold text-primary">
+                    {gaSummary.grandAvgDaily != null ? gaSummary.grandAvgDaily.toFixed(1) : '—'}
+                  </TableCell>
                 </TableRow>
                 {gaSummaryWithGroups.programmes.map((prog, idx) => {
                   const prevIsGroup = idx > 0 && gaSummaryWithGroups.programmes[idx - 1]._isGroup;
@@ -887,7 +931,7 @@ const AccountView = ({
                     <React.Fragment key={prog._isGroup ? `group-${prog.groupId}` : prog.account_name}>
                       {showDivider && (
                         <TableRow>
-                          <TableCell colSpan={gaShowDeleteColumn ? 4 : 3} className="p-0">
+                          <TableCell colSpan={gaShowDeleteColumn ? 5 : 4} className="p-0">
                             <hr className="border-border" />
                           </TableCell>
                         </TableRow>
@@ -931,6 +975,9 @@ const AccountView = ({
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           {formatValue(prog.total_listens)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {prog.avg_daily_listens != null ? prog.avg_daily_listens.toFixed(1) : '—'}
                         </TableCell>
                       </TableRow>
                     </React.Fragment>
@@ -1082,13 +1129,19 @@ const AccountView = ({
                           <PlatformBadge platform="ga_listens" />
                         </div>
                       </TableCell>
-                      {gaMonths.map(month => (
-                        <TableCell key={month} className="text-right">
-                          {gaPivot[prog]?.[month] !== undefined
-                            ? formatValue(gaPivot[prog][month])
-                            : <span className="text-muted-foreground">&mdash;</span>}
-                        </TableCell>
-                      ))}
+                      {gaMonths.map(month => {
+                        const listens = gaPivot[prog]?.[month];
+                        const avgDay = listens !== undefined
+                          ? (listens / daysInMonth(month)).toFixed(1)
+                          : null;
+                        return (
+                          <TableCell key={month} className="text-right" title={avgDay != null ? `Snitt/dag: ${avgDay}` : undefined}>
+                            {listens !== undefined
+                              ? formatValue(listens)
+                              : <span className="text-muted-foreground">&mdash;</span>}
+                          </TableCell>
+                        );
+                      })}
                       {showDeleteColumn && (
                         <TableCell className="text-center">
                           <button
