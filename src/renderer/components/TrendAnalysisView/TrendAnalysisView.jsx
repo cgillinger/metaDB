@@ -450,7 +450,7 @@ const TrendAnalysisView = ({
 
   const gaChartLines = useMemo(() => {
     if (!gaListensMode || selectedAccounts.length === 0) return [];
-    return selectedAccounts.map((key, index) => {
+    const lines = selectedAccounts.map((key, index) => {
       const entry = gaAccountListWithGroups.find(a => a.key === key);
       if (!entry) return null;
 
