@@ -19,7 +19,7 @@
 - **Per konto** — Summerad statistik per sida/konto med sorterbara kolumner och räckviddskolumner per månad
 - **Per inlägg** — Fullständig tabell med serverbaserad paginering, filtrering och sortering
 - **Per inläggstyp** — Genomsnittlig statistik grupperad efter typ (Reels, Foton, Videor, Stories)
-- **Trendanalys** — Månatliga trendkurvor per konto för valfritt mätvärde, inklusive kontoräckvidd
+- **Trendanalys** — Månatliga trendkurvor per konto för valfritt mätvärde, inklusive kontoräckvidd, länkklick snitt/dag och GA-lyssningar snitt/dag
 - **Persistent data** — SQLite-databas på disk. Data överlever omstarter, ingen 12h-rensning
 - **Import-hantering** — Lista, radera och se månadsöversikt för importerad data
 - **Export** — Ladda ned tabeller som CSV eller Excel (.xlsx)
@@ -252,6 +252,7 @@ Appen stöder tre typer av dataimport:
 ## Viktiga regler
 
 - **Räckvidd (reach)** beräknas alltid som genomsnitt (AVG), aldrig som summa
+- **Snitt/dag-mätvärden** (`avg_daily_link_clicks`, `avg_daily_listens`) beräknas alltid client-side via `daysInMonth()` och skickas aldrig till databasen. Länkklick snitt/dag visas automatiskt i kontovyn när länkklick är valt (kräver periodfilter). I trendanalysen är det ett valbart alternativ för både posts-läge (Facebook) och GA-läge.
 - **Kontoräckvidd (account_reach)** — Månatlig räckvidd per konto från Metas Graph API. Lagras i separat tabell (`account_reach`), visas som en kolumn per månad i kontovyn och som trendlinje i trendanalysen. Gäller enbart Facebook.
 - **Engagemang** skiljer sig per plattform:
   - Facebook: reaktioner + kommentarer + delningar + klick

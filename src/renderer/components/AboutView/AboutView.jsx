@@ -42,6 +42,7 @@ const FB_METRICS = [
   { name: 'Engagemang', key: 'engagement', desc: 'Summan av reaktioner, kommentarer, delningar och alla typer av klick. Ett bredare mått som fångar all aktivitet på inlägget.', source: 'Beräknad', summable: 'Ja' },
   { name: 'Totalt antal klick', key: 'total_clicks', desc: 'Hur många gånger någon klickat var som helst på inlägget — på en länk, på bilden, på kontonamnet och så vidare.', source: 'CSV: "Totalt antal klick"', summable: 'Ja' },
   { name: 'Länkklick', key: 'link_clicks', desc: 'Hur många gånger någon klickat på en länk i inlägget och lämnat Facebook.', source: 'CSV: "Länkklick"', summable: 'Ja' },
+  { name: 'Länkklick snitt/dag', key: 'avg_daily_link_clicks', desc: 'Länkklick dividerat med antalet dagar i respektive månad. Gör att månader med olika längd kan jämföras rättvisare. Visas i kontovyn om länkklick är valt, och som valbar datapunkt i trendanalysen. Beräknas alltid client-side.', source: 'Beräknad (link_clicks / dagar i månaden)', summable: 'Ja — men tolkas som snitt/dag, ej totalvärde' },
   { name: 'Övriga klick', key: 'other_clicks', desc: 'Klick på inlägget som inte gick till en extern länk — till exempel att klicka för att se hela bilden eller expandera texten.', source: 'CSV: "Övriga klick"', summable: 'Ja' },
   { name: 'Kontoräckvidd', key: 'account_reach', desc: 'Hur många unika personer som sett något av kontots inlägg under en hel månad. Hämtas separat från Meta, inte från exportfilerna för enskilda inlägg.', source: 'API-export', summable: 'Nej — kan inte summeras meningsfullt' },
   {
@@ -70,6 +71,7 @@ const IG_METRICS = [
 
 const GA_METRICS = [
   { name: 'Lyssningar', key: 'listens', desc: 'Hur många gånger ett program lyssnats på under en månad, enligt Google Analytics.', source: 'GA CSV-export', summable: 'Ja' },
+  { name: 'Lyssningar snitt/dag', key: 'avg_daily_listens', desc: 'Totala lyssningar för månaden dividerat med antalet dagar i månaden. Gör det möjligt att jämföra månader med olika längd — t.ex. februari (28 dagar) mot mars (31 dagar) — utan att kortare månader ser sämre ut. Välj i trendanalysen under Datapunkt. Visas också i GA-tabellen under kontovyn. Beräknas alltid client-side.', source: 'Beräknad (listens / dagar i månaden)', summable: 'Ja — men tolkas som snitt/dag, ej totalvärde' },
 ];
 
 const AboutView = () => (
@@ -178,6 +180,23 @@ const AboutView = () => (
               eller om siffrorna inte är logiskt sammanhängande. Konton med mycket hög andel
               återkommande läsare — de som ser nästan alla inlägg — visas med en varningssymbol,
               eftersom uppskattningen är mer osäker för sådana konton.
+            </p>
+          </section>
+
+          <section>
+            <h4 className="text-base font-semibold mb-2">Snitt per dag — jämföra månader av olika längd</h4>
+            <p className="text-muted-foreground">
+              Januari har 31 dagar, februari 28 (eller 29). En kanal som når samma dagliga publik
+              varje dag får automatiskt lägre totalsiffror i februari än i januari — inte för att
+              det gick sämre, utan för att månaden är kortare. Måttet <em>snitt/dag</em> kompenserar
+              för detta genom att dividera månadens totalsiffra med antalet dagar i den månaden.
+            </p>
+            <p className="text-muted-foreground mt-2">
+              Appen beräknar detta för länkklick (<code className="text-sm bg-muted px-1 py-0.5 rounded">avg_daily_link_clicks</code>)
+              och GA-lyssningar (<code className="text-sm bg-muted px-1 py-0.5 rounded">avg_daily_listens</code>).
+              Beräkningen sker alltid i webbläsaren — inga extra anrop till databasen.
+              Datumhjälpfunktionen <code className="text-sm bg-muted px-1 py-0.5 rounded">daysInMonth('YYYY-MM')</code> används
+              och hanterar skottår korrekt.
             </p>
           </section>
 
