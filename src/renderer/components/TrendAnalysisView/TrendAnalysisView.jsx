@@ -194,6 +194,34 @@ const TrendAnalysisView = ({
     return [...gaGroups, ...sortedGaList];
   }, [accountGroups, gaAccountList]);
 
+  // Inject GSV groups into the GSV account list
+  const gsvAccountListWithGroups = useMemo(() => {
+    const gsvNames = new Set(gsvAccountList.map(a => a.account_name));
+    const gsvGroups = accountGroups
+      .filter(g => g.source === 'ga_site_visits')
+      .map(g => {
+        const memberNames = g.members.map(k => k.split('::')[0]);
+        const matchedCount = memberNames.filter(n => gsvNames.has(n)).length;
+        return {
+          account_name: g.name,
+          platform: 'ga_site_visits',
+          is_collab: false,
+          key: `__group__${g.id}`,
+          _isGroup: true,
+          groupId: g.id,
+          memberKeys: g.members,
+          memberCount: g.members.length,
+          matchedCount,
+          disabled: matchedCount === 0,
+        };
+      })
+      .sort((a, b) => (a.account_name || '').localeCompare((b.account_name || ''), 'sv'));
+    const sortedGsvList = [...gsvAccountList].sort((a, b) =>
+      (a.account_name || '').localeCompare((b.account_name || ''), 'sv')
+    );
+    return [...gsvGroups, ...sortedGsvList];
+  }, [accountGroups, gsvAccountList]);
+
   // Inject posts groups into the posts account list
   const accountListWithGroups = useMemo(() => {
     const postKeys = new Set(accountList.map(a => a.key));
@@ -570,6 +598,31 @@ const TrendAnalysisView = ({
     if (!gaSiteVisitsMode || selectedAccounts.length === 0) return [];
 
     const lines = selectedAccounts.map((key, index) => {
+      // Group key: sum member values per month
+      if (key.startsWith('__group__')) {
+        const entry = gsvAccountListWithGroups.find(a => a.key === key);
+        if (!entry) return null;
+
+        const memberNames = entry.memberKeys.map(k => k.split('::')[0]);
+        const points = gsvMonths.map(month => {
+          const value = memberNames.reduce((sum, name) => {
+            return sum + (gsvPivot[name]?.[month] ?? 0);
+          }, 0);
+          return { month, value };
+        });
+
+        return {
+          key,
+          account_name: entry.account_name,
+          platform: 'ga_site_visits',
+          is_collab: false,
+          _isGroup: true,
+          color: CHART_COLORS[index % CHART_COLORS.length],
+          points,
+        };
+      }
+
+      // Individual account
       const entry = gsvAccountList.find(a => a.key === key);
       if (!entry) return null;
 
@@ -585,6 +638,7 @@ const TrendAnalysisView = ({
       };
     }).filter(Boolean);
 
+    // Apply avg_daily transform AFTER aggregation (critical for group correctness)
     if (gsvMetric === 'avg_daily_visits') {
       return lines.map(line => ({
         ...line,
@@ -595,7 +649,7 @@ const TrendAnalysisView = ({
       }));
     }
     return lines;
-  }, [gaSiteVisitsMode, selectedAccounts, gsvPivot, gsvMonths, gsvAccountList, gsvMetric]);
+  }, [gaSiteVisitsMode, selectedAccounts, gsvPivot, gsvMonths, gsvAccountListWithGroups, gsvAccountList, gsvMetric]);
 
   const gsvYAxisConfig = useMemo(() => {
     if (gsvChartLines.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
@@ -631,7 +685,7 @@ const TrendAnalysisView = ({
 
   // Final display account list
   const activeAccountList = gaSiteVisitsMode
-    ? gsvAccountList
+    ? gsvAccountListWithGroups
     : gaListensMode ? gaAccountListWithGroups : filteredAccountList;
 
   const handleAccountToggle = (key) => {
@@ -738,19 +792,21 @@ const TrendAnalysisView = ({
                   );
                 })}
               </div>
-              {/* Skapa grupp button — hidden for site visits (no group integration in v1) */}
-              {!gaSiteVisitsMode && (
-                <button
-                  onClick={() => {
-                    setGroupDialogAccounts(gaListensMode ? gaAccountList : accountList);
-                    setGroupDialogOpen(true);
-                  }}
-                  className="mt-2 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  Skapa kontogrupp
-                </button>
-              )}
+              {/* Skapa grupp button */}
+              <button
+                onClick={() => {
+                  setGroupDialogAccounts(
+                    gaSiteVisitsMode ? gsvAccountList
+                    : gaListensMode ? gaAccountList
+                    : accountList
+                  );
+                  setGroupDialogOpen(true);
+                }}
+                className="mt-2 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <Users className="w-3.5 h-3.5" />
+                Skapa kontogrupp
+              </button>
             </div>
 
             {/* Metric selector */}
@@ -1042,7 +1098,7 @@ const TrendAnalysisView = ({
       <GroupCreateDialog
         open={groupDialogOpen}
         onOpenChange={setGroupDialogOpen}
-        source={gaListensMode ? 'ga_listens' : 'posts'}
+        source={gaSiteVisitsMode ? 'ga_site_visits' : gaListensMode ? 'ga_listens' : 'posts'}
         availableAccounts={groupDialogAccounts}
         editGroup={null}
         onSave={() => { if (onGroupsChanged) onGroupsChanged(); }}
