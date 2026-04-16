@@ -7,11 +7,17 @@ import Papa from 'papaparse';
 import { getDb } from '../db/connection.js';
 
 /**
- * Find the "lyssningar" column in a list of headers (case-insensitive substring match).
- * Returns the matching header name, or null if not found.
+ * Find the listens column in a list of headers.
+ * Matches either the legacy "lyssningar" substring OR the new
+ * "starter" + "lyssnat" combination (from "Starter (lyssnat5sek)").
  */
 function findListensColumn(headers) {
-  return headers.find(h => h.trim().toLowerCase().includes('lyssningar')) || null;
+  return headers.find(h => {
+    const lower = h.trim().toLowerCase();
+    return lower.includes('lyssningar')
+        || lower.includes('lyssnat')
+        || lower.startsWith('starter');
+  }) || null;
 }
 
 /**
@@ -49,7 +55,7 @@ export function importGaListensCSV(csvContent, month, filename) {
   const headers = Object.keys(result.data[0]).map(h => h.trim());
   if (!isGaListensCSV(headers)) {
     throw new Error(
-      'Filen är inte en GA-lyssnarexport. Förväntade kolumnen "Programnamn" och en kolumn med "lyssningar".'
+      'Filen är inte en GA-lyssnarexport. Förväntade kolumnen "Programnamn" och en kolumn för lyssningar (t.ex. "Starter (lyssnat5sek)" eller "...lyssningar...").'
     );
   }
 

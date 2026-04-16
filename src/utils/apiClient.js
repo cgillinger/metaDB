@@ -120,6 +120,47 @@ export const api = {
       body: JSON.stringify({ accountNames }),
     }).then(handleResponse),
 
+  // GA Site Visits — Google Analytics site visit data
+
+  uploadGASiteVisitsCSV: (file, month) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('month', month);
+    return fetch('/api/ga-site-visits', { method: 'POST', body: formData }).then(handleResponse);
+  },
+
+  getGASiteVisits: (months) => {
+    const params = months && months.length > 0
+      ? '?' + new URLSearchParams({ months: months.join(',') })
+      : '';
+    return fetch(`/api/ga-site-visits${params}`).then(handleResponse);
+  },
+
+  getGASiteVisitsSummary: (months, order = 'desc') => {
+    const params = new URLSearchParams();
+    if (months && months.length > 0) params.set('months', months.join(','));
+    if (order) params.set('order', order);
+    const qs = params.toString();
+    return fetch(`/api/ga-site-visits/summary${qs ? '?' + qs : ''}`).then(handleResponse);
+  },
+
+  getGASiteVisitsMonths: () => fetch('/api/ga-site-visits/months').then(handleResponse),
+
+  deleteGASiteVisitsMonth: (month) =>
+    fetch(`/api/ga-site-visits/${month}`, { method: 'DELETE' }).then(handleResponse),
+
+  deleteGASiteVisitsAccount: (accountName, months) => {
+    const params = new URLSearchParams({ accountName, months: months.join(',') });
+    return fetch(`/api/ga-site-visits/by-account?${params}`, { method: 'DELETE' }).then(handleResponse);
+  },
+
+  deleteGASiteVisitsAccounts: (accountNames) =>
+    fetch('/api/ga-site-visits/by-accounts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountNames }),
+    }).then(handleResponse),
+
   // Account Groups
   /**
    * Fetch all account groups, optionally filtered by source.

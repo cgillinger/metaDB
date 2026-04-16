@@ -126,6 +126,7 @@ const AccountView = ({
   platform,
   periodParams = {},
   gaListensMode = false,
+  gaSiteVisitsMode = false,
   accountGroups = [],
   onGroupsChanged = null,
 }) => {
@@ -162,13 +163,26 @@ const AccountView = ({
   const [gaShowDeleteColumn, setGaShowDeleteColumn] = useState(false);
   const [gaDeleteLoading, setGaDeleteLoading] = useState(false);
 
+  // GSV state — parallel with GA Listens
+  const [gsvViewMode, setGsvViewMode] = useState('summary');
+  const [gsvSummary, setGsvSummary] = useState({ programmes: [], grandTotal: 0, grandAvgDaily: 0, totalPeriodDays: 0 });
+  const [gsvSortKey, setGsvSortKey] = useState('total_visits');
+  const [gsvSortDir, setGsvSortDir] = useState('desc');
+  const [gsvLoading, setGsvLoading] = useState(false);
+  const [gsvData, setGsvData] = useState([]);
+  const [gsvMonths, setGsvMonths] = useState([]);
+  const [gsvMonthlySortConfig, setGsvMonthlySortConfig] = useState({ key: null, direction: 'desc' });
+  const [gsvSelectedAccounts, setGsvSelectedAccounts] = useState(new Set());
+  const [gsvShowDeleteColumn, setGsvShowDeleteColumn] = useState(false);
+  const [gsvDeleteLoading, setGsvDeleteLoading] = useState(false);
+
   // Group create dialog state
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupDialogAccounts, setGroupDialogAccounts] = useState([]);
 
   // Fetch account data from API
   useEffect(() => {
-    if (gaListensMode) return;
+    if (gaListensMode || gaSiteVisitsMode) return;
     if (!selectedFields || selectedFields.length === 0) {
       setAccountData([]);
       return;
@@ -256,6 +270,59 @@ const AccountView = ({
     };
     fetchGAMonthly();
   }, [gaListensMode, gaViewMode, periodParams, refreshCounter]);
+
+  // Fetch GSV summary
+  useEffect(() => {
+    if (!gaSiteVisitsMode) return;
+    const fetchGSVSummary = async () => {
+      setGsvLoading(true);
+      try {
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGASiteVisitsSummary(months, gsvSortDir);
+        if (gsvSortKey === 'avg_daily_visits') {
+          result.programmes = [...result.programmes].sort((a, b) =>
+            gsvSortDir === 'asc'
+              ? (a.avg_daily_visits ?? 0) - (b.avg_daily_visits ?? 0)
+              : (b.avg_daily_visits ?? 0) - (a.avg_daily_visits ?? 0)
+          );
+        }
+        setGsvSummary(result);
+      } catch (err) {
+        console.error('Fel vid hämtning av GSV-summary:', err);
+      } finally {
+        setGsvLoading(false);
+      }
+    };
+    fetchGSVSummary();
+  }, [gaSiteVisitsMode, periodParams, gsvSortDir, gsvSortKey, refreshCounter]);
+
+  // Fetch GSV monthly pivot data
+  useEffect(() => {
+    if (!gaSiteVisitsMode || gsvViewMode !== 'monthly') return;
+    const fetchGSVMonthly = async () => {
+      setGsvLoading(true);
+      try {
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGASiteVisits(months);
+        const rows = result.data || [];
+        setGsvData(rows);
+        const uniqueMonths = [...new Set(rows.map(r => r.month))].sort();
+        setGsvMonths(uniqueMonths);
+        if (uniqueMonths.length > 0 && !gsvMonthlySortConfig.key) {
+          setGsvMonthlySortConfig({ key: uniqueMonths[uniqueMonths.length - 1], direction: 'desc' });
+        }
+      } catch (err) {
+        console.error('Fel vid hämtning av GSV-monthly:', err);
+      } finally {
+        setGsvLoading(false);
+      }
+    };
+    fetchGSVMonthly();
+  }, [gaSiteVisitsMode, gsvViewMode, periodParams, refreshCounter]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -363,6 +430,36 @@ const AccountView = ({
       return gaMonthlySortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
     });
   }, [gaPivot, gaMonthlySortConfig]);
+
+  // GSV monthly pivot memos
+  const gsvPivot = useMemo(() => {
+    const map = {};
+    for (const row of gsvData) {
+      if (!map[row.account_name]) map[row.account_name] = {};
+      map[row.account_name][row.month] = row.visits;
+    }
+    return map;
+  }, [gsvData]);
+
+  const gsvTotals = useMemo(() => {
+    const totals = {};
+    for (const monthMap of Object.values(gsvPivot)) {
+      for (const [month, val] of Object.entries(monthMap)) {
+        totals[month] = (totals[month] || 0) + val;
+      }
+    }
+    return totals;
+  }, [gsvPivot]);
+
+  const gsvSortedPrograms = useMemo(() => {
+    const programs = Object.keys(gsvPivot);
+    if (!gsvMonthlySortConfig.key) return [...programs].sort(sortGAPrograms);
+    return [...programs].sort((a, b) => {
+      const aVal = gsvPivot[a][gsvMonthlySortConfig.key] ?? -1;
+      const bVal = gsvPivot[b][gsvMonthlySortConfig.key] ?? -1;
+      return gsvMonthlySortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [gsvPivot, gsvMonthlySortConfig]);
 
   // Synthetic group rows for GA summary mode
   const gaSummaryWithGroups = useMemo(() => {
@@ -687,6 +784,454 @@ const AccountView = ({
   useEffect(() => {
     if (!gaShowDeleteColumn) setGaSelectedAccounts(new Set());
   }, [gaShowDeleteColumn]);
+
+  /** Clear GSV checkbox selection when summary data reloads. */
+  useEffect(() => {
+    setGsvSelectedAccounts(new Set());
+  }, [gsvSummary]);
+
+  /** Clear GSV selection when delete column is hidden. */
+  useEffect(() => {
+    if (!gsvShowDeleteColumn) setGsvSelectedAccounts(new Set());
+  }, [gsvShowDeleteColumn]);
+
+  // ── GSV (GA Site Visits) mode ─────────────────────────────────────────────
+  if (gaSiteVisitsMode) {
+    if (gsvLoading) {
+      return (
+        <Card className="p-6">
+          <p className="text-center text-muted-foreground">Laddar sajtbesöksdata...</p>
+        </Card>
+      );
+    }
+
+    const noGsvData = gsvViewMode === 'summary'
+      ? gsvSummary.programmes.length === 0
+      : gsvData.length === 0;
+
+    if (noGsvData) {
+      return (
+        <Card className="p-6">
+          <div className="flex justify-center mb-4">
+            <div className="inline-flex rounded-md border">
+              <Button variant={gsvViewMode === 'summary' ? 'default' : 'ghost'} size="sm" onClick={() => setGsvViewMode('summary')}>Summerat</Button>
+              <Button variant={gsvViewMode === 'monthly' ? 'default' : 'ghost'} size="sm" onClick={() => setGsvViewMode('monthly')}>Per m&aring;nad</Button>
+            </div>
+          </div>
+          <p className="text-center text-muted-foreground">Ingen sajtbesöksdata tillg&auml;nglig f&ouml;r vald period</p>
+        </Card>
+      );
+    }
+
+    // --- GSV Export helpers ---
+    const handleGSVExportCSV = () => {
+      if (gsvViewMode === 'summary') {
+        const headers = ['#', 'Programnamn', 'Besök', 'Snitt/dag'];
+        const rows = gsvSummary.programmes.map((prog, idx) => [
+          idx + 1,
+          prog.account_name,
+          prog.total_visits,
+          prog.avg_daily_visits != null ? prog.avg_daily_visits.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '',
+        ]);
+        const csvContent = [headers.join(','), ...rows.map(r => r.map(v => {
+          const s = String(v);
+          return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
+        }).join(','))].join('\n');
+        downloadFile(csvContent, 'ga-sajtbesok.csv', 'text/csv;charset=utf-8;');
+      } else {
+        const formatMonth = (month) => { const [y, m] = month.split('-'); return `${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${y.slice(2)}`; };
+        const headers = ['Programnamn', ...gsvMonths.map(formatMonth)];
+        const rows = gsvSortedPrograms.map(prog => [prog, ...gsvMonths.map(m => gsvPivot[prog][m] ?? '')]);
+        const csvContent = [headers.join(','), ...rows.map(r => r.map(v => {
+          const s = String(v);
+          return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
+        }).join(','))].join('\n');
+        downloadFile(csvContent, 'ga-sajtbesok-per-manad.csv', 'text/csv;charset=utf-8;');
+      }
+    };
+
+    const handleGSVExportExcel = async () => {
+      if (gsvViewMode === 'summary') {
+        const exportData = gsvSummary.programmes.map((prog, idx) => ({
+          '#': idx + 1,
+          'Programnamn': prog.account_name,
+          'Besök': prog.total_visits,
+          'Snitt/dag': prog.avg_daily_visits != null ? prog.avg_daily_visits : '',
+        }));
+        await downloadExcel(exportData, 'ga-sajtbesok.xlsx');
+      } else {
+        const formatMonth = (month) => { const [y, m] = month.split('-'); return `${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${y.slice(2)}`; };
+        const exportData = gsvSortedPrograms.map(prog => {
+          const row = { 'Programnamn': prog };
+          for (const m of gsvMonths) { row[formatMonth(m)] = gsvPivot[prog][m] ?? ''; }
+          return row;
+        });
+        await downloadExcel(exportData, 'ga-sajtbesok-per-manad.xlsx');
+      }
+    };
+
+    const handleGSVToggleAccount = (accountName) => {
+      setGsvSelectedAccounts(prev => {
+        const next = new Set(prev);
+        if (next.has(accountName)) next.delete(accountName);
+        else next.add(accountName);
+        return next;
+      });
+    };
+
+    const handleGSVToggleAll = () => {
+      const allNames = gsvSummary.programmes.map(p => p.account_name);
+      if (gsvSelectedAccounts.size === allNames.length) {
+        setGsvSelectedAccounts(new Set());
+      } else {
+        setGsvSelectedAccounts(new Set(allNames));
+      }
+    };
+
+    const handleGSVBatchDelete = async () => {
+      if (gsvSelectedAccounts.size === 0) return;
+      const names = [...gsvSelectedAccounts];
+      const confirmed = confirm(
+        `Radera all sajtbesöksdata (alla månader) för ${names.length} konto${names.length > 1 ? 'n' : ''}?\n\n` +
+        names.slice(0, 10).join('\n') +
+        (names.length > 10 ? `\n... och ${names.length - 10} till` : '') +
+        '\n\nDetta kan inte ångras.'
+      );
+      if (!confirmed) return;
+
+      setGsvDeleteLoading(true);
+      try {
+        await api.deleteGASiteVisitsAccounts(names);
+        setGsvSelectedAccounts(new Set());
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGASiteVisitsSummary(months, gsvSortDir);
+        setGsvSummary(result);
+      } catch (err) {
+        console.error('Batch-radering misslyckades:', err);
+        alert(`Radering misslyckades: ${err.message}`);
+      } finally {
+        setGsvDeleteLoading(false);
+      }
+    };
+
+    const handleDeleteGSVAccount = async () => {
+      if (!deleteConfirm) return;
+      setDeleteLoading(true);
+      try {
+        const monthsArray = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
+          : [];
+        await api.deleteGASiteVisitsAccount(deleteConfirm.accountName, monthsArray);
+        setDeleteConfirm(null);
+        setRefreshCounter(c => c + 1);
+      } catch (err) {
+        console.error('Radering misslyckades:', err);
+        alert(`Radering misslyckades: ${err.message}`);
+      } finally {
+        setDeleteLoading(false);
+      }
+    };
+
+    // --- GSV toolbar ---
+    const gsvToolbar = (
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <div className="inline-flex rounded-md border">
+            <Button variant={gsvViewMode === 'summary' ? 'default' : 'ghost'} size="sm"
+              onClick={() => setGsvViewMode('summary')}>Summerat</Button>
+            <Button variant={gsvViewMode === 'monthly' ? 'default' : 'ghost'} size="sm"
+              onClick={() => setGsvViewMode('monthly')}>Per m&aring;nad</Button>
+          </div>
+          {gsvViewMode === 'summary' && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="gsv-show-delete"
+                checked={gsvShowDeleteColumn}
+                onCheckedChange={setGsvShowDeleteColumn}
+              />
+              <Label htmlFor="gsv-show-delete" className="text-sm text-red-600">
+                Radera konton
+              </Label>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {gsvShowDeleteColumn && gsvSelectedAccounts.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleGSVBatchDelete}
+              disabled={gsvDeleteLoading}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Radera {gsvSelectedAccounts.size} konto{gsvSelectedAccounts.size > 1 ? 'n' : ''}
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleGSVExportCSV}>
+            <FileDown className="w-4 h-4 mr-2" />CSV
+          </Button>
+          <Button variant="outline" onClick={handleGSVExportExcel}>
+            <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
+          </Button>
+        </div>
+      </div>
+    );
+
+    // --- GSV Summary view ---
+    if (gsvViewMode === 'summary') {
+      return (
+        <Card className="p-4">
+          {deleteConfirm?.type === 'ga_site_visits' && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Bekräfta radering</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">
+                  Radera alla sajtbesök för <strong>{deleteConfirm.accountName}</strong> i vald period
+                  ({deleteConfirm.visitCount.toLocaleString('sv-SE')} besök totalt)? Detta kan inte ångras.
+                </p>
+                <div className="flex space-x-2 mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)} disabled={deleteLoading}>
+                    Avbryt
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={handleDeleteGSVAccount} disabled={deleteLoading}>
+                    {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+          {gsvToolbar}
+          <div className="rounded-md border bg-white">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {gsvShowDeleteColumn && (
+                    <TableHead className="w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={gsvSelectedAccounts.size === gsvSummary.programmes.length && gsvSummary.programmes.length > 0}
+                        onChange={handleGSVToggleAll}
+                        className="rounded border-gray-300"
+                        title="Markera alla"
+                      />
+                    </TableHead>
+                  )}
+                  <TableHead className="w-10 text-center">#</TableHead>
+                  <TableHead>Programnamn</TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => {
+                      if (gsvSortKey === 'total_visits') {
+                        setGsvSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setGsvSortKey('total_visits');
+                        setGsvSortDir('desc');
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-end whitespace-nowrap">
+                      Besök
+                      {gsvSortKey === 'total_visits'
+                        ? (gsvSortDir === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />)
+                        : <ArrowUpDown className="h-4 w-4 ml-1" />}
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => {
+                      if (gsvSortKey === 'avg_daily_visits') {
+                        setGsvSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setGsvSortKey('avg_daily_visits');
+                        setGsvSortDir('desc');
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-end whitespace-nowrap">
+                      Snitt/dag
+                      {gsvSortKey === 'avg_daily_visits'
+                        ? (gsvSortDir === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />)
+                        : <ArrowUpDown className="h-4 w-4 ml-1" />}
+                    </div>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow className="bg-primary/5 border-b-2 border-primary/20">
+                  {gsvShowDeleteColumn && <TableCell />}
+                  <TableCell />
+                  <TableCell className="font-semibold flex items-center">
+                    <Calculator className="w-4 h-4 mr-2 text-primary" />
+                    <span className="text-primary">Totalt</span>
+                  </TableCell>
+                  <TableCell className="text-right font-semibold text-primary">
+                    {formatValue(gsvSummary.grandTotal)}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold text-primary">
+                    {gsvSummary.grandAvgDaily != null ? gsvSummary.grandAvgDaily.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}
+                  </TableCell>
+                </TableRow>
+                {gsvSummary.programmes.map((prog, idx) => (
+                  <TableRow key={prog.account_name}>
+                    {gsvShowDeleteColumn && (
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={gsvSelectedAccounts.has(prog.account_name)}
+                          onChange={() => handleGSVToggleAccount(prog.account_name)}
+                          className="rounded border-gray-300"
+                        />
+                      </TableCell>
+                    )}
+                    <TableCell className="text-center font-medium">{idx + 1}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <ProfileIcon accountName={prog.account_name} />
+                        <span>{prog.account_name}</span>
+                        <PlatformBadge platform="ga_site_visits" />
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatValue(prog.total_visits)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {prog.avg_daily_visits != null
+                        ? prog.avg_daily_visits.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                        : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      );
+    }
+
+    // --- GSV Monthly pivot view ---
+    const formatGSVMonthHeader = (month) => {
+      const [year, m] = month.split('-');
+      return `${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${year.slice(2)}`;
+    };
+
+    const getGSVSortIcon = (monthKey) => {
+      if (gsvMonthlySortConfig.key !== monthKey) return <ArrowUpDown className="h-4 w-4 ml-1" />;
+      return gsvMonthlySortConfig.direction === 'asc'
+        ? <ArrowUp className="h-4 w-4 ml-1" />
+        : <ArrowDown className="h-4 w-4 ml-1" />;
+    };
+
+    return (
+      <Card className="p-4">
+        {deleteConfirm?.type === 'ga_site_visits' && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Bekräfta radering</AlertTitle>
+            <AlertDescription>
+              <p className="mb-2">
+                Radera alla sajtbesök för <strong>{deleteConfirm.accountName}</strong> i vald period
+                ({deleteConfirm.visitCount.toLocaleString('sv-SE')} besök totalt)? Detta kan inte ångras.
+              </p>
+              <div className="flex space-x-2 mt-2">
+                <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)} disabled={deleteLoading}>
+                  Avbryt
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleDeleteGSVAccount} disabled={deleteLoading}>
+                  {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+        {gsvToolbar}
+        <div className="rounded-md border bg-white">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10 text-center">#</TableHead>
+                <TableHead>Programnamn</TableHead>
+                {gsvMonths.map(month => (
+                  <TableHead
+                    key={month}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => setGsvMonthlySortConfig(prev => ({
+                      key: month,
+                      direction: prev.key === month && prev.direction === 'asc' ? 'desc' : 'asc',
+                    }))}
+                  >
+                    <div className="flex items-center justify-end whitespace-nowrap">
+                      {formatGSVMonthHeader(month)}
+                      {getGSVSortIcon(month)}
+                    </div>
+                  </TableHead>
+                ))}
+                {showDeleteColumn && <TableHead className="w-10" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow className="bg-primary/5 border-b-2 border-primary/20">
+                <TableCell />
+                <TableCell className="font-semibold flex items-center">
+                  <Calculator className="w-4 h-4 mr-2 text-primary" />
+                  <span className="text-primary">Totalt</span>
+                </TableCell>
+                {gsvMonths.map(month => (
+                  <TableCell key={month} className="text-right font-semibold text-primary">
+                    {formatValue(gsvTotals[month])}
+                  </TableCell>
+                ))}
+                {showDeleteColumn && <TableCell />}
+              </TableRow>
+              {gsvSortedPrograms.map((prog, idx) => (
+                <TableRow key={prog}>
+                  <TableCell className="text-center font-medium">{idx + 1}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <ProfileIcon accountName={prog} />
+                      <span>{prog}</span>
+                      <PlatformBadge platform="ga_site_visits" />
+                    </div>
+                  </TableCell>
+                  {gsvMonths.map(month => {
+                    const visits = gsvPivot[prog]?.[month];
+                    const avgDay = visits !== undefined
+                      ? (visits / daysInMonth(month)).toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                      : null;
+                    return (
+                      <TableCell key={month} className="text-right" title={avgDay != null ? `Snitt/dag: ${avgDay}` : undefined}>
+                        {visits !== undefined
+                          ? formatValue(visits)
+                          : <span className="text-muted-foreground">&mdash;</span>}
+                      </TableCell>
+                    );
+                  })}
+                  {showDeleteColumn && (
+                    <TableCell className="text-center">
+                      <button
+                        onClick={() => setDeleteConfirm({
+                          accountName: prog,
+                          type: 'ga_site_visits',
+                          visitCount: Object.values(gsvPivot[prog] || {}).reduce((sum, v) => sum + v, 0),
+                        })}
+                        className="text-red-500 hover:text-red-700"
+                        title="Radera sajtbesök för detta program"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+    );
+  }
+  // ── end GSV mode ────────────────────────────────────────────────────────
 
   // Early-return GA block — placed after all hooks to satisfy React rules of hooks.
   if (gaListensMode) {

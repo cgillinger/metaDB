@@ -139,6 +139,7 @@ const MainView = ({ onShowUploader }) => {
   const [imports, setImports] = useState([]);
   // True when at least one month of GA listening data is available
   const [hasGAListens, setHasGAListens] = useState(false);
+  const [hasGASiteVisits, setHasGASiteVisits] = useState(false);
   // Account groups — persists across view switches
   const [accountGroups, setAccountGroups] = useState([]);
 
@@ -152,15 +153,17 @@ const MainView = ({ onShowUploader }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [statsData, importsData, coverageResult, gaMonthsResult] = await Promise.all([
+        const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult] = await Promise.all([
           api.getStats(),
           api.getImports(),
           api.getCoverage().catch(() => ({ months: [] })),
           api.getGAListensMonths().catch(() => ({ months: [] })),
+          api.getGASiteVisitsMonths().catch(() => ({ months: [] })),
         ]);
         setStats(statsData);
         setImports(importsData);
         setHasGAListens((gaMonthsResult.months || []).length > 0);
+        setHasGASiteVisits((gsvMonthsResult.months || []).length > 0);
 
         const months = coverageResult.months || [];
         setCoverageData(months);
@@ -242,24 +245,27 @@ const MainView = ({ onShowUploader }) => {
 
   const handleImportsChanged = async () => {
     try {
-      const [statsData, importsData, coverageResult, gaMonthsResult] = await Promise.all([
+      const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult] = await Promise.all([
         api.getStats(),
         api.getImports(),
         api.getCoverage().catch(() => ({ months: [] })),
         api.getGAListensMonths().catch(() => ({ months: [] })),
+        api.getGASiteVisitsMonths().catch(() => ({ months: [] })),
       ]);
       setStats(statsData);
       setImports(importsData);
       setCoverageData(coverageResult.months || []);
       setHasGAListens((gaMonthsResult.months || []).length > 0);
+      setHasGASiteVisits((gsvMonthsResult.months || []).length > 0);
     } catch (error) {
       console.error('Fel vid uppdatering:', error);
     }
   };
 
-  // Reset to 'account' if a hidden tab is active when switching to ga_listens
+  // Reset to 'account' if a hidden tab is active when switching to ga_listens/ga_site_visits
   useEffect(() => {
-    if (platformFilter === 'ga_listens' && (activeView === 'post' || activeView === 'post_type')) {
+    if ((platformFilter === 'ga_listens' || platformFilter === 'ga_site_visits')
+        && (activeView === 'post' || activeView === 'post_type')) {
       setActiveView('account');
     }
   }, [platformFilter]);
@@ -284,6 +290,11 @@ const MainView = ({ onShowUploader }) => {
         .filter(m => (m.ga_listens_count ?? 0) > 0)
         .map(m => ({ ...m, post_count: m.ga_listens_count ?? 0 }));
     }
+    if (platformFilter === 'ga_site_visits') {
+      return coverageData
+        .filter(m => (m.ga_site_visits_count ?? 0) > 0)
+        .map(m => ({ ...m, post_count: m.ga_site_visits_count ?? 0 }));
+    }
     // 'all' — keep existing coverage data unchanged
     return coverageData;
   }, [coverageData, platformFilter]);
@@ -303,7 +314,7 @@ const MainView = ({ onShowUploader }) => {
 
   /** Custom date ranges only work for post-level data (publish_time).
    *  GA listens and account_reach are stored at monthly granularity only. */
-  const allowCustomPeriod = platformFilter !== 'ga_listens';
+  const allowCustomPeriod = platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits';
 
   /**
    * When switching to a platform that doesn't support custom date ranges,
@@ -359,7 +370,7 @@ const MainView = ({ onShowUploader }) => {
         </div>
       </div>
 
-      {(platformInfo.hasMixed || hasGAListens) && (
+      {(platformInfo.hasMixed || hasGAListens || hasGASiteVisits) && (
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500 mr-1">Plattform:</span>
           {platformInfo.hasMixed && [
@@ -379,11 +390,11 @@ const MainView = ({ onShowUploader }) => {
               {label}
             </button>
           ))}
-          {!platformInfo.hasMixed && (platformInfo.fbPosts + platformInfo.igPosts) > 0 && hasGAListens && (
+          {!platformInfo.hasMixed && (platformInfo.fbPosts + platformInfo.igPosts) > 0 && (hasGAListens || hasGASiteVisits) && (
             <button
               onClick={() => setPlatformFilter('all')}
               className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
-                platformFilter !== 'ga_listens'
+                platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits'
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-primary/60'
               }`}
@@ -406,6 +417,18 @@ const MainView = ({ onShowUploader }) => {
               Lyssningar
             </button>
           )}
+          {hasGASiteVisits && (
+            <button
+              onClick={() => setPlatformFilter('ga_site_visits')}
+              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                platformFilter === 'ga_site_visits'
+                  ? 'bg-green-600 text-white border-green-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+              }`}
+            >
+              Sajtbesök
+            </button>
+          )}
         </div>
       )}
 
@@ -422,7 +445,7 @@ const MainView = ({ onShowUploader }) => {
         />
       )}
 
-      {activeView !== 'trend_analysis' && activeView !== 'imports' && platformFilter !== 'ga_listens' && (
+      {activeView !== 'trend_analysis' && activeView !== 'imports' && platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && (
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
@@ -441,8 +464,8 @@ const MainView = ({ onShowUploader }) => {
       <Tabs value={activeView} onValueChange={setActiveView}>
         <TabsList>
           <TabsTrigger value="account">Per konto</TabsTrigger>
-          {platformFilter !== 'ga_listens' && <TabsTrigger value="post">Per inlägg</TabsTrigger>}
-          {platformFilter !== 'ga_listens' && <TabsTrigger value="post_type">Per inläggstyp</TabsTrigger>}
+          {platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && <TabsTrigger value="post">Per inlägg</TabsTrigger>}
+          {platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && <TabsTrigger value="post_type">Per inläggstyp</TabsTrigger>}
           <TabsTrigger value="trend_analysis">
             <TrendingUp className="w-4 h-4 mr-1" />
             Trendanalys
@@ -464,6 +487,7 @@ const MainView = ({ onShowUploader }) => {
             platform={apiPlatform}
             periodParams={periodParams}
             gaListensMode={platformFilter === 'ga_listens'}
+            gaSiteVisitsMode={platformFilter === 'ga_site_visits'}
             accountGroups={accountGroups}
             onGroupsChanged={refreshAccountGroups}
           />
@@ -485,6 +509,7 @@ const MainView = ({ onShowUploader }) => {
             platform={apiPlatform}
             periodParams={periodParams}
             gaListensMode={platformFilter === 'ga_listens'}
+            gaSiteVisitsMode={platformFilter === 'ga_site_visits'}
             accountGroups={accountGroups}
             onGroupsChanged={refreshAccountGroups}
           />

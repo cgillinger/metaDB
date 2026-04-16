@@ -5,7 +5,7 @@ import { getDb } from '../db/connection.js';
 import { parseCSV } from '../services/csvProcessor.js';
 import { redetectAllCollabs } from '../services/collabDetector.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
-import { hiddenPostsFilter, hiddenGAFilter } from '../services/hiddenAccounts.js';
+import { hiddenPostsFilter, hiddenGAFilter, hiddenSiteVisitsFilter } from '../services/hiddenAccounts.js';
 
 const router = Router();
 
@@ -80,6 +80,21 @@ router.get('/coverage', (req, res) => {
     // ga_listens table may not exist yet
   }
 
+  // Count distinct accounts with GA site visits per month
+  let gaSiteVisitsCountMap = new Map();
+  try {
+    const gsvCountRows = db.prepare(`
+      SELECT month, COUNT(DISTINCT account_name) AS ga_site_visits_count
+      FROM ga_site_visits
+      WHERE 1=1
+      ${hiddenSiteVisitsFilter()}
+      GROUP BY month
+    `).all();
+    for (const r of gsvCountRows) gaSiteVisitsCountMap.set(r.month, r.ga_site_visits_count);
+  } catch (e) {
+    // ga_site_visits may not exist yet
+  }
+
   const months = postRows.map(r => ({
     month: r.month,
     post_count: r.post_count,
@@ -90,6 +105,8 @@ router.get('/coverage', (req, res) => {
     has_reach: reachMonthSet.has(r.month),
     has_ga_listens: gaListensCountMap.has(r.month),
     ga_listens_count: gaListensCountMap.get(r.month) || 0,
+    has_ga_site_visits: gaSiteVisitsCountMap.has(r.month),
+    ga_site_visits_count: gaSiteVisitsCountMap.get(r.month) || 0,
   }));
 
   // Add reach-only months (no posts, but have account reach data)
@@ -106,6 +123,8 @@ router.get('/coverage', (req, res) => {
         has_reach: true,
         has_ga_listens: gaListensCountMap.has(reachMonth),
         ga_listens_count: gaListensCountMap.get(reachMonth) || 0,
+        has_ga_site_visits: gaSiteVisitsCountMap.has(reachMonth),
+        ga_site_visits_count: gaSiteVisitsCountMap.get(reachMonth) || 0,
       });
     }
   }
@@ -123,6 +142,28 @@ router.get('/coverage', (req, res) => {
         has_reach: false,
         has_ga_listens: true,
         ga_listens_count: gaCount,
+        has_ga_site_visits: gaSiteVisitsCountMap.has(gaMonth),
+        ga_site_visits_count: gaSiteVisitsCountMap.get(gaMonth) || 0,
+      });
+    }
+  }
+
+  // Add GSV-only months (no posts, no reach, no ga_listens)
+  const coveredMonths = new Set([...postMonthSet, ...reachMonthSet, ...gaListensCountMap.keys()]);
+  for (const [gsvMonth, gsvCount] of gaSiteVisitsCountMap) {
+    if (!coveredMonths.has(gsvMonth)) {
+      months.push({
+        month: gsvMonth,
+        post_count: 0,
+        fb_count: 0,
+        ig_count: 0,
+        has_facebook: false,
+        has_instagram: false,
+        has_reach: false,
+        has_ga_listens: false,
+        ga_listens_count: 0,
+        has_ga_site_visits: true,
+        ga_site_visits_count: gsvCount,
       });
     }
   }

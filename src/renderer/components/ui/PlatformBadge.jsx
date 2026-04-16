@@ -14,6 +14,13 @@ const PlatformBadge = ({ platform }) => {
       </span>
     );
   }
+  if (platform === 'ga_site_visits') {
+    return (
+      <span className="inline-block px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">
+        GSV
+      </span>
+    );
+  }
   const isFB = platform === 'facebook';
   return (
     <span

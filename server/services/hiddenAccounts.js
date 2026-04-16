@@ -64,3 +64,12 @@ export function hiddenGAFilter(alias) {
   const prefix = alias ? `${alias}.` : '';
   return `AND ${prefix}account_name NOT IN (SELECT account_name FROM hidden_accounts WHERE platform = 'ga_listens')`;
 }
+
+/**
+ * Filter for ga_site_visits table (no platform column; always ga_site_visits).
+ * @param {string} [alias]
+ */
+export function hiddenSiteVisitsFilter(alias) {
+  const prefix = alias ? `${alias}.` : '';
+  return `AND ${prefix}account_name NOT IN (SELECT account_name FROM hidden_accounts WHERE platform = 'ga_site_visits')`;
+}

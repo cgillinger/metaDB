@@ -54,14 +54,24 @@ export function FileUploader({ onImportComplete, onCancel }) {
                       preview.includes('Page ID') &&
                       preview.includes('Reach');
 
-      // GA listens export: must have Programnamn and at least one "lyssningar" column
+      // GA listens export: must have Programnamn and at least one listening column
       const isGaListens = !isReach &&
         preview.includes('Programnamn') &&
-        preview.some(h => h.toLowerCase().includes('lyssningar'));
+        preview.some(h => {
+          const lower = h.toLowerCase();
+          return lower.includes('lyssningar')
+              || lower.includes('lyssnat')
+              || lower.startsWith('starter');
+        });
+
+      // GA site visits export: must have Programnamn and a "besök" column
+      const isGaSiteVisits = !isReach && !isGaListens &&
+        preview.includes('Programnamn') &&
+        preview.some(h => h.toLowerCase().includes('besök'));
 
       // Try to extract month from filename pattern YYYY_MM or YYYY-MM
       let autoMonth = '';
-      if (isReach || isGaListens) {
+      if (isReach || isGaListens || isGaSiteVisits) {
         const monthMatch = file.name.match(/(\d{4})[_-](\d{2})(?:[_-]|\.|$)/i);
         if (monthMatch) {
           autoMonth = `${monthMatch[1]}-${monthMatch[2]}`;
@@ -71,6 +81,7 @@ export function FileUploader({ onImportComplete, onCancel }) {
       let fileType = 'posts';
       if (isReach) fileType = 'reach';
       else if (isGaListens) fileType = 'ga_listens';
+      else if (isGaSiteVisits) fileType = 'ga_site_visits';
 
       fileEntries.push({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
@@ -81,6 +92,7 @@ export function FileUploader({ onImportComplete, onCancel }) {
         fileType,
         reachMonth: isReach ? autoMonth : '',
         gaListensMonth: isGaListens ? autoMonth : '',
+        gaSiteVisitsMonth: isGaSiteVisits ? autoMonth : '',
       });
     }
 
@@ -160,6 +172,11 @@ export function FileUploader({ onImportComplete, onCancel }) {
             throw new Error('Ange vilken månad lyssnarfilen gäller.');
           }
           result = await api.uploadGAListensCSV(entry.file, entry.gaListensMonth);
+        } else if (entry.fileType === 'ga_site_visits') {
+          if (!entry.gaSiteVisitsMonth) {
+            throw new Error('Ange vilken månad sajtbesökfilen gäller.');
+          }
+          result = await api.uploadGASiteVisitsCSV(entry.file, entry.gaSiteVisitsMonth);
         } else {
           result = await api.uploadCSV(entry.file);
         }
@@ -310,6 +327,11 @@ export function FileUploader({ onImportComplete, onCancel }) {
                             Lyssningar (GA)
                           </span>
                         )}
+                        {entry.fileType === 'ga_site_visits' && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 border border-green-300">
+                            Sajtbesök (GA)
+                          </span>
+                        )}
                       </p>
                       {entry.result && (
                         <p className="text-xs text-green-600">
@@ -379,6 +401,41 @@ export function FileUploader({ onImportComplete, onCancel }) {
                               e.stopPropagation();
                               setFiles(prev => prev.map(f =>
                                 f.id === entry.id ? { ...f, gaListensMonth: e.target.value } : f
+                              ));
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="border border-input rounded px-2 py-0.5 text-xs"
+                            required
+                          />
+                        </div>
+                      )}
+                      {entry.fileType === 'ga_site_visits' && entry.status === FILE_STATUS.PENDING && entry.gaSiteVisitsMonth && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Månad: {entry.gaSiteVisitsMonth}
+                          <button
+                            type="button"
+                            className="ml-2 text-primary hover:underline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFiles(prev => prev.map(f =>
+                                f.id === entry.id ? { ...f, gaSiteVisitsMonth: '' } : f
+                              ));
+                            }}
+                          >
+                            Ändra
+                          </button>
+                        </p>
+                      )}
+                      {entry.fileType === 'ga_site_visits' && entry.status === FILE_STATUS.PENDING && !entry.gaSiteVisitsMonth && (
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Månad:</span>
+                          <input
+                            type="month"
+                            value={entry.gaSiteVisitsMonth}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setFiles(prev => prev.map(f =>
+                                f.id === entry.id ? { ...f, gaSiteVisitsMonth: e.target.value } : f
                               ));
                             }}
                             onClick={(e) => e.stopPropagation()}
