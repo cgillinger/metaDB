@@ -117,6 +117,7 @@ const TrendAnalysisView = ({
   platform,
   periodParams = {},
   gaListensMode = false,
+  gaSiteVisitsMode = false,
   accountGroups = [],
   onGroupsChanged = null,
 }) => {
@@ -136,15 +137,20 @@ const TrendAnalysisView = ({
   const [gaAccountList, setGaAccountList] = useState([]); // sorted account objects
   const [gaMetric, setGaMetric] = useState('listens'); // 'listens' | 'avg_daily_listens'
 
+  // GA Site Visits state — populated only when gaSiteVisitsMode is true
+  const [gsvRawData, setGsvRawData] = useState([]);
+  const [gsvAccountList, setGsvAccountList] = useState([]);
+  const [gsvMetric, setGsvMetric] = useState('visits'); // 'visits' | 'avg_daily_visits'
+
   // Group create dialog state
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupDialogAccounts, setGroupDialogAccounts] = useState([]);
 
-  // Clear selection and trend data when switching between GA and post mode
+  // Clear selection and trend data when switching between modes
   useEffect(() => {
     setSelectedAccounts([]);
     setTrendData(null);
-  }, [gaListensMode]);
+  }, [gaListensMode, gaSiteVisitsMode]);
 
   // Detect platforms from account list
   const { hasFacebook, hasInstagram } = useMemo(() => {
@@ -219,11 +225,11 @@ const TrendAnalysisView = ({
 
   // Auto-switch from non-summable metric when a group is selected
   useEffect(() => {
-    if (!gaListensMode && hasGroupSelected && NON_SUMMABLE_METRICS.has(selectedMetric)) {
+    if (!gaListensMode && !gaSiteVisitsMode && hasGroupSelected && NON_SUMMABLE_METRICS.has(selectedMetric)) {
       setSelectedMetric('interactions');
       setGroupNotice('Räckvidd kan inte aggregeras för kontogrupper. Bytte till Interaktioner.');
     }
-  }, [gaListensMode, hasGroupSelected, selectedMetric]);
+  }, [gaListensMode, gaSiteVisitsMode, hasGroupSelected, selectedMetric]);
 
   useEffect(() => {
     if (!groupNotice) return;
@@ -233,7 +239,7 @@ const TrendAnalysisView = ({
 
   // Fetch account list (posts mode only)
   useEffect(() => {
-    if (gaListensMode) return;
+    if (gaListensMode || gaSiteVisitsMode) return;
     const fetchAccounts = async () => {
       try {
         const params = { fields: 'views', ...periodParams, includeReachOnly: 'true' };
@@ -251,11 +257,11 @@ const TrendAnalysisView = ({
       }
     };
     fetchAccounts();
-  }, [gaListensMode, platform, periodParams]);
+  }, [gaListensMode, gaSiteVisitsMode, platform, periodParams]);
 
   // Fetch trend data when metric or accounts change (posts mode only)
   useEffect(() => {
-    if (gaListensMode) return;
+    if (gaListensMode || gaSiteVisitsMode) return;
     if (!selectedMetric || selectedAccounts.length === 0) {
       setTrendData(null);
       return;
@@ -291,7 +297,7 @@ const TrendAnalysisView = ({
       }
     };
     fetchTrends();
-  }, [gaListensMode, selectedMetric, selectedAccounts, platform, periodParams, accountListWithGroups]);
+  }, [gaListensMode, gaSiteVisitsMode, selectedMetric, selectedAccounts, platform, periodParams, accountListWithGroups]);
 
   // Build chart lines from trend data, aggregating group series client-side
   const { months, chartLines } = useMemo(() => {
@@ -507,10 +513,99 @@ const TrendAnalysisView = ({
     return calculateNiceYAxis(Math.max(...allValues));
   }, [gaChartLines]);
 
+  // Fetch GA site visits data and build sorted account list
+  useEffect(() => {
+    if (!gaSiteVisitsMode) {
+      setGsvRawData([]);
+      setGsvAccountList([]);
+      return;
+    }
+
+    const fetchGSVData = async () => {
+      try {
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGASiteVisits(months);
+        const rows = result.data || [];
+        setGsvRawData(rows);
+
+        const names = [...new Set(rows.map(r => r.account_name))].sort(sortGAPrograms);
+        setGsvAccountList(names.map(name => ({
+          account_name: name,
+          platform: 'ga_site_visits',
+          is_collab: false,
+          key: accountKey(name, 'ga_site_visits'),
+        })));
+      } catch (err) {
+        console.error('Fel vid hämtning av sajtbesök:', err);
+      }
+    };
+    fetchGSVData();
+  }, [gaSiteVisitsMode, periodParams]);
+
+  // GSV pivot: { account_name → { 'YYYY-MM' → visits } }
+  const gsvPivot = useMemo(() => {
+    if (!gaSiteVisitsMode) return {};
+    const map = {};
+    for (const row of gsvRawData) {
+      if (!map[row.account_name]) map[row.account_name] = {};
+      map[row.account_name][row.month] = row.visits;
+    }
+    return map;
+  }, [gaSiteVisitsMode, gsvRawData]);
+
+  // Month span for GSV chart x-axis
+  const gsvMonths = useMemo(() => {
+    if (!gaSiteVisitsMode) return [];
+    if (periodParams.months) {
+      return periodParams.months.split(',').map(m => m.trim()).filter(Boolean).sort();
+    }
+    return [...new Set(gsvRawData.map(r => r.month))].sort();
+  }, [gaSiteVisitsMode, gsvRawData, periodParams]);
+
+  // GSV chart lines — SBS-safe: uses const lines, NOT return before avg transform
+  const gsvChartLines = useMemo(() => {
+    if (!gaSiteVisitsMode || selectedAccounts.length === 0) return [];
+
+    const lines = selectedAccounts.map((key, index) => {
+      const entry = gsvAccountList.find(a => a.key === key);
+      if (!entry) return null;
+
+      const data = gsvPivot[entry.account_name] || {};
+      return {
+        key,
+        account_name: entry.account_name,
+        platform: 'ga_site_visits',
+        is_collab: false,
+        _isGroup: false,
+        color: CHART_COLORS[index % CHART_COLORS.length],
+        points: gsvMonths.map(month => ({ month, value: data[month] ?? 0 })),
+      };
+    }).filter(Boolean);
+
+    if (gsvMetric === 'avg_daily_visits') {
+      return lines.map(line => ({
+        ...line,
+        points: line.points.map(p => ({
+          ...p,
+          value: Math.round((p.value / daysInMonth(p.month)) * 10) / 10,
+        })),
+      }));
+    }
+    return lines;
+  }, [gaSiteVisitsMode, selectedAccounts, gsvPivot, gsvMonths, gsvAccountList, gsvMetric]);
+
+  const gsvYAxisConfig = useMemo(() => {
+    if (gsvChartLines.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
+    const allValues = gsvChartLines.flatMap(line => line.points.map(p => p.value));
+    return calculateNiceYAxis(Math.max(...allValues));
+  }, [gsvChartLines]);
+
   // Transparent switchers so the SVG chart render logic below needs no branching.
-  const displayMonths    = gaListensMode ? gaMonths    : months;
-  const displayChartLines = gaListensMode ? gaChartLines : chartLines;
-  const displayYAxisConfig = gaListensMode ? gaYAxisConfig : yAxisConfig;
+  const displayMonths = gaSiteVisitsMode ? gsvMonths : gaListensMode ? gaMonths : months;
+  const displayChartLines = gaSiteVisitsMode ? gsvChartLines : gaListensMode ? gaChartLines : chartLines;
+  const displayYAxisConfig = gaSiteVisitsMode ? gsvYAxisConfig : gaListensMode ? gaYAxisConfig : yAxisConfig;
 
   // Filter account list based on selected metric (account_reach = FB only)
   // Groups are always kept in the list regardless of metric filter
@@ -523,7 +618,7 @@ const TrendAnalysisView = ({
 
   // When metric changes to account_reach or estimated_unique_clicks, remove non-FB accounts from selection
   useEffect(() => {
-    if (!gaListensMode && (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks')) {
+    if (!gaListensMode && !gaSiteVisitsMode && (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks')) {
       const fbKeys = new Set(
         accountListWithGroups
           .filter(a => a._isGroup || a.platform === 'facebook')
@@ -531,10 +626,12 @@ const TrendAnalysisView = ({
       );
       setSelectedAccounts(prev => prev.filter(k => fbKeys.has(k)));
     }
-  }, [gaListensMode, selectedMetric, accountListWithGroups]);
+  }, [gaListensMode, gaSiteVisitsMode, selectedMetric, accountListWithGroups]);
 
   // Final display account list
-  const activeAccountList = gaListensMode ? gaAccountListWithGroups : filteredAccountList;
+  const activeAccountList = gaSiteVisitsMode
+    ? gsvAccountList
+    : gaListensMode ? gaAccountListWithGroups : filteredAccountList;
 
   const handleAccountToggle = (key) => {
     setSelectedAccounts(current =>
@@ -559,9 +656,11 @@ const TrendAnalysisView = ({
     setHoveredDataPoint(point);
   };
 
-  const showChart = gaListensMode
-    ? selectedAccounts.length > 0 && displayMonths.length > 0
-    : selectedMetric && selectedAccounts.length > 0 && months.length > 0;
+  const showChart = gaSiteVisitsMode
+    ? (gsvChartLines.length > 0 && gsvMonths.length > 0)
+    : gaListensMode
+      ? (gaChartLines.length > 0 && gaMonths.length > 0)
+      : (chartLines.length > 0 && months.length > 0);
 
   if (activeAccountList.length === 0) {
     return (
@@ -588,7 +687,7 @@ const TrendAnalysisView = ({
             <div>
               <div className="flex items-center justify-between mb-3">
                 <Label className="text-base font-medium">
-                  {gaListensMode ? 'Välj program' : 'Välj konton'} ({selectedAccounts.length} valda)
+                  {(gaListensMode || gaSiteVisitsMode) ? 'Välj program' : 'Välj konton'} ({selectedAccounts.length} valda)
                 </Label>
                 <Button variant="outline" size="sm" onClick={handleToggleAllAccounts}>
                   {allAccountsSelected ? 'Avmarkera alla' : 'Välj alla'}
@@ -638,21 +737,47 @@ const TrendAnalysisView = ({
                   );
                 })}
               </div>
-              {/* Skapa grupp button */}
-              <button
-                onClick={() => {
-                  setGroupDialogAccounts(gaListensMode ? gaAccountList : accountList);
-                  setGroupDialogOpen(true);
-                }}
-                className="mt-2 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                <Users className="w-3.5 h-3.5" />
-                Skapa kontogrupp
-              </button>
+              {/* Skapa grupp button — hidden for site visits (no group integration in v1) */}
+              {!gaSiteVisitsMode && (
+                <button
+                  onClick={() => {
+                    setGroupDialogAccounts(gaListensMode ? gaAccountList : accountList);
+                    setGroupDialogOpen(true);
+                  }}
+                  className="mt-2 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  Skapa kontogrupp
+                </button>
+              )}
             </div>
 
             {/* Metric selector */}
-            {gaListensMode ? (
+            {gaSiteVisitsMode ? (
+              <div>
+                <Label className="text-base font-medium mb-3 block">Datapunkt</Label>
+                <div className="space-y-2 border rounded-md p-3 bg-gray-50">
+                  {[
+                    { key: 'visits', label: 'Besök' },
+                    { key: 'avg_daily_visits', label: 'Besök snitt/dag' },
+                  ].map(({ key, label }) => (
+                    <Label key={key} className="flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-white">
+                      <input
+                        type="radio"
+                        name="gsvMetric"
+                        checked={gsvMetric === key}
+                        onChange={() => setGsvMetric(key)}
+                        className="h-4 w-4 accent-blue-600"
+                      />
+                      <span className="text-sm flex items-center gap-1.5 font-medium">
+                        <PlatformBadge platform="ga_site_visits" />
+                        {label}
+                      </span>
+                    </Label>
+                  ))}
+                </div>
+              </div>
+            ) : gaListensMode ? (
               <div>
                 <Label className="text-base font-medium mb-3 block">Datapunkt</Label>
                 <div className="space-y-2 border rounded-md p-3 bg-gray-50">
@@ -714,14 +839,16 @@ const TrendAnalysisView = ({
             )}
           </div>
 
-          {(gaListensMode || selectedMetric) && (
+          {(gaSiteVisitsMode || gaListensMode || selectedMetric) && (
             <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-center">
               <h3 className="text-lg font-bold text-primary">
-                Visar: {gaListensMode
-                  ? (gaMetric === 'avg_daily_listens' ? 'Lyssningar snitt/dag (GA)' : 'Lyssningar (GA)')
-                  : availableMetrics[selectedMetric]}
+                Visar: {gaSiteVisitsMode
+                  ? (gsvMetric === 'avg_daily_visits' ? 'Besök snitt/dag (GA)' : 'Besök (GA)')
+                  : gaListensMode
+                    ? (gaMetric === 'avg_daily_listens' ? 'Lyssningar snitt/dag (GA)' : 'Lyssningar (GA)')
+                    : availableMetrics[selectedMetric]}
               </h3>
-              <p className="text-sm text-primary/70 mt-1">Utveckling över tid för valda {gaListensMode ? 'program' : 'konton'}</p>
+              <p className="text-sm text-primary/70 mt-1">Utveckling över tid för valda {(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konton'}</p>
             </div>
           )}
 
@@ -792,7 +919,7 @@ const TrendAnalysisView = ({
 
                   {displayChartLines.map(line => {
                     if (line.points.length < 1) return null;
-                    const isEstimated = !gaListensMode && selectedMetric === 'estimated_unique_clicks';
+                    const isEstimated = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'estimated_unique_clicks';
                     const yRange = displayYAxisConfig.max - displayYAxisConfig.min;
                     const toY = (val) => yRange > 0 ? 450 - ((val - displayYAxisConfig.min) / yRange) * 380 : 450;
 
@@ -869,10 +996,12 @@ const TrendAnalysisView = ({
                     if (tooltipY < 15) tooltipY = mousePosition.y + 15;
                     if (tooltipY + tooltipHeight > 480) tooltipY = mousePosition.y - tooltipHeight - 15;
                     const [year, month] = hoveredDataPoint.month.split('-').map(Number);
-                    const tooltipMetric = gaListensMode
-                      ? (gaMetric === 'avg_daily_listens' ? 'Lyssningar snitt/dag' : 'Lyssningar')
-                      : availableMetrics[selectedMetric];
-                    const isEstimatedTooltip = !gaListensMode && selectedMetric === 'estimated_unique_clicks';
+                    const tooltipMetric = gaSiteVisitsMode
+                      ? (gsvMetric === 'avg_daily_visits' ? 'Besök snitt/dag' : 'Besök')
+                      : gaListensMode
+                        ? (gaMetric === 'avg_daily_listens' ? 'Lyssningar snitt/dag' : 'Lyssningar')
+                        : availableMetrics[selectedMetric];
+                    const isEstimatedTooltip = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'estimated_unique_clicks';
                     const tooltipValueText = isEstimatedTooltip
                       ? (() => {
                           const upper = hoveredDataPoint.value;
@@ -902,11 +1031,15 @@ const TrendAnalysisView = ({
             <div className="text-center py-12 text-muted-foreground">
               <LineChart className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p className="text-lg font-medium mb-2">
-                {gaListensMode ? 'Välj program för att visa lyssnartrender' : 'Välj konton och datapunkt för att visa trend'}
+                {gaSiteVisitsMode
+                  ? 'Välj program för att visa besökstrender'
+                  : gaListensMode
+                    ? 'Välj program för att visa lyssnartrender'
+                    : 'Välj konton och datapunkt för att visa trend'}
               </p>
               <p className="text-sm">
                 {selectedAccounts.length === 0
-                  ? `Markera minst ett ${gaListensMode ? 'program' : 'konto'} i listan ovan`
+                  ? `Markera minst ett ${(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konto'} i listan ovan`
                   : loading ? 'Laddar trenddata...' : 'Valda konton är redo'}
               </p>
             </div>
