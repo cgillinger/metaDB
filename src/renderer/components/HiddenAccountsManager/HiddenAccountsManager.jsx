@@ -10,6 +10,7 @@ const PLATFORM_LABELS = {
   facebook: { label: 'Facebook', className: 'bg-blue-100 text-blue-800' },
   instagram: { label: 'Instagram', className: 'bg-pink-100 text-pink-800' },
   ga_listens: { label: 'GA-lyssningar', className: 'bg-green-100 text-green-800' },
+  ga_site_visits: { label: 'GA-sajtbesök', className: 'bg-green-100 text-green-800' },
 };
 
 const PlatformBadge = ({ platform }) => {
@@ -35,10 +36,11 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [accountsRes, hiddenRes, gaRes] = await Promise.all([
+      const [accountsRes, hiddenRes, gaRes, gsvRes] = await Promise.all([
         api.getAccounts({ fields: 'post_count' }),
         api.getHiddenAccounts(),
         api.getGAListensSummary(null, 'desc'),
+        api.getGASiteVisitsSummary(null, 'desc'),
       ]);
 
       const hiddenKeys = new Set(
@@ -51,7 +53,13 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
         post_count: p.total_listens,
       }));
 
-      const allAccounts = [...(accountsRes.accounts || []), ...gaAccounts];
+      const gsvAccounts = (gsvRes.programmes || []).map(p => ({
+        account_name: p.account_name,
+        platform: 'ga_site_visits',
+        post_count: p.total_visits,
+      }));
+
+      const allAccounts = [...(accountsRes.accounts || []), ...gaAccounts, ...gsvAccounts];
       const visibleAccounts = allAccounts.filter(
         a => !hiddenKeys.has(makeKey(a.account_name, a.platform))
       );
