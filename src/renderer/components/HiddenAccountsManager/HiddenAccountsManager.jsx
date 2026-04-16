@@ -7,17 +7,23 @@ import { EyeOff, Eye, AlertCircle, RefreshCw, ChevronDown, ChevronRight } from '
 import { api } from '@/utils/apiClient';
 
 const PLATFORM_LABELS = {
-  facebook: { label: 'Facebook', className: 'bg-blue-100 text-blue-800' },
-  instagram: { label: 'Instagram', className: 'bg-pink-100 text-pink-800' },
-  ga_listens: { label: 'GA-lyssningar', className: 'bg-green-100 text-green-800' },
-  ga_site_visits: { label: 'GA-sajtbesök', className: 'bg-green-100 text-green-800' },
+  facebook:         { label: 'Facebook',  className: 'bg-blue-100 text-blue-800' },
+  instagram:        { label: 'Instagram', className: 'bg-pink-100 text-pink-800' },
+  google_analytics: { label: 'GA',        className: 'bg-green-100 text-green-800' },
+  ga_listens:       { label: 'GA',        subLabel: 'lyssningar', className: 'bg-green-100 text-green-800' },
+  ga_site_visits:   { label: 'GA',        subLabel: 'besök',      className: 'bg-green-100 text-green-800' },
 };
 
 const PlatformBadge = ({ platform }) => {
   const cfg = PLATFORM_LABELS[platform] || { label: platform, className: 'bg-gray-100 text-gray-700' };
   return (
-    <span className={`inline-block text-xs font-medium px-1.5 py-0.5 rounded ${cfg.className}`}>
-      {cfg.label}
+    <span className="inline-flex items-center gap-1">
+      <span className={`inline-block text-xs font-medium px-1.5 py-0.5 rounded ${cfg.className}`}>
+        {cfg.label}
+      </span>
+      {cfg.subLabel && (
+        <span className="text-[10px] text-muted-foreground">{cfg.subLabel}</span>
+      )}
     </span>
   );
 };

@@ -120,6 +120,7 @@ const TrendAnalysisView = ({
   gaSiteVisitsMode = false,
   accountGroups = [],
   onGroupsChanged = null,
+  onPlatformChange = null,
 }) => {
   const [selectedMetric, setSelectedMetric] = useState('interactions');
   // selectedAccounts stores composite keys: "account_name::platform" or "__group__<id>"
@@ -192,6 +193,34 @@ const TrendAnalysisView = ({
     );
     return [...gaGroups, ...sortedGaList];
   }, [accountGroups, gaAccountList]);
+
+  // Inject GSV groups into the GSV account list
+  const gsvAccountListWithGroups = useMemo(() => {
+    const gsvNames = new Set(gsvAccountList.map(a => a.account_name));
+    const gsvGroups = accountGroups
+      .filter(g => g.source === 'ga_site_visits')
+      .map(g => {
+        const memberNames = g.members.map(k => k.split('::')[0]);
+        const matchedCount = memberNames.filter(n => gsvNames.has(n)).length;
+        return {
+          account_name: g.name,
+          platform: 'ga_site_visits',
+          is_collab: false,
+          key: `__group__${g.id}`,
+          _isGroup: true,
+          groupId: g.id,
+          memberKeys: g.members,
+          memberCount: g.members.length,
+          matchedCount,
+          disabled: matchedCount === 0,
+        };
+      })
+      .sort((a, b) => (a.account_name || '').localeCompare((b.account_name || ''), 'sv'));
+    const sortedGsvList = [...gsvAccountList].sort((a, b) =>
+      (a.account_name || '').localeCompare((b.account_name || ''), 'sv')
+    );
+    return [...gsvGroups, ...sortedGsvList];
+  }, [accountGroups, gsvAccountList]);
 
   // Inject posts groups into the posts account list
   const accountListWithGroups = useMemo(() => {
@@ -569,6 +598,31 @@ const TrendAnalysisView = ({
     if (!gaSiteVisitsMode || selectedAccounts.length === 0) return [];
 
     const lines = selectedAccounts.map((key, index) => {
+      // Group key: sum member values per month
+      if (key.startsWith('__group__')) {
+        const entry = gsvAccountListWithGroups.find(a => a.key === key);
+        if (!entry) return null;
+
+        const memberNames = entry.memberKeys.map(k => k.split('::')[0]);
+        const points = gsvMonths.map(month => {
+          const value = memberNames.reduce((sum, name) => {
+            return sum + (gsvPivot[name]?.[month] ?? 0);
+          }, 0);
+          return { month, value };
+        });
+
+        return {
+          key,
+          account_name: entry.account_name,
+          platform: 'ga_site_visits',
+          is_collab: false,
+          _isGroup: true,
+          color: CHART_COLORS[index % CHART_COLORS.length],
+          points,
+        };
+      }
+
+      // Individual account
       const entry = gsvAccountList.find(a => a.key === key);
       if (!entry) return null;
 
@@ -584,6 +638,7 @@ const TrendAnalysisView = ({
       };
     }).filter(Boolean);
 
+    // Apply avg_daily transform AFTER aggregation (critical for group correctness)
     if (gsvMetric === 'avg_daily_visits') {
       return lines.map(line => ({
         ...line,
@@ -594,7 +649,7 @@ const TrendAnalysisView = ({
       }));
     }
     return lines;
-  }, [gaSiteVisitsMode, selectedAccounts, gsvPivot, gsvMonths, gsvAccountList, gsvMetric]);
+  }, [gaSiteVisitsMode, selectedAccounts, gsvPivot, gsvMonths, gsvAccountListWithGroups, gsvAccountList, gsvMetric]);
 
   const gsvYAxisConfig = useMemo(() => {
     if (gsvChartLines.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
@@ -630,7 +685,7 @@ const TrendAnalysisView = ({
 
   // Final display account list
   const activeAccountList = gaSiteVisitsMode
-    ? gsvAccountList
+    ? gsvAccountListWithGroups
     : gaListensMode ? gaAccountListWithGroups : filteredAccountList;
 
   const handleAccountToggle = (key) => {
@@ -727,7 +782,7 @@ const TrendAnalysisView = ({
                             </span>
                           ) : (
                             <>
-                              <PlatformBadge platform={account.platform} />
+                              <PlatformBadge platform={account.platform === 'ga_listens' || account.platform === 'ga_site_visits' ? 'google_analytics' : account.platform} />
                               {account.is_collab ? <CollabBadge compact /> : null}
                             </>
                           )}
@@ -737,68 +792,61 @@ const TrendAnalysisView = ({
                   );
                 })}
               </div>
-              {/* Skapa grupp button — hidden for site visits (no group integration in v1) */}
-              {!gaSiteVisitsMode && (
-                <button
-                  onClick={() => {
-                    setGroupDialogAccounts(gaListensMode ? gaAccountList : accountList);
-                    setGroupDialogOpen(true);
-                  }}
-                  className="mt-2 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  Skapa kontogrupp
-                </button>
-              )}
+              {/* Skapa grupp button */}
+              <button
+                onClick={() => {
+                  setGroupDialogAccounts(
+                    gaSiteVisitsMode ? gsvAccountList
+                    : gaListensMode ? gaAccountList
+                    : accountList
+                  );
+                  setGroupDialogOpen(true);
+                }}
+                className="mt-2 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <Users className="w-3.5 h-3.5" />
+                Skapa kontogrupp
+              </button>
             </div>
 
             {/* Metric selector */}
-            {gaSiteVisitsMode ? (
+            {(gaListensMode || gaSiteVisitsMode) ? (
               <div>
                 <Label className="text-base font-medium mb-3 block">Datapunkt</Label>
                 <div className="space-y-2 border rounded-md p-3 bg-gray-50">
                   {[
-                    { key: 'visits', label: 'Besök' },
-                    { key: 'avg_daily_visits', label: 'Besök snitt/dag' },
-                  ].map(({ key, label }) => (
-                    <Label key={key} className="flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-white">
-                      <input
-                        type="radio"
-                        name="gsvMetric"
-                        checked={gsvMetric === key}
-                        onChange={() => setGsvMetric(key)}
-                        className="h-4 w-4 accent-blue-600"
-                      />
-                      <span className="text-sm flex items-center gap-1.5 font-medium">
-                        <PlatformBadge platform="ga_site_visits" />
-                        {label}
-                      </span>
-                    </Label>
-                  ))}
-                </div>
-              </div>
-            ) : gaListensMode ? (
-              <div>
-                <Label className="text-base font-medium mb-3 block">Datapunkt</Label>
-                <div className="space-y-2 border rounded-md p-3 bg-gray-50">
-                  {[
-                    { key: 'listens', label: 'Lyssningar' },
-                    { key: 'avg_daily_listens', label: 'Lyssningar snitt/dag' },
-                  ].map(({ key, label }) => (
-                    <Label key={key} className="flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-white">
-                      <input
-                        type="radio"
-                        name="gaMetric"
-                        checked={gaMetric === key}
-                        onChange={() => setGaMetric(key)}
-                        className="h-4 w-4 accent-blue-600"
-                      />
-                      <span className="text-sm flex items-center gap-1.5 font-medium">
-                        <PlatformBadge platform="ga_listens" />
-                        {label}
-                      </span>
-                    </Label>
-                  ))}
+                    { key: 'listens',           label: 'Lyssningar',            source: 'ga_listens'     },
+                    { key: 'avg_daily_listens', label: 'Lyssningar snitt/dag',  source: 'ga_listens'     },
+                    { key: 'visits',            label: 'Besök',                 source: 'ga_site_visits' },
+                    { key: 'avg_daily_visits',  label: 'Besök snitt/dag',       source: 'ga_site_visits' },
+                  ].map(({ key, label, source }) => {
+                    const isActive =
+                      (source === 'ga_listens'     && gaListensMode    && gaMetric  === key) ||
+                      (source === 'ga_site_visits' && gaSiteVisitsMode && gsvMetric === key);
+                    return (
+                      <Label key={key} className="flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-white">
+                        <input
+                          type="radio"
+                          name="gaMetric"
+                          checked={isActive}
+                          onChange={() => {
+                            if (source === 'ga_listens') {
+                              setGaMetric(key);
+                              if (!gaListensMode) onPlatformChange?.('ga_listens');
+                            } else {
+                              setGsvMetric(key);
+                              if (!gaSiteVisitsMode) onPlatformChange?.('ga_site_visits');
+                            }
+                          }}
+                          className="h-4 w-4 accent-blue-600"
+                        />
+                        <span className="text-sm flex items-center gap-1.5 font-medium">
+                          <PlatformBadge platform="google_analytics" />
+                          {label}
+                        </span>
+                      </Label>
+                    );
+                  })}
                 </div>
               </div>
             ) : (
@@ -877,7 +925,7 @@ const TrendAnalysisView = ({
                     <span className="text-sm font-medium truncate flex items-center gap-1" title={line.account_name}>
                       {line._isGroup && <Users className="w-3 h-3 text-blue-600 shrink-0" />}
                       {line.account_name.length > 20 ? line.account_name.substring(0, 17) + '...' : line.account_name}
-                      {!line._isGroup && <PlatformBadge platform={line.platform} />}
+                      {!line._isGroup && <PlatformBadge platform={line.platform === 'ga_listens' || line.platform === 'ga_site_visits' ? 'google_analytics' : line.platform} />}
                       {line.is_collab ? <CollabBadge compact /> : null}
                     </span>
                   </div>
@@ -1050,7 +1098,7 @@ const TrendAnalysisView = ({
       <GroupCreateDialog
         open={groupDialogOpen}
         onOpenChange={setGroupDialogOpen}
-        source={gaListensMode ? 'ga_listens' : 'posts'}
+        source={gaSiteVisitsMode ? 'ga_site_visits' : gaListensMode ? 'ga_listens' : 'posts'}
         availableAccounts={groupDialogAccounts}
         editGroup={null}
         onSave={() => { if (onGroupsChanged) onGroupsChanged(); }}
