@@ -129,6 +129,7 @@ const AccountView = ({
   gaSiteVisitsMode = false,
   accountGroups = [],
   onGroupsChanged = null,
+  onPlatformChange = null,
 }) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
@@ -936,7 +937,31 @@ const AccountView = ({
 
     // --- GSV toolbar ---
     const gsvToolbar = (
-      <div className="flex items-center justify-between mb-4">
+      <div className="space-y-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Datakälla:</span>
+          <button
+            onClick={() => onPlatformChange?.('ga_listens')}
+            className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
+              gaListensMode
+                ? 'bg-green-100 text-green-800 border-green-300'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+            }`}
+          >
+            Lyssningar
+          </button>
+          <button
+            onClick={() => onPlatformChange?.('ga_site_visits')}
+            className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
+              gaSiteVisitsMode
+                ? 'bg-green-100 text-green-800 border-green-300'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+            }`}
+          >
+            Sajtbesök
+          </button>
+        </div>
+        <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="inline-flex rounded-md border">
             <Button variant={gsvViewMode === 'summary' ? 'default' : 'ghost'} size="sm"
@@ -975,6 +1000,7 @@ const AccountView = ({
           <Button variant="outline" onClick={handleGSVExportExcel}>
             <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
           </Button>
+        </div>
         </div>
       </div>
     );
@@ -1091,7 +1117,7 @@ const AccountView = ({
                       <div className="flex items-center gap-2">
                         <ProfileIcon accountName={prog.account_name} />
                         <span>{prog.account_name}</span>
-                        <PlatformBadge platform="ga_site_visits" />
+                        <PlatformBadge platform="google_analytics" />
                       </div>
                     </TableCell>
                     <TableCell className="text-right font-medium">
@@ -1192,7 +1218,7 @@ const AccountView = ({
                     <div className="flex items-center gap-2">
                       <ProfileIcon accountName={prog} />
                       <span>{prog}</span>
-                      <PlatformBadge platform="ga_site_visits" />
+                      <PlatformBadge platform="google_analytics" />
                     </div>
                   </TableCell>
                   {gsvMonths.map(month => {
@@ -1351,7 +1377,31 @@ const AccountView = ({
 
     // --- Shared GA toolbar ---
     const gaToolbar = (
-      <div className="flex items-center justify-between mb-4">
+      <div className="space-y-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Datakälla:</span>
+          <button
+            onClick={() => onPlatformChange?.('ga_listens')}
+            className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
+              gaListensMode
+                ? 'bg-green-100 text-green-800 border-green-300'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+            }`}
+          >
+            Lyssningar
+          </button>
+          <button
+            onClick={() => onPlatformChange?.('ga_site_visits')}
+            className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
+              gaSiteVisitsMode
+                ? 'bg-green-100 text-green-800 border-green-300'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+            }`}
+          >
+            Sajtbesök
+          </button>
+        </div>
+        <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="inline-flex rounded-md border">
             <Button variant={gaViewMode === 'summary' ? 'default' : 'ghost'} size="sm"
@@ -1392,6 +1442,7 @@ const AccountView = ({
           <Button variant="outline" onClick={handleGAExportExcel}>
             <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
           </Button>
+        </div>
         </div>
       </div>
     );
@@ -1536,7 +1587,7 @@ const AccountView = ({
                             <div className="flex items-center gap-2">
                               <ProfileIcon accountName={prog.account_name} />
                               <span>{prog.account_name}</span>
-                              <PlatformBadge platform="ga_listens" />
+                              <PlatformBadge platform="google_analytics" />
                             </div>
                           )}
                         </TableCell>
@@ -1693,7 +1744,7 @@ const AccountView = ({
                         <div className="flex items-center gap-2">
                           <ProfileIcon accountName={prog} />
                           <span>{prog}</span>
-                          <PlatformBadge platform="ga_listens" />
+                          <PlatformBadge platform="google_analytics" />
                         </div>
                       </TableCell>
                       {gaMonths.map(month => {

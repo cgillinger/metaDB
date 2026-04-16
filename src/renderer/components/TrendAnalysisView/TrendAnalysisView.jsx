@@ -120,6 +120,7 @@ const TrendAnalysisView = ({
   gaSiteVisitsMode = false,
   accountGroups = [],
   onGroupsChanged = null,
+  onPlatformChange = null,
 }) => {
   const [selectedMetric, setSelectedMetric] = useState('interactions');
   // selectedAccounts stores composite keys: "account_name::platform" or "__group__<id>"
@@ -727,7 +728,7 @@ const TrendAnalysisView = ({
                             </span>
                           ) : (
                             <>
-                              <PlatformBadge platform={account.platform} />
+                              <PlatformBadge platform={account.platform === 'ga_listens' || account.platform === 'ga_site_visits' ? 'google_analytics' : account.platform} />
                               {account.is_collab ? <CollabBadge compact /> : null}
                             </>
                           )}
@@ -753,52 +754,43 @@ const TrendAnalysisView = ({
             </div>
 
             {/* Metric selector */}
-            {gaSiteVisitsMode ? (
+            {(gaListensMode || gaSiteVisitsMode) ? (
               <div>
                 <Label className="text-base font-medium mb-3 block">Datapunkt</Label>
                 <div className="space-y-2 border rounded-md p-3 bg-gray-50">
                   {[
-                    { key: 'visits', label: 'Besök' },
-                    { key: 'avg_daily_visits', label: 'Besök snitt/dag' },
-                  ].map(({ key, label }) => (
-                    <Label key={key} className="flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-white">
-                      <input
-                        type="radio"
-                        name="gsvMetric"
-                        checked={gsvMetric === key}
-                        onChange={() => setGsvMetric(key)}
-                        className="h-4 w-4 accent-blue-600"
-                      />
-                      <span className="text-sm flex items-center gap-1.5 font-medium">
-                        <PlatformBadge platform="ga_site_visits" />
-                        {label}
-                      </span>
-                    </Label>
-                  ))}
-                </div>
-              </div>
-            ) : gaListensMode ? (
-              <div>
-                <Label className="text-base font-medium mb-3 block">Datapunkt</Label>
-                <div className="space-y-2 border rounded-md p-3 bg-gray-50">
-                  {[
-                    { key: 'listens', label: 'Lyssningar' },
-                    { key: 'avg_daily_listens', label: 'Lyssningar snitt/dag' },
-                  ].map(({ key, label }) => (
-                    <Label key={key} className="flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-white">
-                      <input
-                        type="radio"
-                        name="gaMetric"
-                        checked={gaMetric === key}
-                        onChange={() => setGaMetric(key)}
-                        className="h-4 w-4 accent-blue-600"
-                      />
-                      <span className="text-sm flex items-center gap-1.5 font-medium">
-                        <PlatformBadge platform="ga_listens" />
-                        {label}
-                      </span>
-                    </Label>
-                  ))}
+                    { key: 'listens',           label: 'Lyssningar',            source: 'ga_listens'     },
+                    { key: 'avg_daily_listens', label: 'Lyssningar snitt/dag',  source: 'ga_listens'     },
+                    { key: 'visits',            label: 'Besök',                 source: 'ga_site_visits' },
+                    { key: 'avg_daily_visits',  label: 'Besök snitt/dag',       source: 'ga_site_visits' },
+                  ].map(({ key, label, source }) => {
+                    const isActive =
+                      (source === 'ga_listens'     && gaListensMode    && gaMetric  === key) ||
+                      (source === 'ga_site_visits' && gaSiteVisitsMode && gsvMetric === key);
+                    return (
+                      <Label key={key} className="flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-white">
+                        <input
+                          type="radio"
+                          name="gaMetric"
+                          checked={isActive}
+                          onChange={() => {
+                            if (source === 'ga_listens') {
+                              setGaMetric(key);
+                              if (!gaListensMode) onPlatformChange?.('ga_listens');
+                            } else {
+                              setGsvMetric(key);
+                              if (!gaSiteVisitsMode) onPlatformChange?.('ga_site_visits');
+                            }
+                          }}
+                          className="h-4 w-4 accent-blue-600"
+                        />
+                        <span className="text-sm flex items-center gap-1.5 font-medium">
+                          <PlatformBadge platform="google_analytics" />
+                          {label}
+                        </span>
+                      </Label>
+                    );
+                  })}
                 </div>
               </div>
             ) : (
@@ -877,7 +869,7 @@ const TrendAnalysisView = ({
                     <span className="text-sm font-medium truncate flex items-center gap-1" title={line.account_name}>
                       {line._isGroup && <Users className="w-3 h-3 text-blue-600 shrink-0" />}
                       {line.account_name.length > 20 ? line.account_name.substring(0, 17) + '...' : line.account_name}
-                      {!line._isGroup && <PlatformBadge platform={line.platform} />}
+                      {!line._isGroup && <PlatformBadge platform={line.platform === 'ga_listens' || line.platform === 'ga_site_visits' ? 'google_analytics' : line.platform} />}
                       {line.is_collab ? <CollabBadge compact /> : null}
                     </span>
                   </div>

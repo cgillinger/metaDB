@@ -404,29 +404,21 @@ const MainView = ({ onShowUploader }) => {
                 : `Instagram (${platformInfo.igPosts})`}
             </button>
           )}
-          {/* GA Listens button — always shown when GA data exists */}
-          {hasGAListens && (
+          {/* Unified Google Analytics button — shown when either GA source has data */}
+          {(hasGAListens || hasGASiteVisits) && (
             <button
-              onClick={() => setPlatformFilter('ga_listens')}
+              onClick={() => {
+                if (platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits') {
+                  setPlatformFilter(hasGAListens ? 'ga_listens' : 'ga_site_visits');
+                }
+              }}
               className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
-                platformFilter === 'ga_listens'
+                platformFilter === 'ga_listens' || platformFilter === 'ga_site_visits'
                   ? 'bg-green-600 text-white border-green-600'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
               }`}
             >
-              Lyssningar
-            </button>
-          )}
-          {hasGASiteVisits && (
-            <button
-              onClick={() => setPlatformFilter('ga_site_visits')}
-              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
-                platformFilter === 'ga_site_visits'
-                  ? 'bg-green-600 text-white border-green-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
-              }`}
-            >
-              Sajtbesök
+              Google Analytics
             </button>
           )}
         </div>
@@ -490,6 +482,7 @@ const MainView = ({ onShowUploader }) => {
             gaSiteVisitsMode={platformFilter === 'ga_site_visits'}
             accountGroups={accountGroups}
             onGroupsChanged={refreshAccountGroups}
+            onPlatformChange={setPlatformFilter}
           />
         </TabsContent>
 
@@ -512,6 +505,7 @@ const MainView = ({ onShowUploader }) => {
             gaSiteVisitsMode={platformFilter === 'ga_site_visits'}
             accountGroups={accountGroups}
             onGroupsChanged={refreshAccountGroups}
+            onPlatformChange={setPlatformFilter}
           />
         </TabsContent>
 
