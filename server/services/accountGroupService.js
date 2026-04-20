@@ -55,7 +55,7 @@ export function createAccountGroup(name, source, memberKeys) {
   const db = getDb();
 
   if (!name || !name.trim()) throw new Error('Gruppnamn krävs.');
-  if (!['ga_listens', 'posts'].includes(source)) throw new Error('Ogiltig källa.');
+  if (!['ga_listens', 'ga_site_visits', 'posts'].includes(source)) throw new Error('Ogiltig källa.');
   if (!memberKeys || memberKeys.length === 0) throw new Error('Minst en medlem krävs.');
 
   const result = db.transaction(() => {
