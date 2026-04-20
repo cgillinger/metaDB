@@ -516,7 +516,7 @@ const MainView = ({ onShowUploader }) => {
         </TabsContent>
 
         <TabsContent value="comparison">
-          <ComparisonView />
+          <ComparisonView periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="imports">
