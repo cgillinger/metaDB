@@ -8,7 +8,7 @@ import { api } from '@/utils/apiClient';
 import { COMPARISONS, DEFAULT_COMPARISON } from './comparisonConfig';
 import ComparisonChart from './ComparisonChart';
 
-const ComparisonView = () => {
+const ComparisonView = ({ periodParams = {} }) => {
   const [comparisonType, setComparisonType] = useState(DEFAULT_COMPARISON);
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('');
@@ -33,12 +33,15 @@ const ComparisonView = () => {
 
   useEffect(() => {
     if (!selectedAccount) return;
+    const months = periodParams.months
+      ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
+      : null;
     setLoading(true);
-    api[activeConfig.fetchMethod](selectedAccount, null)
+    api[activeConfig.fetchMethod](selectedAccount, months)
       .then(res => setData(res.data || []))
       .catch(err => console.error('Fel vid hämtning av jämförelsedata:', err))
       .finally(() => setLoading(false));
-  }, [selectedAccount, comparisonType, activeConfig]);
+  }, [selectedAccount, comparisonType, activeConfig, periodParams]);
 
   return (
     <Card>
