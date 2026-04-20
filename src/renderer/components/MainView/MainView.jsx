@@ -439,7 +439,7 @@ const MainView = ({ onShowUploader }) => {
         />
       )}
 
-      {activeView !== 'trend_analysis' && activeView !== 'imports' && platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && (
+      {activeView !== 'trend_analysis' && activeView !== 'imports' && activeView !== 'comparison' && platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && (
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
