@@ -227,6 +227,16 @@ export const api = {
       body: JSON.stringify({ accountName, platform }),
     }).then(handleResponse),
 
+  // Comparison View
+  getComparisonAccounts: () =>
+    fetch('/api/comparison/accounts').then(handleResponse),
+
+  getComparisonBesokLankklick: (account, months = null) => {
+    const params = new URLSearchParams({ account });
+    if (months && months.length > 0) params.set('months', months.join(','));
+    return fetch(`/api/comparison/besok-lankklick?${params}`).then(handleResponse);
+  },
+
   // Posts — delete by account + period
   deleteAccountPosts: (accountName, platform, periodParams) => {
     const params = new URLSearchParams({ accountName, platform, ...periodParams });
