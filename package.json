@@ -1,6 +1,6 @@
 {
   "name": "meta-analytics",
-  "version": "2.10.4",
+  "version": "2.10.5",
   "type": "module",
   "description": "Meta Analytics - Facebook & Instagram Statistics (SQLite version)",
   "scripts": {
