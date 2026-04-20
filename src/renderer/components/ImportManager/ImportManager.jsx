@@ -35,6 +35,7 @@ const PlatformBadge = ({ platform }) => {
 
 const SOURCE_LABELS = {
   ga_listens: 'GA-lyssningar',
+  ga_site_visits: 'GA-besök',
   posts: 'Inlägg',
 };
 
@@ -116,6 +117,14 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
           account_name: p.account_name,
           platform: 'ga_listens',
           key: `${p.account_name}::ga_listens`,
+        }));
+      } else if (source === 'ga_site_visits') {
+        const result = await api.getGASiteVisitsSummary(null);
+        const programmes = result.programmes || [];
+        return programmes.map(p => ({
+          account_name: p.account_name,
+          platform: 'ga_site_visits',
+          key: `${p.account_name}::ga_site_visits`,
         }));
       } else {
         const result = await api.getAccounts({ fields: 'views' });
@@ -266,7 +275,7 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
           {showSourcePicker && (
             <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-md border">
               <span className="text-sm font-medium">Källa:</span>
-              {['ga_listens', 'posts'].map(src => (
+              {['ga_listens', 'ga_site_visits', 'posts'].map(src => (
                 <label key={src} className="flex items-center gap-1.5 cursor-pointer text-sm">
                   <input
                     type="radio"
@@ -348,7 +357,9 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
                         <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                           group.source === 'ga_listens'
                             ? 'bg-green-100 text-green-800'
-                            : 'bg-blue-100 text-blue-800'
+                            : group.source === 'ga_site_visits'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-blue-100 text-blue-800'
                         }`}>
                           {SOURCE_LABELS[group.source]}
                         </span>
