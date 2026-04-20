@@ -35,8 +35,7 @@ function normalizeMetaName(metaName) {
 export function getBesokVsLankklick(accountName, months) {
   const db = getDb();
 
-  // accountName is the GA (short) name, e.g. "P4 Halland"
-  // Find the matching Meta name by normalizing all FB account names
+  // accountName is the GA (short) name — find matching Meta name
   const metaRows = db.prepare(`
     SELECT DISTINCT account_name FROM posts
     WHERE platform = 'facebook'
@@ -45,54 +44,74 @@ export function getBesokVsLankklick(accountName, months) {
 
   const metaName = metaRows.find(name => normalizeMetaName(name) === accountName);
 
+  // Meta: months where a Facebook CSV was imported
+  let metaImportedMonths;
+  if (months && months.length > 0) {
+    const placeholders = months.map(() => '?').join(',');
+    metaImportedMonths = new Set(
+      db.prepare(`SELECT DISTINCT month FROM imports WHERE platform = 'facebook' AND month IN (${placeholders})`)
+        .all(...months).map(r => r.month)
+    );
+  } else {
+    metaImportedMonths = new Set(
+      db.prepare(`SELECT DISTINCT month FROM imports WHERE platform = 'facebook'`)
+        .all().map(r => r.month)
+    );
+  }
+
+  // GA: months where any ga_site_visits data exists
+  let gaImportedMonths;
+  if (months && months.length > 0) {
+    const placeholders = months.map(() => '?').join(',');
+    gaImportedMonths = new Set(
+      db.prepare(`SELECT DISTINCT month FROM ga_site_visits WHERE month IN (${placeholders})`)
+        .all(...months).map(r => r.month)
+    );
+  } else {
+    gaImportedMonths = new Set(
+      db.prepare(`SELECT DISTINCT month FROM ga_site_visits`)
+        .all().map(r => r.month)
+    );
+  }
+
+  // Only show months where BOTH sources have imports
+  const bothImported = [...metaImportedMonths].filter(m => gaImportedMonths.has(m)).sort();
+
+  if (bothImported.length === 0) return [];
+
+  // Link clicks (may not have rows for every imported month)
   let linkClickRows = [];
   if (metaName) {
-    let linkClickSQL = `
+    const placeholders = bothImported.map(() => '?').join(',');
+    linkClickRows = db.prepare(`
       SELECT strftime('%Y-%m', publish_time) AS month, SUM(link_clicks) AS lankklick
       FROM posts
       WHERE account_name = ?
         AND platform = 'facebook'
+        AND strftime('%Y-%m', publish_time) IN (${placeholders})
         ${hiddenPostsFilter()}
-    `;
-    const linkClickParams = [metaName];
-
-    if (months && months.length > 0) {
-      const placeholders = months.map(() => '?').join(',');
-      linkClickSQL += ` AND strftime('%Y-%m', publish_time) IN (${placeholders})`;
-      linkClickParams.push(...months);
-    }
-
-    linkClickSQL += ` GROUP BY strftime('%Y-%m', publish_time)`;
-    linkClickRows = db.prepare(linkClickSQL).all(...linkClickParams);
+      GROUP BY strftime('%Y-%m', publish_time)
+    `).all(metaName, ...bothImported);
   }
 
-  let visitSQL = `
+  // Visits (may not have rows for every imported month)
+  const visitPlaceholders = bothImported.map(() => '?').join(',');
+  const visitRows = db.prepare(`
     SELECT month, visits AS besok
     FROM ga_site_visits
     WHERE account_name = ?
+      AND month IN (${visitPlaceholders})
       ${hiddenSiteVisitsFilter()}
-  `;
-  const visitParams = [accountName];
-
-  if (months && months.length > 0) {
-    const placeholders = months.map(() => '?').join(',');
-    visitSQL += ` AND month IN (${placeholders})`;
-    visitParams.push(...months);
-  }
-
-  const visitRows = db.prepare(visitSQL).all(...visitParams);
+  `).all(accountName, ...bothImported);
 
   const linkClickMap = new Map(linkClickRows.map(r => [r.month, r.lankklick]));
   const visitMap = new Map(visitRows.map(r => [r.month, r.besok]));
 
-  const linkClickMonths = new Set(linkClickRows.map(r => r.month));
-  const visitMonths = new Set(visitRows.map(r => r.month));
-  const commonMonths = [...linkClickMonths].filter(m => visitMonths.has(m)).sort();
-
-  return commonMonths.map(month => ({
+  // Use 0 (not null) for months where data was imported but account has no rows
+  return bothImported.map(month => ({
     month,
-    seriesA: visitMap.get(month) ?? null,
-    seriesB: linkClickMap.get(month) ?? null,
+    seriesA: visitMap.get(month) ?? 0,
+    seriesB: linkClickMap.get(month) ?? 0,
   }));
 }
 
