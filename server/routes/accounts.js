@@ -25,7 +25,7 @@ const SORT_SQL_MAP = {
   reach:          'reach',
   account_name:   'account_name',
   post_count:     'post_count',
-  posts_per_day:  'posts_per_day',
+  posts_per_day:  'post_count',
 };
 
 // GET /api/accounts?fields=views,reach,likes&sort=views&order=desc&platform=facebook
@@ -79,14 +79,7 @@ router.get('/', (req, res) => {
       SUM(saves) AS saves,
       SUM(follows) AS follows,
       SUM(interactions) AS interactions,
-      SUM(engagement) AS engagement,
-      MIN(publish_time) AS earliest_post,
-      MAX(publish_time) AS latest_post,
-      CASE
-        WHEN COUNT(*) > 1 AND julianday(MAX(publish_time)) > julianday(MIN(publish_time))
-        THEN ROUND(CAST(COUNT(*) AS REAL) / (julianday(MAX(publish_time)) - julianday(MIN(publish_time)) + 1), 2)
-        ELSE CAST(COUNT(*) AS REAL)
-      END AS posts_per_day
+      SUM(engagement) AS engagement
     FROM posts
     ${whereClause}
     GROUP BY account_name, platform
@@ -254,8 +247,13 @@ router.get('/', (req, res) => {
   if (days && days > 0) {
     for (const row of accounts) {
       row.avg_daily_link_clicks = Math.round(((row.link_clicks || 0) / days) * 10) / 10;
+      row.posts_per_day = Math.round(((row.post_count || 0) / days) * 100) / 100;
     }
     totals.avg_daily_link_clicks = Math.round(((totals.link_clicks || 0) / days) * 10) / 10;
+  } else {
+    for (const row of accounts) {
+      row.posts_per_day = 0;
+    }
   }
 
   res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, estimatedClicksByAccount, totalPeriodDays: days || 0 });
