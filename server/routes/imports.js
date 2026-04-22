@@ -64,6 +64,17 @@ router.get('/coverage', (req, res) => {
     // account_reach table may not exist yet
   }
 
+  // Get all months that have ig_account_reach data
+  let igReachMonthSet = new Set();
+  try {
+    const igReachRows = db.prepare(`
+      SELECT DISTINCT month FROM ig_account_reach ORDER BY month ASC
+    `).all();
+    for (const r of igReachRows) igReachMonthSet.add(r.month);
+  } catch (e) {
+    // ig_account_reach table may not exist yet
+  }
+
   // Count distinct programmes with GA listens data per month.
   // Used by the frontend to filter the period selector by platform.
   let gaListensCountMap = new Map();
@@ -103,6 +114,7 @@ router.get('/coverage', (req, res) => {
     has_facebook: r.fb_count > 0,
     has_instagram: r.ig_count > 0,
     has_reach: reachMonthSet.has(r.month),
+    has_ig_reach: igReachMonthSet.has(r.month),
     has_ga_listens: gaListensCountMap.has(r.month),
     ga_listens_count: gaListensCountMap.get(r.month) || 0,
     has_ga_site_visits: gaSiteVisitsCountMap.has(r.month),
@@ -121,6 +133,7 @@ router.get('/coverage', (req, res) => {
         has_facebook: true,
         has_instagram: false,
         has_reach: true,
+        has_ig_reach: igReachMonthSet.has(reachMonth),
         has_ga_listens: gaListensCountMap.has(reachMonth),
         ga_listens_count: gaListensCountMap.get(reachMonth) || 0,
         has_ga_site_visits: gaSiteVisitsCountMap.has(reachMonth),
@@ -129,9 +142,31 @@ router.get('/coverage', (req, res) => {
     }
   }
 
-  // Add GA-only months (no posts, no reach, but have ga_listens data)
+  // Add IG reach-only months (no posts, no FB reach, but have IG reach data)
+  const coveredByPostOrFBReach = new Set([...postMonthSet, ...reachMonthSet]);
+  for (const igMonth of igReachMonthSet) {
+    if (!coveredByPostOrFBReach.has(igMonth)) {
+      months.push({
+        month: igMonth,
+        post_count: 0,
+        fb_count: 0,
+        ig_count: 0,
+        has_facebook: false,
+        has_instagram: true,
+        has_reach: false,
+        has_ig_reach: true,
+        has_ga_listens: gaListensCountMap.has(igMonth),
+        ga_listens_count: gaListensCountMap.get(igMonth) || 0,
+        has_ga_site_visits: gaSiteVisitsCountMap.has(igMonth),
+        ga_site_visits_count: gaSiteVisitsCountMap.get(igMonth) || 0,
+      });
+    }
+  }
+
+  // Add GA-only months (no posts, no FB reach, no IG reach, but have ga_listens data)
+  const coveredByPostFBReachIGReach = new Set([...postMonthSet, ...reachMonthSet, ...igReachMonthSet]);
   for (const [gaMonth, gaCount] of gaListensCountMap) {
-    if (!postMonthSet.has(gaMonth) && !reachMonthSet.has(gaMonth)) {
+    if (!coveredByPostFBReachIGReach.has(gaMonth)) {
       months.push({
         month: gaMonth,
         post_count: 0,
@@ -140,6 +175,7 @@ router.get('/coverage', (req, res) => {
         has_facebook: false,
         has_instagram: false,
         has_reach: false,
+        has_ig_reach: false,
         has_ga_listens: true,
         ga_listens_count: gaCount,
         has_ga_site_visits: gaSiteVisitsCountMap.has(gaMonth),
@@ -148,8 +184,8 @@ router.get('/coverage', (req, res) => {
     }
   }
 
-  // Add GSV-only months (no posts, no reach, no ga_listens)
-  const coveredMonths = new Set([...postMonthSet, ...reachMonthSet, ...gaListensCountMap.keys()]);
+  // Add GSV-only months (no posts, no reach, no IG reach, no ga_listens)
+  const coveredMonths = new Set([...postMonthSet, ...reachMonthSet, ...igReachMonthSet, ...gaListensCountMap.keys()]);
   for (const [gsvMonth, gsvCount] of gaSiteVisitsCountMap) {
     if (!coveredMonths.has(gsvMonth)) {
       months.push({
@@ -160,6 +196,7 @@ router.get('/coverage', (req, res) => {
         has_facebook: false,
         has_instagram: false,
         has_reach: false,
+        has_ig_reach: false,
         has_ga_listens: false,
         ga_listens_count: 0,
         has_ga_site_visits: true,

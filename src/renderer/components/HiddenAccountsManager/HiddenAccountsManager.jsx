@@ -42,11 +42,12 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [accountsRes, hiddenRes, gaRes, gsvRes] = await Promise.all([
+      const [accountsRes, hiddenRes, gaRes, gsvRes, igReachAccountsRes] = await Promise.all([
         api.getAccounts({ fields: 'post_count' }),
         api.getHiddenAccounts(),
         api.getGAListensSummary(null, 'desc'),
         api.getGASiteVisitsSummary(null, 'desc'),
+        fetch('/api/ig-reach/accounts').then(r => r.json()).catch(() => ({ accounts: [] })),
       ]);
 
       const hiddenKeys = new Set(
@@ -65,7 +66,21 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
         post_count: p.total_visits,
       }));
 
-      const allAccounts = [...(accountsRes.accounts || []), ...gaAccounts, ...gsvAccounts];
+      // IG reach accounts — merge with instagram post accounts (dedup by name)
+      const igPostKeys = new Set(
+        (accountsRes.accounts || [])
+          .filter(a => a.platform === 'instagram')
+          .map(a => a.account_name)
+      );
+      const igReachOnlyAccounts = (igReachAccountsRes.accounts || [])
+        .filter(a => !igPostKeys.has(a.account_name))
+        .map(a => ({
+          account_name: a.account_name,
+          platform: 'instagram',
+          post_count: 0,
+        }));
+
+      const allAccounts = [...(accountsRes.accounts || []), ...gaAccounts, ...gsvAccounts, ...igReachOnlyAccounts];
       const visibleAccounts = allAccounts.filter(
         a => !hiddenKeys.has(makeKey(a.account_name, a.platform))
       );

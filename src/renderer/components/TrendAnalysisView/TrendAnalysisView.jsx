@@ -53,8 +53,8 @@ const TREND_METRICS_COMMON = {
   'post_count': 'Antal publiceringar',
   'posts_per_day': 'Publiceringar per dag'
 };
-const TREND_METRICS_FB = { 'account_reach': 'Kontoräckvidd (API)', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'avg_daily_link_clicks': 'Länkklick snitt/dag', 'other_clicks': 'Övriga klick', 'estimated_unique_clicks': 'Uppsk. unika länkklickare' };
-const TREND_METRICS_IG = { 'saves': 'Sparade', 'follows': 'Följare' };
+const TREND_METRICS_FB = { 'account_reach': 'Kontoräckvidd (API) FB', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'avg_daily_link_clicks': 'Länkklick snitt/dag', 'other_clicks': 'Övriga klick', 'estimated_unique_clicks': 'Uppsk. unika länkklickare' };
+const TREND_METRICS_IG = { 'ig_account_reach': 'Kontoräckvidd (API) IG', 'saves': 'Sparade', 'follows': 'Följare' };
 
 const CHART_COLORS = [
   '#2563EB', '#16A34A', '#EAB308', '#DC2626', '#7C3AED', '#EA580C',
@@ -63,7 +63,7 @@ const CHART_COLORS = [
 
 // Metrics that cannot be meaningfully summed across accounts in a group
 const NON_SUMMABLE_METRICS = new Set([
-  'reach', 'average_reach', 'account_reach', 'posts_per_day', 'estimated_unique_clicks',
+  'reach', 'average_reach', 'account_reach', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks',
 ]);
 
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
@@ -662,16 +662,19 @@ const TrendAnalysisView = ({
   const displayChartLines = gaSiteVisitsMode ? gsvChartLines : gaListensMode ? gaChartLines : chartLines;
   const displayYAxisConfig = gaSiteVisitsMode ? gsvYAxisConfig : gaListensMode ? gaYAxisConfig : yAxisConfig;
 
-  // Filter account list based on selected metric (account_reach = FB only)
+  // Filter account list based on selected metric (account_reach = FB only, ig_account_reach = IG only)
   // Groups are always kept in the list regardless of metric filter
   const filteredAccountList = useMemo(() => {
     if (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks') {
       return accountListWithGroups.filter(a => a._isGroup || a.platform === 'facebook');
     }
+    if (selectedMetric === 'ig_account_reach') {
+      return accountListWithGroups.filter(a => a._isGroup || a.platform === 'instagram');
+    }
     return accountListWithGroups;
   }, [accountListWithGroups, selectedMetric]);
 
-  // When metric changes to account_reach or estimated_unique_clicks, remove non-FB accounts from selection
+  // When metric changes to a platform-specific metric, remove incompatible accounts from selection
   useEffect(() => {
     if (!gaListensMode && !gaSiteVisitsMode && (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks')) {
       const fbKeys = new Set(
@@ -680,6 +683,14 @@ const TrendAnalysisView = ({
           .map(a => a.key)
       );
       setSelectedAccounts(prev => prev.filter(k => fbKeys.has(k)));
+    }
+    if (!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'ig_account_reach') {
+      const igKeys = new Set(
+        accountListWithGroups
+          .filter(a => a._isGroup || a.platform === 'instagram')
+          .map(a => a.key)
+      );
+      setSelectedAccounts(prev => prev.filter(k => igKeys.has(k)));
     }
   }, [gaListensMode, gaSiteVisitsMode, selectedMetric, accountListWithGroups]);
 
@@ -877,7 +888,7 @@ const TrendAnalysisView = ({
                         <span className="text-sm flex items-center gap-1.5">
                           {label}
                           {['account_reach', 'total_clicks', 'link_clicks', 'avg_daily_link_clicks', 'other_clicks', 'estimated_unique_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
-                          {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
+                          {['ig_account_reach', 'saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
                         </span>
                       </Label>
                     );

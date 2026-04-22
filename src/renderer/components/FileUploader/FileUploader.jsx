@@ -69,6 +69,13 @@ export function FileUploader({ onImportComplete, onCancel }) {
         preview.includes('Programnamn') &&
         preview.some(h => h.toLowerCase().includes('besök'));
 
+      // IG reach export: ig_username + ig_name + Reach + Period_start
+      const isIGReach = !isReach && !isGaListens && !isGaSiteVisits &&
+        preview.includes('ig_username') &&
+        preview.includes('ig_name') &&
+        preview.includes('Reach') &&
+        preview.includes('Period_start');
+
       // Try to extract month from filename pattern YYYY_MM or YYYY-MM
       let autoMonth = '';
       if (isReach || isGaListens || isGaSiteVisits) {
@@ -82,6 +89,7 @@ export function FileUploader({ onImportComplete, onCancel }) {
       if (isReach) fileType = 'reach';
       else if (isGaListens) fileType = 'ga_listens';
       else if (isGaSiteVisits) fileType = 'ga_site_visits';
+      else if (isIGReach) fileType = 'ig_reach';
 
       fileEntries.push({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
@@ -177,6 +185,8 @@ export function FileUploader({ onImportComplete, onCancel }) {
             throw new Error('Ange vilken månad sajtbesökfilen gäller.');
           }
           result = await api.uploadGASiteVisitsCSV(entry.file, entry.gaSiteVisitsMonth);
+        } else if (entry.fileType === 'ig_reach') {
+          result = await api.uploadIGReachCSV(entry.file);
         } else {
           result = await api.uploadCSV(entry.file);
         }
@@ -264,7 +274,7 @@ export function FileUploader({ onImportComplete, onCancel }) {
                       : 'Släpp CSV-filer här eller klicka för att bläddra'}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  Stöder Facebook- och Instagram-statistik från Meta Business Suite.
+                  Stöder Facebook- och Instagram-statistik från Meta Business Suite, kontoräckvidd (API) och Google Analytics.
                   Data sparas permanent i databasen.
                 </p>
               </div>
@@ -330,6 +340,11 @@ export function FileUploader({ onImportComplete, onCancel }) {
                         {entry.fileType === 'ga_site_visits' && (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 border border-green-300">
                             Sajtbesök (GA)
+                          </span>
+                        )}
+                        {entry.fileType === 'ig_reach' && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-pink-100 text-pink-800 border border-pink-300">
+                            Kontoräckvidd IG (API)
                           </span>
                         )}
                       </p>

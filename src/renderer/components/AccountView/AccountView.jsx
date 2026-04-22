@@ -113,7 +113,7 @@ const PAGE_SIZE_OPTIONS = [
 ];
 
 // Fields that cannot be meaningfully summed across accounts in a group
-const GROUP_NON_SUMMABLE = new Set(['reach', 'average_reach', 'account_reach', 'posts_per_day', 'estimated_unique_clicks']);
+const GROUP_NON_SUMMABLE = new Set(['reach', 'average_reach', 'account_reach', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks']);
 
 // Fields that CAN be summed
 const GROUP_SUMMABLE = new Set([
@@ -140,6 +140,8 @@ const AccountView = ({
   const [totalPeriodDays, setTotalPeriodDays] = useState(0);
   const [reachByAccount, setReachByAccount] = useState({});
   const [reachMonths, setReachMonths] = useState([]);
+  const [igReachByAccount, setIgReachByAccount] = useState({});
+  const [igReachMonths, setIgReachMonths] = useState([]);
   const [estimatedClicksByAccount, setEstimatedClicksByAccount] = useState({});
   const [showReachOnlyAccounts, setShowReachOnlyAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -207,6 +209,8 @@ const AccountView = ({
         setTotalPeriodDays(data.totalPeriodDays || 0);
         setReachByAccount(data.reachByAccount || {});
         setReachMonths(data.reachMonths || []);
+        setIgReachByAccount(data.igReachByAccount || {});
+        setIgReachMonths(data.igReachMonths || []);
         setEstimatedClicksByAccount(data.estimatedClicksByAccount || {});
       } catch (error) {
         console.error('Fel vid hämtning av kontodata:', error);
@@ -643,7 +647,7 @@ const AccountView = ({
 
   // Fields to display in the posts table — injects avg_daily_link_clicks after link_clicks
   const displayFields = useMemo(() => {
-    const base = selectedFields.filter(f => f !== 'account_reach');
+    const base = selectedFields.filter(f => f !== 'account_reach' && f !== 'ig_account_reach');
     if (!base.includes('link_clicks') || !totalPeriodDays) return base;
     const result = [];
     for (const f of base) {
@@ -668,6 +672,10 @@ const AccountView = ({
           const month = sortConfig.key.replace('reach_', '');
           aVal = a.platform === 'facebook' ? (reachByAccount[a.account_name]?.[month] ?? -1) : -1;
           bVal = b.platform === 'facebook' ? (reachByAccount[b.account_name]?.[month] ?? -1) : -1;
+        } else if (sortConfig.key.startsWith('ig_reach_')) {
+          const month = sortConfig.key.replace('ig_reach_', '');
+          aVal = a.platform === 'instagram' ? (igReachByAccount[a.account_name]?.[month] ?? -1) : -1;
+          bVal = b.platform === 'instagram' ? (igReachByAccount[b.account_name]?.[month] ?? -1) : -1;
         } else if (sortConfig.key === 'estimated_unique_clicks') {
           aVal = a.platform === 'facebook' ? (estimatedClicksByAccount[a.account_name]?.upper ?? -1) : -1;
           bVal = b.platform === 'facebook' ? (estimatedClicksByAccount[b.account_name]?.upper ?? -1) : -1;
@@ -759,7 +767,7 @@ const AccountView = ({
         formatted['Facebook URL'] = `https://www.facebook.com/${account.account_id}`;
       }
       for (const field of selectedFields) {
-        if (field === 'account_reach') continue;
+        if (field === 'account_reach' || field === 'ig_account_reach') continue;
         const displayName = getDisplayName(field);
         if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { formatted[displayName] = 'N/A'; continue; }
         if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') { formatted[displayName] = 'N/A'; continue; }
@@ -768,8 +776,16 @@ const AccountView = ({
       if (selectedFields.includes('account_reach')) {
         for (const month of reachMonths) {
           const headerName = formatReachColumnHeader(month);
-          // Account reach is Facebook-only — show dash for other platforms
           const reachMap = plat === 'facebook' ? reachByAccount[account.account_name] : undefined;
+          formatted[headerName] = reachMap?.[month] !== undefined
+            ? formatValue(reachMap[month])
+            : '—';
+        }
+      }
+      if (selectedFields.includes('ig_account_reach')) {
+        for (const month of igReachMonths) {
+          const headerName = `IG-räckvidd ${month}`;
+          const reachMap = plat === 'instagram' ? igReachByAccount[account.account_name] : undefined;
           formatted[headerName] = reachMap?.[month] !== undefined
             ? formatValue(reachMap[month])
             : '—';
@@ -2070,6 +2086,31 @@ const AccountView = ({
                   </div>
                 </TableHead>
               )}
+              {selectedFields.includes('ig_account_reach') && igReachMonths.length > 0 && igReachMonths.map(month => (
+                <TableHead
+                  key={`ig-reach-${month}`}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => setSortConfig(current => ({
+                    key: `ig_reach_${month}`,
+                    direction: current.key === `ig_reach_${month}` && current.direction === 'asc' ? 'desc' : 'asc'
+                  }))}
+                  title="API-uttag täcker max 30 dagar. 31-dagarsmånader kan vara ~1 % lägre."
+                >
+                  <div className="flex items-center justify-end whitespace-nowrap">
+                    {formatReachColumnHeader(month)}
+                    <PlatformBadge platform="instagram" />
+                    {getSortIcon(`ig_reach_${month}`)}
+                  </div>
+                </TableHead>
+              ))}
+              {selectedFields.includes('ig_account_reach') && igReachMonths.length === 0 && (
+                <TableHead>
+                  <div className="flex items-center justify-end whitespace-nowrap">
+                    Kontoräckvidd IG
+                    <PlatformBadge platform="instagram" />
+                  </div>
+                </TableHead>
+              )}
               {showDeleteColumn && (
                 <TableHead className="w-12 text-center text-red-500">Radera</TableHead>
               )}
@@ -2104,6 +2145,12 @@ const AccountView = ({
               {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
                 <TableCell className="text-right font-semibold text-primary">—</TableCell>
               )}
+              {selectedFields.includes('ig_account_reach') && igReachMonths.length > 0 && igReachMonths.map(month => (
+                <TableCell key={`total-ig-reach-${month}`} className="text-right font-semibold text-primary">—</TableCell>
+              ))}
+              {selectedFields.includes('ig_account_reach') && igReachMonths.length === 0 && (
+                <TableCell className="text-right font-semibold text-primary">—</TableCell>
+              )}
               {showDeleteColumn && <TableCell />}
               <TableCell></TableCell>
             </TableRow>
@@ -2135,6 +2182,7 @@ const AccountView = ({
                           2 +
                           displayFields.length +
                           (selectedFields.includes('account_reach') ? Math.max(reachMonths.length, 1) : 0) +
+                          (selectedFields.includes('ig_account_reach') ? Math.max(igReachMonths.length, 1) : 0) +
                           (showDeleteColumn ? 1 : 0) +
                           1
                         }
@@ -2216,6 +2264,34 @@ const AccountView = ({
                       );
                     })}
                     {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
+                      <TableCell className="text-right">
+                        <span className="text-muted-foreground text-xs">{isGroup ? '—' : 'Saknas'}</span>
+                      </TableCell>
+                    )}
+                    {selectedFields.includes('ig_account_reach') && igReachMonths.length > 0 && igReachMonths.map(month => {
+                      if (isGroup) {
+                        return (
+                          <TableCell key={`ig-reach-${month}`} className="text-right">
+                            <span className="text-muted-foreground">—</span>
+                          </TableCell>
+                        );
+                      }
+                      const igReachMap = account.platform === 'instagram' ? igReachByAccount[account.account_name] : undefined;
+                      const igReachValue = igReachMap ? igReachMap[month] : undefined;
+                      return (
+                        <TableCell key={`ig-reach-${month}`} className="text-right">
+                          {igReachValue !== undefined ? (
+                            <div className="flex items-center justify-end group">
+                              <span>{formatValue(igReachValue)}</span>
+                              <CopyButton value={igReachValue} field={`ig-reach-${month}`} rowId={`${account.account_name}-ig-reach-${month}`} />
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground cursor-help" title="IG-kontoräckvidd saknas för denna månad">—</span>
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                    {selectedFields.includes('ig_account_reach') && igReachMonths.length === 0 && (
                       <TableCell className="text-right">
                         <span className="text-muted-foreground text-xs">{isGroup ? '—' : 'Saknas'}</span>
                       </TableCell>

@@ -44,6 +44,7 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
   const [stats, setStats] = useState(null);
   const [coverage, setCoverage] = useState(null);
   const [reachMonths, setReachMonths] = useState([]);
+  const [igReachMonths, setIgReachMonths] = useState([]);
   const [gaListensMonths, setGaListensMonths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -63,17 +64,19 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [importsData, statsData, coverageData, reachMonthsData, gaMonthsData] = await Promise.all([
+      const [importsData, statsData, coverageData, reachMonthsData, igReachMonthsData, gaMonthsData] = await Promise.all([
         api.getImports(),
         api.getStats(),
         api.getCoverage().catch(() => null),
         api.getReachMonths().catch(() => ({ months: [] })),
+        api.getIGReachMonths().catch(() => ({ months: [] })),
         api.getGAListensMonths().catch(() => ({ months: [] })),
       ]);
       setImports(importsData);
       setStats(statsData);
       setCoverage(coverageData);
       setReachMonths(reachMonthsData.months || []);
+      setIgReachMonths(igReachMonthsData.months || []);
       setGaListensMonths(gaMonthsData.months || []);
     } catch (error) {
       console.error('Fel vid hämtning av importdata:', error);
@@ -463,6 +466,39 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
             </div>
             <p className="text-xs text-muted-foreground mt-2">
               Räckviddsdata importerad från Metas Graph API. Gäller bara Facebook.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* IG Reach data */}
+      {igReachMonths.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Kontoräckvidd (Instagram API)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {igReachMonths.map(month => (
+                <div key={month} className="flex items-center gap-1 px-3 py-1.5 rounded border bg-pink-50 border-pink-200 text-pink-800 text-sm font-medium">
+                  {month}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Radera IG-räckviddsdata för ${month}?`)) {
+                        api.deleteIGReachMonth(month).then(fetchData);
+                      }
+                    }}
+                    className="ml-1 hover:text-red-600"
+                    title="Radera"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Räckviddsdata importerad från Metas Graph API. Gäller bara Instagram.
+              OBS: API-uttag täcker max 30 dagar — 31-dagarsmånader kan vara ~1 % lägre.
             </p>
           </CardContent>
         </Card>

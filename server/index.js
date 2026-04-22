@@ -14,6 +14,7 @@ import accountsRouter from './routes/accounts.js';
 import postTypesRouter from './routes/postTypes.js';
 import trendsRouter from './routes/trends.js';
 import reachRouter from './routes/reach.js';
+import igReachRouter from './routes/igReach.js';
 import gaListensRouter from './routes/gaListens.js';
 import gaSiteVisitsRouter from './routes/gaSiteVisits.js';
 import accountGroupsRouter from './routes/accountGroups.js';
@@ -83,6 +84,7 @@ app.use('/api/accounts', accountsRouter);
 app.use('/api/post-types', postTypesRouter);
 app.use('/api/trends', trendsRouter);
 app.use('/api/reach', reachRouter);
+app.use('/api/ig-reach', igReachRouter);
 app.use('/api/ga-listens', gaListensRouter); // Google Analytics listening data
 app.use('/api/ga-site-visits', gaSiteVisitsRouter); // Google Analytics site visit data
 app.use('/api/account-groups', accountGroupsRouter);
