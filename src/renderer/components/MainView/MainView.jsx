@@ -26,6 +26,25 @@ import { api } from '@/utils/apiClient';
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'account_reach', 'estimated_unique_clicks'];
 const IG_ONLY_FIELDS = ['saves', 'follows', 'ig_account_reach'];
 
+const FIELD_CATEGORIES = [
+  {
+    label: 'Räckvidd & visningar',
+    fields: ['views', 'average_reach', 'reach', 'account_reach', 'ig_account_reach', 'follows'],
+  },
+  {
+    label: 'Engagemang',
+    fields: ['engagement', 'interactions', 'likes', 'comments', 'shares', 'saves'],
+  },
+  {
+    label: 'Klick',
+    fields: ['total_clicks', 'link_clicks', 'other_clicks', 'estimated_unique_clicks'],
+  },
+  {
+    label: 'Publicering',
+    fields: ['post_count', 'posts_per_day'],
+  },
+];
+
 const POST_VIEW_AVAILABLE_FIELDS = {
   'reach': 'Räckvidd',
   'views': 'Visningar',
@@ -104,27 +123,40 @@ const EngagementLegend = ({ activePlatform }) => (
 );
 
 const ValueSelector = ({ availableFields, selectedFields, onSelectionChange }) => (
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-    {Object.entries(availableFields).map(([key, label]) => (
-      <div key={key} className="flex items-center space-x-2">
-        <Checkbox
-          id={key}
-          checked={selectedFields.includes(key)}
-          onCheckedChange={(checked) => {
-            if (checked) {
-              onSelectionChange([...selectedFields, key]);
-            } else {
-              onSelectionChange(selectedFields.filter(f => f !== key));
-            }
-          }}
-        />
-        <Label htmlFor={key} className="flex items-center gap-1.5">
-          {label}
-          {['total_clicks', 'link_clicks', 'other_clicks', 'account_reach', 'estimated_unique_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
-          {['saves', 'follows', 'ig_account_reach'].includes(key) && <PlatformBadge platform="instagram" />}
-        </Label>
-      </div>
-    ))}
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 p-4">
+    {FIELD_CATEGORIES.map(category => {
+      const visibleFields = category.fields.filter(f => f in availableFields);
+      if (visibleFields.length === 0) return null;
+      return (
+        <div key={category.label}>
+          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3 pb-1.5 border-b">
+            {category.label}
+          </h4>
+          <div className="space-y-2.5">
+            {visibleFields.map(key => (
+              <div key={key} className="flex items-center space-x-2">
+                <Checkbox
+                  id={key}
+                  checked={selectedFields.includes(key)}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      onSelectionChange([...selectedFields, key]);
+                    } else {
+                      onSelectionChange(selectedFields.filter(f => f !== key));
+                    }
+                  }}
+                />
+                <Label htmlFor={key} className="flex items-center gap-1.5">
+                  {availableFields[key]}
+                  {FB_ONLY_FIELDS.includes(key) && <PlatformBadge platform="facebook" />}
+                  {IG_ONLY_FIELDS.includes(key) && <PlatformBadge platform="instagram" />}
+                </Label>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    })}
   </div>
 );
 
