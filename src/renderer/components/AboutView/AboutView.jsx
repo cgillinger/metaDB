@@ -65,6 +65,7 @@ const IG_METRICS = [
   { name: 'Delningar', key: 'shares', desc: 'Hur många gånger inlägget delats vidare.', source: 'CSV: "Delningar"', summable: 'Ja' },
   { name: 'Sparade', key: 'saves', desc: 'Hur många gånger någon sparat inlägget för att titta på det senare.', source: 'CSV: "Sparade objekt"', summable: 'Ja' },
   { name: 'Följer', key: 'follows', desc: 'Hur många nya följare kontot fick som direkt följd av detta inlägg.', source: 'CSV: "Följer"', summable: 'Ja' },
+  { name: 'Kontoräckvidd', key: 'ig_account_reach', desc: 'Hur många unika konton som nåtts av kontots innehåll under en hel månad. Hämtas separat från Meta via Graph API, inte från exportfilerna för enskilda inlägg. Inkluderar både organisk och betald räckvidd. OBS: API-uttag täcker max 30 dagar — 31-dagarsmånader kan vara cirka 1 % lägre än verklig räckvidd.', source: 'API-export', summable: 'Nej — kan inte summeras meningsfullt' },
   { name: 'Interaktioner', key: 'interactions', desc: 'Summan av gilla-markeringar, kommentarer och delningar.', source: 'Beräknad', summable: 'Ja' },
   { name: 'Engagemang', key: 'engagement', desc: 'Summan av gilla-markeringar, kommentarer, delningar, sparade och nya följare. Fångar all aktivitet på inlägget.', source: 'Beräknad', summable: 'Ja' },
 ];
