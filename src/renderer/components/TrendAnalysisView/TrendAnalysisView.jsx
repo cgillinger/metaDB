@@ -42,6 +42,47 @@ const sortGAPrograms = (a, b) => {
   return a.localeCompare(b, 'sv');
 };
 
+const METRIC_CATEGORIES = [
+  {
+    label: 'RÄCKVIDD & VISNINGAR',
+    metrics: [
+      { key: 'views', label: 'Visningar' },
+      { key: 'average_reach', label: 'Räckvidd (genomsnitt)' },
+      { key: 'account_reach', label: 'Kontoräckvidd (API)', platform: 'facebook' },
+      { key: 'ig_account_reach', label: 'Kontoräckvidd (API)', platform: 'instagram' },
+      { key: 'follows', label: 'Följare', platform: 'instagram' },
+    ],
+  },
+  {
+    label: 'ENGAGEMANG',
+    metrics: [
+      { key: 'engagement', label: 'Totalt engagemang' },
+      { key: 'interactions', label: 'Interaktioner (gilla+komm+dela)' },
+      { key: 'likes', label: 'Gilla-markeringar / Reaktioner' },
+      { key: 'comments', label: 'Kommentarer' },
+      { key: 'shares', label: 'Delningar' },
+      { key: 'saves', label: 'Sparade', platform: 'instagram' },
+    ],
+  },
+  {
+    label: 'KLICK',
+    metrics: [
+      { key: 'total_clicks', label: 'Totalt antal klick', platform: 'facebook' },
+      { key: 'link_clicks', label: 'Länkklick', platform: 'facebook' },
+      { key: 'avg_daily_link_clicks', label: 'Länkklick snitt/dag', platform: 'facebook' },
+      { key: 'other_clicks', label: 'Övriga klick', platform: 'facebook' },
+      { key: 'estimated_unique_clicks', label: 'Uppsk. unika länkklickare', platform: 'facebook' },
+    ],
+  },
+  {
+    label: 'PUBLICERING',
+    metrics: [
+      { key: 'post_count', label: 'Antal publiceringar' },
+      { key: 'posts_per_day', label: 'Publiceringar per dag' },
+    ],
+  },
+];
+
 const TREND_METRICS_COMMON = {
   'views': 'Visningar',
   'average_reach': 'Genomsnittlig räckvidd',
@@ -130,6 +171,8 @@ const TrendAnalysisView = ({
   const [groupNotice, setGroupNotice] = useState(null);
 
   const [accountList, setAccountList] = useState([]);
+  const [igReachAccountNames, setIgReachAccountNames] = useState(new Set());
+  const [fbReachAccountNames, setFbReachAccountNames] = useState(new Set());
   const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -281,6 +324,8 @@ const TrendAnalysisView = ({
           is_collab: a.is_collab,
           key: accountKey(a.account_name, a.platform),
         })));
+        setIgReachAccountNames(new Set(Object.keys(data.igReachByAccount || {})));
+        setFbReachAccountNames(new Set(Object.keys(data.reachByAccount || {})));
       } catch (error) {
         console.error('Fel vid hämtning av konton:', error);
       }
@@ -666,20 +711,24 @@ const TrendAnalysisView = ({
   // Groups are always kept in the list regardless of metric filter
   const filteredAccountList = useMemo(() => {
     if (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks') {
-      return accountListWithGroups.filter(a => a._isGroup || a.platform === 'facebook');
+      return accountListWithGroups.filter(a =>
+        a._isGroup || (a.platform === 'facebook' && fbReachAccountNames.has(a.account_name))
+      );
     }
     if (selectedMetric === 'ig_account_reach') {
-      return accountListWithGroups.filter(a => a._isGroup || a.platform === 'instagram');
+      return accountListWithGroups.filter(a =>
+        a._isGroup || (a.platform === 'instagram' && igReachAccountNames.has(a.account_name))
+      );
     }
     return accountListWithGroups;
-  }, [accountListWithGroups, selectedMetric]);
+  }, [accountListWithGroups, selectedMetric, igReachAccountNames, fbReachAccountNames]);
 
   // When metric changes to a platform-specific metric, remove incompatible accounts from selection
   useEffect(() => {
     if (!gaListensMode && !gaSiteVisitsMode && (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks')) {
       const fbKeys = new Set(
         accountListWithGroups
-          .filter(a => a._isGroup || a.platform === 'facebook')
+          .filter(a => a._isGroup || (a.platform === 'facebook' && fbReachAccountNames.has(a.account_name)))
           .map(a => a.key)
       );
       setSelectedAccounts(prev => prev.filter(k => fbKeys.has(k)));
@@ -687,12 +736,12 @@ const TrendAnalysisView = ({
     if (!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'ig_account_reach') {
       const igKeys = new Set(
         accountListWithGroups
-          .filter(a => a._isGroup || a.platform === 'instagram')
+          .filter(a => a._isGroup || (a.platform === 'instagram' && igReachAccountNames.has(a.account_name)))
           .map(a => a.key)
       );
       setSelectedAccounts(prev => prev.filter(k => igKeys.has(k)));
     }
-  }, [gaListensMode, gaSiteVisitsMode, selectedMetric, accountListWithGroups]);
+  }, [gaListensMode, gaSiteVisitsMode, selectedMetric, accountListWithGroups, igReachAccountNames, fbReachAccountNames]);
 
   // Final display account list
   const activeAccountList = gaSiteVisitsMode
@@ -863,34 +912,50 @@ const TrendAnalysisView = ({
             ) : (
               <div>
                 <Label className="text-base font-medium mb-3 block">Välj datapunkt att analysera</Label>
-                <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3 bg-gray-50">
-                  {Object.entries(availableMetrics).map(([key, label]) => {
-                    const disabledByGroup = hasGroupSelected && NON_SUMMABLE_METRICS.has(key);
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border rounded-md p-4 bg-gray-50">
+                  {METRIC_CATEGORIES.map(category => {
+                    const visibleMetrics = category.metrics.filter(m => {
+                      if (m.platform === 'facebook' && !hasFacebook) return false;
+                      if (m.platform === 'instagram' && !hasInstagram) return false;
+                      return true;
+                    });
+                    if (visibleMetrics.length === 0) return null;
                     return (
-                      <Label
-                        key={key}
-                        className={`flex items-center gap-2 p-1 rounded ${
-                          disabledByGroup
-                            ? 'opacity-40 cursor-not-allowed'
-                            : 'cursor-pointer hover:bg-white'
-                        }`}
-                        title={disabledByGroup ? 'Kan ej aggregeras för kontogrupper' : undefined}
-                      >
-                        <input
-                          type="radio"
-                          name="trendMetric"
-                          value={key}
-                          checked={selectedMetric === key}
-                          onChange={() => !disabledByGroup && setSelectedMetric(key)}
-                          disabled={disabledByGroup}
-                          className="h-4 w-4 border-gray-300 accent-primary"
-                        />
-                        <span className="text-sm flex items-center gap-1.5">
-                          {label}
-                          {['account_reach', 'total_clicks', 'link_clicks', 'avg_daily_link_clicks', 'other_clicks', 'estimated_unique_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
-                          {['ig_account_reach', 'saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
-                        </span>
-                      </Label>
+                      <div key={category.label}>
+                        <p className="text-xs font-semibold text-muted-foreground tracking-wide mb-2">
+                          {category.label}
+                        </p>
+                        <div className="space-y-1">
+                          {visibleMetrics.map(m => {
+                            const disabledByGroup = hasGroupSelected && NON_SUMMABLE_METRICS.has(m.key);
+                            return (
+                              <Label
+                                key={m.key}
+                                className={`flex items-center gap-2 p-1 rounded ${
+                                  disabledByGroup
+                                    ? 'opacity-40 cursor-not-allowed'
+                                    : 'cursor-pointer hover:bg-white'
+                                }`}
+                                title={disabledByGroup ? 'Kan ej aggregeras för kontogrupper' : undefined}
+                              >
+                                <input
+                                  type="radio"
+                                  name="trendMetric"
+                                  value={m.key}
+                                  checked={selectedMetric === m.key}
+                                  onChange={() => !disabledByGroup && setSelectedMetric(m.key)}
+                                  disabled={disabledByGroup}
+                                  className="h-4 w-4 border-gray-300 accent-primary"
+                                />
+                                <span className="text-sm flex items-center gap-1.5">
+                                  {m.label}
+                                  {m.platform && <PlatformBadge platform={m.platform} />}
+                                </span>
+                              </Label>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
