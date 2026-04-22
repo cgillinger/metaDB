@@ -912,7 +912,7 @@ const TrendAnalysisView = ({
             ) : (
               <div>
                 <Label className="text-base font-medium mb-3 block">Välj datapunkt att analysera</Label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border rounded-md p-4 bg-gray-50">
+                <div className="space-y-3 max-h-64 overflow-y-auto border rounded-md p-3 bg-gray-50">
                   {METRIC_CATEGORIES.map(category => {
                     const visibleMetrics = category.metrics.filter(m => {
                       if (m.platform === 'facebook' && !hasFacebook) return false;
@@ -922,7 +922,7 @@ const TrendAnalysisView = ({
                     if (visibleMetrics.length === 0) return null;
                     return (
                       <div key={category.label}>
-                        <p className="text-xs font-semibold text-muted-foreground tracking-wide mb-2">
+                        <p className="text-xs font-semibold text-muted-foreground tracking-wide mb-1 mt-1 uppercase">
                           {category.label}
                         </p>
                         <div className="space-y-1">
