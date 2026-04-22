@@ -6,6 +6,16 @@
  * remain here as they are browser-only operations.
  */
 
+const fetchWithRetry = async (url, options = {}, retries = 2) => {
+  const res = await fetch(url, options);
+  if (res.status === 429 && retries > 0) {
+    const delay = (3 - retries) * 500;
+    await new Promise(r => setTimeout(r, delay));
+    return fetchWithRetry(url, options, retries - 1);
+  }
+  return res;
+};
+
 const handleResponse = async (res) => {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -16,7 +26,7 @@ const handleResponse = async (res) => {
 
 export const api = {
   // Imports
-  getImports: () => fetch('/api/imports').then(handleResponse),
+  getImports: () => fetchWithRetry('/api/imports').then(handleResponse),
   uploadCSV: (file) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -24,31 +34,31 @@ export const api = {
   },
   deleteImport: (id) =>
     fetch(`/api/imports/${id}`, { method: 'DELETE' }).then(handleResponse),
-  getCoverage: () => fetch('/api/imports/coverage').then(handleResponse),
+  getCoverage: () => fetchWithRetry('/api/imports/coverage').then(handleResponse),
 
   // Posts (server-side pagination)
   getPosts: (params) =>
-    fetch(`/api/posts?${new URLSearchParams(params)}`).then(handleResponse),
+    fetchWithRetry(`/api/posts?${new URLSearchParams(params)}`).then(handleResponse),
 
   // Account aggregation (SQL-based)
   getAccounts: (params) =>
-    fetch(`/api/accounts?${new URLSearchParams(params)}`).then(handleResponse),
+    fetchWithRetry(`/api/accounts?${new URLSearchParams(params)}`).then(handleResponse),
 
   // Post type aggregation
   getPostTypes: (params) =>
-    fetch(`/api/post-types?${new URLSearchParams(params)}`).then(handleResponse),
+    fetchWithRetry(`/api/post-types?${new URLSearchParams(params)}`).then(handleResponse),
 
   // Trend analysis
   getTrends: (params) =>
-    fetch(`/api/trends?${new URLSearchParams(params)}`).then(handleResponse),
+    fetchWithRetry(`/api/trends?${new URLSearchParams(params)}`).then(handleResponse),
 
   // Maintenance
   vacuum: () =>
     fetch('/api/maintenance/vacuum', { method: 'POST' }).then(handleResponse),
   redetectCollab: () =>
     fetch('/api/maintenance/redetect-collab', { method: 'POST' }).then(handleResponse),
-  getStats: () => fetch('/api/maintenance/stats').then(handleResponse),
-  getHealth: () => fetch('/api/health').then(handleResponse),
+  getStats: () => fetchWithRetry('/api/maintenance/stats').then(handleResponse),
+  getHealth: () => fetchWithRetry('/api/health').then(handleResponse),
   getBackupUrl: () => '/api/maintenance/backup',
 
   // Reach imports
@@ -58,7 +68,7 @@ export const api = {
     if (month) formData.append('month', month);
     return fetch('/api/reach', { method: 'POST', body: formData }).then(handleResponse);
   },
-  getReachMonths: () => fetch('/api/reach/months').then(handleResponse),
+  getReachMonths: () => fetchWithRetry('/api/reach/months').then(handleResponse),
   deleteReachMonth: (month) =>
     fetch(`/api/reach/${month}`, { method: 'DELETE' }).then(handleResponse),
 
@@ -68,7 +78,7 @@ export const api = {
     formData.append('file', file);
     return fetch('/api/ig-reach', { method: 'POST', body: formData }).then(handleResponse);
   },
-  getIGReachMonths: () => fetch('/api/ig-reach/months').then(handleResponse),
+  getIGReachMonths: () => fetchWithRetry('/api/ig-reach/months').then(handleResponse),
   deleteIGReachMonth: (month) =>
     fetch(`/api/ig-reach/${month}`, { method: 'DELETE' }).then(handleResponse),
 
@@ -94,7 +104,7 @@ export const api = {
     const params = months && months.length > 0
       ? '?' + new URLSearchParams({ months: months.join(',') })
       : '';
-    return fetch(`/api/ga-listens${params}`).then(handleResponse);
+    return fetchWithRetry(`/api/ga-listens${params}`).then(handleResponse);
   },
   /**
    * Fetch aggregated GA listens per programme, summed across selected months.
@@ -107,10 +117,10 @@ export const api = {
     if (months && months.length > 0) params.set('months', months.join(','));
     if (order) params.set('order', order);
     const qs = params.toString();
-    return fetch(`/api/ga-listens/summary${qs ? '?' + qs : ''}`).then(handleResponse);
+    return fetchWithRetry(`/api/ga-listens/summary${qs ? '?' + qs : ''}`).then(handleResponse);
   },
   /** @returns {Promise<{months: string[]}>} */
-  getGAListensMonths: () => fetch('/api/ga-listens/months').then(handleResponse),
+  getGAListensMonths: () => fetchWithRetry('/api/ga-listens/months').then(handleResponse),
   /** @param {string} month - 'YYYY-MM' */
   deleteGAListensMonth: (month) =>
     fetch(`/api/ga-listens/${month}`, { method: 'DELETE' }).then(handleResponse),
@@ -143,7 +153,7 @@ export const api = {
     const params = months && months.length > 0
       ? '?' + new URLSearchParams({ months: months.join(',') })
       : '';
-    return fetch(`/api/ga-site-visits${params}`).then(handleResponse);
+    return fetchWithRetry(`/api/ga-site-visits${params}`).then(handleResponse);
   },
 
   getGASiteVisitsSummary: (months, order = 'desc') => {
@@ -151,10 +161,10 @@ export const api = {
     if (months && months.length > 0) params.set('months', months.join(','));
     if (order) params.set('order', order);
     const qs = params.toString();
-    return fetch(`/api/ga-site-visits/summary${qs ? '?' + qs : ''}`).then(handleResponse);
+    return fetchWithRetry(`/api/ga-site-visits/summary${qs ? '?' + qs : ''}`).then(handleResponse);
   },
 
-  getGASiteVisitsMonths: () => fetch('/api/ga-site-visits/months').then(handleResponse),
+  getGASiteVisitsMonths: () => fetchWithRetry('/api/ga-site-visits/months').then(handleResponse),
 
   deleteGASiteVisitsMonth: (month) =>
     fetch(`/api/ga-site-visits/${month}`, { method: 'DELETE' }).then(handleResponse),
@@ -179,7 +189,7 @@ export const api = {
    */
   getAccountGroups: (source = null) => {
     const params = source ? `?source=${source}` : '';
-    return fetch(`/api/account-groups${params}`).then(handleResponse);
+    return fetchWithRetry(`/api/account-groups${params}`).then(handleResponse);
   },
   /**
    * Create a new account group.
@@ -223,7 +233,7 @@ export const api = {
   },
 
   // Hidden accounts
-  getHiddenAccounts: () => fetch('/api/hidden-accounts').then(handleResponse),
+  getHiddenAccounts: () => fetchWithRetry('/api/hidden-accounts').then(handleResponse),
   hideAccount: (accountName, platform) =>
     fetch('/api/hidden-accounts', {
       method: 'POST',
@@ -239,12 +249,12 @@ export const api = {
 
   // Comparison View
   getComparisonAccounts: () =>
-    fetch('/api/comparison/accounts').then(handleResponse),
+    fetchWithRetry('/api/comparison/accounts').then(handleResponse),
 
   getComparisonBesokLankklick: (account, months = null) => {
     const params = new URLSearchParams({ account });
     if (months && months.length > 0) params.set('months', months.join(','));
-    return fetch(`/api/comparison/besok-lankklick?${params}`).then(handleResponse);
+    return fetchWithRetry(`/api/comparison/besok-lankklick?${params}`).then(handleResponse);
   },
 
   // Posts — delete by account + period
