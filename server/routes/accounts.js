@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
-import { hiddenPostsFilter, hiddenReachFilter } from '../services/hiddenAccounts.js';
+import { hiddenPostsFilter, hiddenReachFilter, hiddenIGReachFilter } from '../services/hiddenAccounts.js';
 import { periodDays } from '../utils/dateHelpers.js';
 
 const router = Router();
@@ -205,6 +205,34 @@ router.get('/', (req, res) => {
     };
   }
 
+  // IG account reach — same pattern as FB reach but from ig_account_reach
+  let igReachData = [];
+  if (reachMonths.length > 0) {
+    const igPlaceholders = reachMonths.map(() => '?').join(',');
+    igReachData = db.prepare(`
+      SELECT account_name, month, reach
+      FROM ig_account_reach
+      WHERE month IN (${igPlaceholders})
+      ${hiddenIGReachFilter()}
+      ORDER BY account_name, month
+    `).all(...reachMonths);
+  } else {
+    igReachData = db.prepare(`
+      SELECT account_name, month, reach
+      FROM ig_account_reach
+      WHERE 1=1
+      ${hiddenIGReachFilter()}
+      ORDER BY account_name, month
+    `).all();
+  }
+
+  const igReachByAccount = {};
+  for (const row of igReachData) {
+    if (!igReachByAccount[row.account_name]) igReachByAccount[row.account_name] = {};
+    igReachByAccount[row.account_name][row.month] = row.reach;
+  }
+  const igReachMonthsAvailable = [...new Set(igReachData.map(r => r.month))].sort();
+
   // Available reach months (only months that actually have data)
   const reachMonthsAvailable = [...new Set(reachData.map(r => r.month))].sort();
 
@@ -242,6 +270,36 @@ router.get('/', (req, res) => {
     }
   }
 
+  // Include IG reach-only accounts (in ig_account_reach but not in posts)
+  if (igReachMonthsAvailable.length > 0) {
+    const existingIGKeys = new Set(accounts.map(a => `${a.account_name}::instagram`));
+    const igPlaceholders2 = igReachMonthsAvailable.map(() => '?').join(',');
+    const igReachOnlyAccounts = db.prepare(`
+      SELECT DISTINCT ar.account_name
+      FROM ig_account_reach ar
+      WHERE ar.month IN (${igPlaceholders2})
+      AND LOWER(ar.account_name) NOT LIKE 'srholder%'
+      ${hiddenIGReachFilter('ar')}
+    `).all(...igReachMonthsAvailable);
+
+    for (const row of igReachOnlyAccounts) {
+      if (existingIGKeys.has(`${row.account_name}::instagram`)) continue;
+      accounts.push({
+        account_id: null,
+        account_name: row.account_name,
+        account_username: null,
+        platform: 'instagram',
+        is_collab: 0,
+        post_count: 0,
+        views: 0, reach: 0, likes: 0, comments: 0, shares: 0,
+        total_clicks: 0, link_clicks: 0, other_clicks: 0,
+        saves: 0, follows: 0, interactions: 0, engagement: 0,
+        posts_per_day: 0,
+        _reachOnly: true,
+      });
+    }
+  }
+
   // Compute avg_daily_link_clicks for each account and totals
   const days = periodDays(req.query);
   if (days && days > 0) {
@@ -256,7 +314,7 @@ router.get('/', (req, res) => {
     }
   }
 
-  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, estimatedClicksByAccount, totalPeriodDays: days || 0 });
+  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, igReachByAccount, igReachMonths: igReachMonthsAvailable, estimatedClicksByAccount, totalPeriodDays: days || 0 });
 });
 
 export default router;

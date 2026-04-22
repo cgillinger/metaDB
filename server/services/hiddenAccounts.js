@@ -73,3 +73,12 @@ export function hiddenSiteVisitsFilter(alias) {
   const prefix = alias ? `${alias}.` : '';
   return `AND ${prefix}account_name NOT IN (SELECT account_name FROM hidden_accounts WHERE platform = 'ga_site_visits')`;
 }
+
+/**
+ * Filter for ig_account_reach table (no platform column; always instagram).
+ * @param {string} [alias]
+ */
+export function hiddenIGReachFilter(alias) {
+  const prefix = alias ? `${alias}.` : '';
+  return `AND ${prefix}account_name NOT IN (SELECT account_name FROM hidden_accounts WHERE platform = 'instagram')`;
+}

@@ -62,6 +62,16 @@ export const api = {
   deleteReachMonth: (month) =>
     fetch(`/api/reach/${month}`, { method: 'DELETE' }).then(handleResponse),
 
+  // IG Reach imports
+  uploadIGReachCSV: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch('/api/ig-reach', { method: 'POST', body: formData }).then(handleResponse);
+  },
+  getIGReachMonths: () => fetch('/api/ig-reach/months').then(handleResponse),
+  deleteIGReachMonth: (month) =>
+    fetch(`/api/ig-reach/${month}`, { method: 'DELETE' }).then(handleResponse),
+
   // GA Listens imports — Google Analytics podcast listening data
 
   /**

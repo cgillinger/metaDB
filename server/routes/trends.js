@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
-import { hiddenPostsFilter, hiddenReachFilter } from '../services/hiddenAccounts.js';
+import { hiddenPostsFilter, hiddenReachFilter, hiddenIGReachFilter } from '../services/hiddenAccounts.js';
 import { getEstimatedUniqueClicks } from '../services/estimatedUniqueClicks.js';
 
 const router = Router();
@@ -150,6 +150,73 @@ router.get('/', (req, res) => {
     // Prefer the full period span so that months without reach data still
     // appear on the x-axis as zero values. Fall back to months with data
     // when no period filter was supplied.
+    const spanMonths = buildMonthSpan(req.query);
+    const months = spanMonths || Array.from(monthSet).sort();
+    const series = Object.values(byAccount).map(account => ({
+      account_id: account.account_name,
+      account_name: account.account_name,
+      platform: account.platform,
+      is_collab: account.is_collab,
+      data: months.map(m => account.dataMap[m] || 0),
+    }));
+
+    return res.json({ metric, granularity: 'month', months, series });
+  }
+
+  // ig_account_reach: IG reach from ig_account_reach table (mirrors account_reach logic)
+  if (metric === 'ig_account_reach') {
+    const igConditions = [];
+    const igParams = [];
+
+    if (accountPairs.length > 0) {
+      const names = accountPairs.map(p => p.name);
+      const placeholders = names.map(() => '?').join(',');
+      igConditions.push(`ar.account_name IN (${placeholders})`);
+      igParams.push(...names);
+    }
+
+    igConditions.push(hiddenIGReachFilter('ar').slice(4));
+
+    const { months: monthsParam } = req.query;
+    if (monthsParam) {
+      const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
+      if (monthList.length > 0) {
+        const placeholders = monthList.map(() => '?').join(',');
+        igConditions.push(`ar.month IN (${placeholders})`);
+        igParams.push(...monthList);
+      }
+    }
+
+    const igWhere = `WHERE ${igConditions.join(' AND ')}`;
+    const igQuery = `
+      SELECT
+        ar.month AS period,
+        ar.account_name,
+        ar.reach AS value
+      FROM ig_account_reach ar
+      ${igWhere}
+      ORDER BY ar.month ASC, ar.account_name ASC
+    `;
+
+    const rows = db.prepare(igQuery).all(...igParams);
+
+    const monthSet = new Set();
+    const byAccount = {};
+
+    for (const row of rows) {
+      monthSet.add(row.period);
+      const key = row.account_name;
+      if (!byAccount[key]) {
+        byAccount[key] = {
+          account_name: row.account_name,
+          platform: 'instagram',
+          is_collab: false,
+          dataMap: {},
+        };
+      }
+      byAccount[key].dataMap[row.period] = row.value;
+    }
+
     const spanMonths = buildMonthSpan(req.query);
     const months = spanMonths || Array.from(monthSet).sort();
     const series = Object.values(byAccount).map(account => ({

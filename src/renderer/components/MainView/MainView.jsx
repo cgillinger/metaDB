@@ -24,7 +24,7 @@ import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
 
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'account_reach', 'estimated_unique_clicks'];
-const IG_ONLY_FIELDS = ['saves', 'follows'];
+const IG_ONLY_FIELDS = ['saves', 'follows', 'ig_account_reach'];
 
 const POST_VIEW_AVAILABLE_FIELDS = {
   'reach': 'Räckvidd',
@@ -44,7 +44,8 @@ const POST_VIEW_AVAILABLE_FIELDS = {
 const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'average_reach': 'Räckvidd (genomsnitt)',
-  'account_reach': 'Kontoräckvidd (API)',
+  'account_reach': 'Kontoräckvidd (API) FB',
+  'ig_account_reach': 'Kontoräckvidd (API) IG',
   'engagement': 'Totalt engagemang',
   'interactions': 'Interaktioner (gilla+komm+dela)',
   'likes': 'Gilla-markeringar / Reaktioner',
@@ -63,7 +64,8 @@ const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
 const TREND_ANALYSIS_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'reach': 'Räckvidd',
-  'account_reach': 'Kontoräckvidd (API)',
+  'account_reach': 'Kontoräckvidd (API) FB',
+  'ig_account_reach': 'Kontoräckvidd (API) IG',
   'engagement': 'Totalt engagemang',
   'interactions': 'Interaktioner',
   'likes': 'Gilla-markeringar / Reaktioner',
@@ -119,7 +121,7 @@ const ValueSelector = ({ availableFields, selectedFields, onSelectionChange }) =
         <Label htmlFor={key} className="flex items-center gap-1.5">
           {label}
           {['total_clicks', 'link_clicks', 'other_clicks', 'account_reach', 'estimated_unique_clicks'].includes(key) && <PlatformBadge platform="facebook" />}
-          {['saves', 'follows'].includes(key) && <PlatformBadge platform="instagram" />}
+          {['saves', 'follows', 'ig_account_reach'].includes(key) && <PlatformBadge platform="instagram" />}
         </Label>
       </div>
     ))}
@@ -224,11 +226,11 @@ const MainView = ({ onShowUploader }) => {
     else if (activeView === 'trend_analysis') fields = TREND_ANALYSIS_AVAILABLE_FIELDS;
     else fields = POST_VIEW_AVAILABLE_FIELDS;
 
-    // account_reach is monthly-only (from Meta Graph API) — hide it in custom
-    // date range mode to prevent displaying misleading reach columns.
-    if (periodMode === 'custom' && fields.account_reach) {
+    // account_reach/ig_account_reach are monthly-only — hide in custom date range mode.
+    if (periodMode === 'custom' && (fields.account_reach || fields.ig_account_reach)) {
       fields = { ...fields };
       delete fields.account_reach;
+      delete fields.ig_account_reach;
     }
 
     return filterFieldsByPlatform(fields, activePlatform);
@@ -283,7 +285,7 @@ const MainView = ({ onShowUploader }) => {
     }
     if (platformFilter === 'instagram') {
       return coverageData
-        .filter(m => (m.ig_count ?? 0) > 0)
+        .filter(m => (m.ig_count ?? 0) > 0 || m.has_ig_reach)
         .map(m => ({ ...m, post_count: m.ig_count ?? 0 }));
     }
     if (platformFilter === 'ga_listens') {
