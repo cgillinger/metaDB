@@ -40,11 +40,14 @@ export function FileUploader({ onImportComplete, onCancel }) {
 
     for (const file of csvFiles) {
       // Read first 4KB to detect file type
-      const preview = await new Promise((resolve) => {
+      const { headers: preview, firstRow } = await new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = Papa.parse(e.target.result, { header: true, preview: 1 });
-          resolve(result.meta?.fields || []);
+          resolve({
+            headers: result.meta?.fields || [],
+            firstRow: result.data?.[0] || {},
+          });
         };
         reader.readAsText(file.slice(0, 4096));
       });
@@ -76,9 +79,20 @@ export function FileUploader({ onImportComplete, onCancel }) {
         preview.includes('Reach') &&
         preview.includes('Period_start');
 
-      // Try to extract month from filename pattern YYYY_MM or YYYY-MM
+      // Try to extract month — prefer Period_start in CSV (new FB reach format)
       let autoMonth = '';
-      if (isReach || isGaListens || isGaSiteVisits) {
+      let reachHasPeriodStart = false;
+
+      if (isReach && firstRow['Period_start']) {
+        const ps = String(firstRow['Period_start']);
+        const m = ps.match(/(\d{4})-(\d{2})/);
+        if (m) {
+          autoMonth = `${m[1]}-${m[2]}`;
+          reachHasPeriodStart = true;
+        }
+      }
+
+      if (!autoMonth && (isReach || isGaListens || isGaSiteVisits)) {
         const monthMatch = file.name.match(/(\d{4})[_-](\d{2})(?:[_-]|\.|$)/i);
         if (monthMatch) {
           autoMonth = `${monthMatch[1]}-${monthMatch[2]}`;
@@ -99,6 +113,7 @@ export function FileUploader({ onImportComplete, onCancel }) {
         result: null,
         fileType,
         reachMonth: isReach ? autoMonth : '',
+        reachHasPeriodStart: isReach ? reachHasPeriodStart : false,
         gaListensMonth: isGaListens ? autoMonth : '',
         gaSiteVisitsMonth: isGaSiteVisits ? autoMonth : '',
       });
@@ -170,10 +185,14 @@ export function FileUploader({ onImportComplete, onCancel }) {
       try {
         let result;
         if (entry.fileType === 'reach') {
-          if (!entry.reachMonth) {
-            throw new Error('Ange vilken månad räckviddsfilen gäller.');
+          if (entry.reachHasPeriodStart) {
+            result = await api.uploadReachCSV(entry.file);
+          } else {
+            if (!entry.reachMonth) {
+              throw new Error('Ange vilken månad räckviddsfilen gäller.');
+            }
+            result = await api.uploadReachCSV(entry.file, entry.reachMonth);
           }
-          result = await api.uploadReachCSV(entry.file, entry.reachMonth);
         } else if (entry.fileType === 'ga_listens') {
           // Month is mandatory because GA exports contain no date information
           if (!entry.gaListensMonth) {
@@ -356,19 +375,21 @@ export function FileUploader({ onImportComplete, onCancel }) {
                       )}
                       {entry.fileType === 'reach' && entry.status === FILE_STATUS.PENDING && entry.reachMonth && (
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          Månad: {entry.reachMonth}
-                          <button
-                            type="button"
-                            className="ml-2 text-primary hover:underline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setFiles(prev => prev.map(f =>
-                                f.id === entry.id ? { ...f, reachMonth: '' } : f
-                              ));
-                            }}
-                          >
-                            Ändra
-                          </button>
+                          Månad: {entry.reachMonth}{entry.reachHasPeriodStart ? ' (från CSV)' : ''}
+                          {!entry.reachHasPeriodStart && (
+                            <button
+                              type="button"
+                              className="ml-2 text-primary hover:underline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFiles(prev => prev.map(f =>
+                                  f.id === entry.id ? { ...f, reachMonth: '' } : f
+                                ));
+                              }}
+                            >
+                              Ändra
+                            </button>
+                          )}
                         </p>
                       )}
                       {entry.fileType === 'reach' && entry.status === FILE_STATUS.PENDING && !entry.reachMonth && (

@@ -55,7 +55,7 @@ export const api = {
   uploadReachCSV: (file, month) => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('month', month);
+    if (month) formData.append('month', month);
     return fetch('/api/reach', { method: 'POST', body: formData }).then(handleResponse);
   },
   getReachMonths: () => fetch('/api/reach/months').then(handleResponse),

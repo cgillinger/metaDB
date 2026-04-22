@@ -27,11 +27,7 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
     return res.status(400).json({ error: 'Ingen fil bifogades.' });
   }
 
-  const month = req.body.month;
-  if (!month) {
-    fs.unlinkSync(req.file.path);
-    return res.status(400).json({ error: 'Månad (month) måste anges i formatet YYYY-MM.' });
-  }
+  const month = req.body.month || null;  // null triggers auto-detect in importer
 
   try {
     const csvContent = fs.readFileSync(req.file.path, 'utf-8');
