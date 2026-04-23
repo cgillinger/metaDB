@@ -404,6 +404,8 @@ const TrendAnalysisView = ({
           platform: 'group',
           is_collab: false,
           _isGroup: true,
+          memberCount: entry.memberCount,
+          matchedCount: entry.matchedCount,
           color: CHART_COLORS[colorIndex++ % CHART_COLORS.length],
           points: trendData.months.map((monthKey, mIndex) => ({
             month: monthKey,
@@ -551,6 +553,8 @@ const TrendAnalysisView = ({
           platform: 'ga_listens',
           is_collab: false,
           _isGroup: true,
+          memberCount: entry.memberCount,
+          matchedCount: entry.matchedCount,
           color: CHART_COLORS[index % CHART_COLORS.length],
           points: gaMonths.map(m => ({ month: m, value: aggregatedByMonth[m] || 0 })),
         };
@@ -662,6 +666,8 @@ const TrendAnalysisView = ({
           platform: 'ga_site_visits',
           is_collab: false,
           _isGroup: true,
+          memberCount: entry.memberCount,
+          matchedCount: entry.matchedCount,
           color: CHART_COLORS[index % CHART_COLORS.length],
           points,
         };
@@ -1001,6 +1007,13 @@ const TrendAnalysisView = ({
                     <span className="text-sm font-medium truncate flex items-center gap-1" title={line.account_name}>
                       {line._isGroup && <Users className="w-3 h-3 text-blue-600 shrink-0" />}
                       {line.account_name.length > 20 ? line.account_name.substring(0, 17) + '...' : line.account_name}
+                      {line._isGroup && (
+                        <span className="text-xs text-muted-foreground font-normal ml-0.5">
+                          ({line.matchedCount < line.memberCount
+                            ? `${line.matchedCount}/${line.memberCount}`
+                            : line.memberCount})
+                        </span>
+                      )}
                       {!line._isGroup && <PlatformBadge platform={line.platform === 'ga_listens' || line.platform === 'ga_site_visits' ? 'google_analytics' : line.platform} />}
                       {line.is_collab ? <CollabBadge compact /> : null}
                     </span>
