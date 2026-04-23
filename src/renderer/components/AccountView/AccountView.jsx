@@ -149,6 +149,7 @@ const AccountView = ({
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const [showGroups, setShowGroups] = useState(true);
 
   // GA Listens state
   const [gaViewMode, setGaViewMode] = useState('summary'); // 'summary' | 'monthly'
@@ -645,6 +646,37 @@ const AccountView = ({
     return [...syntheticRows, ...accountData];
   }, [accountData, accountGroups, totalPeriodDays]);
 
+  const filteredGaSummaryWithGroups = useMemo(() => {
+    if (showGroups) return gaSummaryWithGroups;
+    return {
+      ...gaSummaryWithGroups,
+      programmes: gaSummaryWithGroups.programmes.filter(p => !p._isGroup),
+    };
+  }, [gaSummaryWithGroups, showGroups]);
+
+  const filteredGsvSummaryWithGroups = useMemo(() => {
+    if (showGroups) return gsvSummaryWithGroups;
+    return {
+      ...gsvSummaryWithGroups,
+      programmes: gsvSummaryWithGroups.programmes.filter(p => !p._isGroup),
+    };
+  }, [gsvSummaryWithGroups, showGroups]);
+
+  const filteredAccountDataWithGroups = useMemo(() => {
+    if (showGroups) return accountDataWithGroups;
+    return accountDataWithGroups.filter(a => !a._isGroup);
+  }, [accountDataWithGroups, showGroups]);
+
+  const filteredGaSortedProgramsWithGroups = useMemo(() => {
+    if (showGroups) return gaSortedProgramsWithGroups;
+    return gaSortedProgramsWithGroups.filter(name => !name.startsWith('__group__'));
+  }, [gaSortedProgramsWithGroups, showGroups]);
+
+  const filteredGsvSortedProgramsWithGroups = useMemo(() => {
+    if (showGroups) return gsvSortedProgramsWithGroups;
+    return gsvSortedProgramsWithGroups.filter(name => !name.startsWith('__group__'));
+  }, [gsvSortedProgramsWithGroups, showGroups]);
+
   // Fields to display in the posts table — injects avg_daily_link_clicks after link_clicks
   const displayFields = useMemo(() => {
     const base = selectedFields.filter(f => f !== 'account_reach' && f !== 'ig_account_reach');
@@ -659,9 +691,9 @@ const AccountView = ({
 
   // Client-side sorting and pagination — groups always stay at top
   const paginatedData = useMemo(() => {
-    const groupRows = [...accountDataWithGroups.filter(a => a._isGroup)]
+    const groupRows = [...filteredAccountDataWithGroups.filter(a => a._isGroup)]
       .sort((a, b) => (a.account_name || '').localeCompare((b.account_name || ''), 'sv'));
-    const individualRows = accountDataWithGroups.filter(a => !a._isGroup);
+    const individualRows = filteredAccountDataWithGroups.filter(a => !a._isGroup);
     let sorted = [...individualRows];
 
     if (sortConfig.key) {
@@ -702,7 +734,7 @@ const AccountView = ({
     const startIndex = (currentPage - 1) * pageSize;
     const paginatedIndividuals = sorted.slice(startIndex, startIndex + pageSize);
     return [...groupRows, ...paginatedIndividuals];
-  }, [accountDataWithGroups, sortConfig, currentPage, pageSize, reachByAccount]);
+  }, [filteredAccountDataWithGroups, sortConfig, currentPage, pageSize, reachByAccount]);
 
   const totalPages = Math.ceil(accountData.length / pageSize);
 
@@ -1068,6 +1100,18 @@ const AccountView = ({
               </Label>
             </div>
           )}
+          {accountGroups.some(g => g.source === 'ga_site_visits') && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-groups-toggle"
+                checked={showGroups}
+                onCheckedChange={setShowGroups}
+              />
+              <Label htmlFor="show-groups-toggle" className="text-sm text-muted-foreground">
+                Visa grupper
+              </Label>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {gsvShowDeleteColumn && gsvSelectedAccounts.size > 0 && (
@@ -1187,8 +1231,8 @@ const AccountView = ({
                     {gsvSummary.grandAvgDaily != null ? gsvSummary.grandAvgDaily.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}
                   </TableCell>
                 </TableRow>
-                {gsvSummaryWithGroups.programmes.map((prog, idx) => {
-                  const prevIsGroup = idx > 0 && gsvSummaryWithGroups.programmes[idx - 1]._isGroup;
+                {filteredGsvSummaryWithGroups.programmes.map((prog, idx) => {
+                  const prevIsGroup = idx > 0 && filteredGsvSummaryWithGroups.programmes[idx - 1]._isGroup;
                   const showDivider = !prog._isGroup && idx > 0 && prevIsGroup;
                   return (
                     <React.Fragment key={prog._isGroup ? `group-${prog.groupId}` : prog.account_name}>
@@ -1213,7 +1257,7 @@ const AccountView = ({
                           </TableCell>
                         )}
                         <TableCell className="text-center font-medium">
-                          {prog._isGroup ? '' : idx + 1 - gsvSummaryWithGroups.programmes.filter((p, i) => i < idx && p._isGroup).length}
+                          {prog._isGroup ? '' : idx + 1 - filteredGsvSummaryWithGroups.programmes.filter((p, i) => i < idx && p._isGroup).length}
                         </TableCell>
                         <TableCell className="font-medium">
                           {prog._isGroup ? (
@@ -1345,9 +1389,9 @@ const AccountView = ({
                 ))}
                 {showDeleteColumn && <TableCell />}
               </TableRow>
-              {gsvSortedProgramsWithGroups.map((prog, idx) => {
+              {filteredGsvSortedProgramsWithGroups.map((prog, idx) => {
                 const isGroupKey = prog.startsWith('__group__');
-                const prevIsGroup = idx > 0 && gsvSortedProgramsWithGroups[idx - 1].startsWith('__group__');
+                const prevIsGroup = idx > 0 && filteredGsvSortedProgramsWithGroups[idx - 1].startsWith('__group__');
                 const showDivider = !isGroupKey && idx > 0 && prevIsGroup;
 
                 if (isGroupKey) {
@@ -1385,7 +1429,7 @@ const AccountView = ({
                     )}
                     <TableRow>
                       <TableCell className="text-center font-medium">
-                        {idx + 1 - Object.keys(gsvGroupPivots).length}
+                        {idx + 1 - filteredGsvSortedProgramsWithGroups.filter(p => p.startsWith('__group__')).length}
                       </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -1597,6 +1641,18 @@ const AccountView = ({
               </Label>
             </div>
           )}
+          {accountGroups.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-groups-toggle"
+                checked={showGroups}
+                onCheckedChange={setShowGroups}
+              />
+              <Label htmlFor="show-groups-toggle" className="text-sm text-muted-foreground">
+                Visa grupper
+              </Label>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {/* Batch delete button — visible when checkboxes are checked */}
@@ -1717,8 +1773,8 @@ const AccountView = ({
                     {gaSummary.grandAvgDaily != null ? gaSummary.grandAvgDaily.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}
                   </TableCell>
                 </TableRow>
-                {gaSummaryWithGroups.programmes.map((prog, idx) => {
-                  const prevIsGroup = idx > 0 && gaSummaryWithGroups.programmes[idx - 1]._isGroup;
+                {filteredGaSummaryWithGroups.programmes.map((prog, idx) => {
+                  const prevIsGroup = idx > 0 && filteredGaSummaryWithGroups.programmes[idx - 1]._isGroup;
                   const showDivider = !prog._isGroup && idx > 0 && prevIsGroup;
                   return (
                     <React.Fragment key={prog._isGroup ? `group-${prog.groupId}` : prog.account_name}>
@@ -1743,7 +1799,7 @@ const AccountView = ({
                           </TableCell>
                         )}
                         <TableCell className="text-center font-medium">
-                          {prog._isGroup ? '' : idx + 1 - gaSummaryWithGroups.programmes.filter((p, i) => i < idx && p._isGroup).length}
+                          {prog._isGroup ? '' : idx + 1 - filteredGaSummaryWithGroups.programmes.filter((p, i) => i < idx && p._isGroup).length}
                         </TableCell>
                         <TableCell className="font-medium">
                           {prog._isGroup ? (
@@ -1873,9 +1929,9 @@ const AccountView = ({
                 ))}
                 {showDeleteColumn && <TableCell />}
               </TableRow>
-              {gaSortedProgramsWithGroups.map((prog, idx) => {
+              {filteredGaSortedProgramsWithGroups.map((prog, idx) => {
                 const isGroupKey = prog.startsWith('__group__');
-                const prevIsGroup = idx > 0 && gaSortedProgramsWithGroups[idx - 1].startsWith('__group__');
+                const prevIsGroup = idx > 0 && filteredGaSortedProgramsWithGroups[idx - 1].startsWith('__group__');
                 const showDivider = !isGroupKey && idx > 0 && prevIsGroup;
 
                 if (isGroupKey) {
@@ -1913,7 +1969,7 @@ const AccountView = ({
                     )}
                     <TableRow>
                       <TableCell className="text-center font-medium">
-                        {idx + 1 - Object.keys(gaGroupPivots).length}
+                        {idx + 1 - filteredGaSortedProgramsWithGroups.filter(p => p.startsWith('__group__')).length}
                       </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -2005,6 +2061,18 @@ const AccountView = ({
               />
               <Label htmlFor="show-delete-column" className="text-sm text-red-600">
                 Visa raderingskolumn
+              </Label>
+            </div>
+          )}
+          {accountGroups.some(g => g.source === 'posts') && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-groups-toggle"
+                checked={showGroups}
+                onCheckedChange={setShowGroups}
+              />
+              <Label htmlFor="show-groups-toggle" className="text-sm text-muted-foreground">
+                Visa grupper
               </Label>
             </div>
           )}
