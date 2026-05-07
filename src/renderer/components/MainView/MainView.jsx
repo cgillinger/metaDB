@@ -550,7 +550,11 @@ const MainView = ({ onShowUploader }) => {
         </TabsContent>
 
         <TabsContent value="comparison">
-          <ComparisonView periodParams={periodParams} />
+          <ComparisonView
+            periodParams={periodParams}
+            accountGroups={accountGroups}
+            onGroupsChanged={refreshAccountGroups}
+          />
         </TabsContent>
 
         <TabsContent value="imports">

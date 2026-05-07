@@ -257,6 +257,12 @@ export const api = {
     return fetchWithRetry(`/api/comparison/besok-lankklick?${params}`).then(handleResponse);
   },
 
+  getComparisonBesokLankklickGroup: (memberGaNames, months = null) => {
+    const params = new URLSearchParams({ members: memberGaNames.join(',') });
+    if (months && months.length > 0) params.set('months', months.join(','));
+    return fetchWithRetry(`/api/comparison/besok-lankklick-group?${params}`).then(handleResponse);
+  },
+
   // Posts — delete by account + period
   deleteAccountPosts: (accountName, platform, periodParams) => {
     const params = new URLSearchParams({ accountName, platform, ...periodParams });
