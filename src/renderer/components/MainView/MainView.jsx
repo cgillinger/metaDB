@@ -11,6 +11,7 @@ import {
   Database,
   HelpCircle,
   BarChart3,
+  Activity,
 } from 'lucide-react';
 import AccountView from '../AccountView';
 import PostView from '../PostView';
@@ -19,6 +20,7 @@ import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
 import ImportManager from '../ImportManager/ImportManager';
 import AboutView from '../AboutView/AboutView';
 import ComparisonView from '../ComparisonView';
+import PlatformTrendView from '../PlatformTrendView';
 import PeriodSelector from '../PeriodSelector';
 import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
@@ -498,6 +500,10 @@ const MainView = ({ onShowUploader }) => {
             <TrendingUp className="w-4 h-4 mr-1" />
             Trendanalys
           </TabsTrigger>
+          <TabsTrigger value="platform_trend">
+            <Activity className="w-4 h-4 mr-1" />
+            Plattformstrend
+          </TabsTrigger>
           <TabsTrigger value="comparison">
             <BarChart3 className="w-4 h-4 mr-1" />
             Jämförelser
@@ -547,6 +553,11 @@ const MainView = ({ onShowUploader }) => {
             onGroupsChanged={refreshAccountGroups}
             onPlatformChange={setPlatformFilter}
           />
+        </TabsContent>
+
+        <TabsContent value="platform_trend">
+          <PeriodSummary />
+          <PlatformTrendView periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="comparison">
