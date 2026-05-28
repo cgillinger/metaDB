@@ -276,6 +276,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
             position: 'left',
             title: { display: true, text: 'Per inlägg' },
             ticks: {
+              stepSize: 5000,
               callback: (v) => `${Math.round(v / 1000)}k`,
             },
           },
@@ -307,7 +308,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
         <PillGroup
           value={group}
           onChange={setGroup}
-          options={[{ value: 'all', label: 'Alla konton' }, { value: 'p4', label: 'P4 Lokalt' }]}
+          options={[{ value: 'all', label: 'Alla konton' }, { value: 'p4', label: 'P4 Lokalt' }, { value: 'riks', label: 'Riks' }]}
         />
         <PillGroup
           value={platform}
