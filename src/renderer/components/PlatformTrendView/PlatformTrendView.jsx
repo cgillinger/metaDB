@@ -298,7 +298,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
             position: 'left',
             title: { display: true, text: 'Per inlägg' },
             ticks: {
-              stepSize: 5000,
+              stepSize: 10000,
               callback: (v) => `${Math.round(v / 1000)}k`,
             },
           },
@@ -405,7 +405,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
 
       {/* Chart */}
       {months.length > 0 ? (
-        <div className="relative w-full" style={{ height: '280px' }}>
+        <div className="relative w-full" style={{ height: '560px' }}>
           <canvas ref={canvasRef} />
         </div>
       ) : (
