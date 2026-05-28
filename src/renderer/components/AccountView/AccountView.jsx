@@ -23,6 +23,7 @@ import {
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
 import { daysInMonth } from '@/utils/dateHelpers';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
+import ProfileIcon from '../ui/ProfileIcon';
 
 // P4 Lokalt regional channel names, kept as an explicit Set for O(1) membership
 // lookup. Explicit enumeration is intentional — the list is stable and finite.
@@ -69,32 +70,6 @@ const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
 
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'estimated_unique_clicks'];
 const IG_ONLY_FIELDS = ['saves', 'follows'];
-
-const CHANNEL_COLORS = {
-  'P1': '#0066cc', 'P2': '#ff6600', 'P3': '#00cc66', 'P4': '#cc33cc',
-  'EKOT': '#005eb8', 'RADIOSPORTEN': '#1c5c35', 'SR': '#000000', 'default': '#000000'
-};
-
-const ProfileIcon = ({ accountName }) => {
-  const name = accountName || 'Okänd';
-  const firstLetter = name.charAt(0).toUpperCase();
-  let backgroundColor = CHANNEL_COLORS.default;
-  let channel = '';
-  const nameLower = name.toLowerCase();
-  if (nameLower.includes('ekot') || nameLower.includes('radio sweden')) { backgroundColor = CHANNEL_COLORS.EKOT; channel = 'E'; }
-  else if (nameLower.includes('radiosporten') || nameLower.includes('radio sporten')) { backgroundColor = CHANNEL_COLORS.RADIOSPORTEN; channel = 'RS'; }
-  else if (nameLower.includes('p1')) { backgroundColor = CHANNEL_COLORS.P1; channel = 'P1'; }
-  else if (nameLower.includes('p2')) { backgroundColor = CHANNEL_COLORS.P2; channel = 'P2'; }
-  else if (nameLower.includes('p3')) { backgroundColor = CHANNEL_COLORS.P3; channel = 'P3'; }
-  else if (nameLower.includes('p4')) { backgroundColor = CHANNEL_COLORS.P4; channel = 'P4'; }
-  else if (nameLower.includes('sveriges radio')) { backgroundColor = CHANNEL_COLORS.SR; channel = 'SR'; }
-  const displayLetter = channel || firstLetter;
-  return (
-    <div className="flex-shrink-0 w-6 h-6 rounded-sm flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor }}>
-      {displayLetter}
-    </div>
-  );
-};
 
 const FIELDS_WITHOUT_TOTALS = ['average_reach', 'posts_per_day', 'estimated_unique_clicks'];
 
