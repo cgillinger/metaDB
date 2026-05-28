@@ -16,11 +16,20 @@ function buildP4Filter(alias) {
 }
 
 /**
+ * Build a SQL fragment excluding the 25 active local P4 stations ("Riks").
+ */
+function buildP4ExcludeFilter(alias) {
+  const prefix = alias ? `${alias}.` : '';
+  const clauses = P4_REGIONS.map(r => `${prefix}account_name LIKE 'P4 ${r}%'`);
+  return `AND NOT (${clauses.join(' OR ')})`;
+}
+
+/**
  * GET /api/platform-trends
  *
  * Query params:
  *   platform  — 'facebook' | 'instagram' (required)
- *   group     — 'all' | 'p4' (default: 'all')
+ *   group     — 'all' | 'p4' | 'riks' (default: 'all')
  *   months    — comma-separated 'YYYY-MM' (optional; if omitted, all months)
  *
  * Returns:
@@ -51,6 +60,8 @@ router.get('/', (req, res) => {
     // Group filter
     if (group === 'p4') {
       groupFilter = buildP4Filter();
+    } else if (group === 'riks') {
+      groupFilter = buildP4ExcludeFilter();
     }
 
     // Hidden accounts filter

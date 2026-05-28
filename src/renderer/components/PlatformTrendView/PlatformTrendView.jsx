@@ -55,6 +55,35 @@ function calcBarometer(months, window) {
   return { delta, status, recentAvg, prevAvg };
 }
 
+/**
+ * Compares the latest month against the same calendar month one year earlier
+ * using avg_views. Returns null when last year's matching month is missing.
+ */
+function calcYearOverYear(months) {
+  if (months.length < 2) return null;
+  const current = months[months.length - 1];
+  const [year, mon] = current.month.split('-');
+  const lastYearMonth = `${parseInt(year, 10) - 1}-${mon}`;
+  const previous = months.find(m => m.month === lastYearMonth);
+  if (!previous || previous.avg_views === 0) return null;
+  const delta = (current.avg_views - previous.avg_views) / previous.avg_views;
+  const status = delta > 0.10 ? 'rising' : delta < -0.10 ? 'falling' : 'stable';
+  return {
+    delta,
+    status,
+    currentMonth: current.month,
+    previousMonth: lastYearMonth,
+    currentValue: current.avg_views,
+    previousValue: previous.avg_views,
+  };
+}
+
+/** "2026-04" → "apr 2026" (Swedish, lowercase month). */
+const yoyMonthLabel = (monthKey) => {
+  const [y, m] = monthKey.split('-');
+  return `${(MONTH_NAMES_SV[Number(m) - 1] || m).toLowerCase()} ${y}`;
+};
+
 const BARO_STATES = {
   rising: { label: 'Stigande', Icon: TrendingUp, text: 'text-green-700', bg: 'bg-green-50' },
   stable: { label: 'Stabil', Icon: Minus, text: 'text-gray-600', bg: 'bg-gray-100' },
@@ -81,45 +110,37 @@ function PillGroup({ value, onChange, options }) {
   );
 }
 
-function Barometer({ baro, baroWindow, onWindowChange }) {
+function BarometerCard({ label, baro, detail, insufficientText, windowToggle }) {
   return (
-    <Card className="w-56 shrink-0">
-      <CardContent className="pt-4 pb-4 flex flex-col h-full">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Barometer
-          </span>
-          <PillGroup
-            value={baroWindow}
-            onChange={onWindowChange}
-            options={[{ value: 4, label: '4 mån' }, { value: 6, label: '6 mån' }]}
-          />
-        </div>
+    <Card className="shrink-0" style={{ flex: '0 0 160px' }}>
+      <CardContent className="pt-4 pb-4 flex flex-col items-center text-center h-full">
+        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-tight mb-2 min-h-[24px] flex items-center">
+          {label}
+        </span>
         {baro ? (
-          <>
-            <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${BARO_STATES[baro.status].bg}`}>
-              {(() => {
-                const { Icon, text, label } = BARO_STATES[baro.status];
-                return (
-                  <>
-                    <Icon className={`h-6 w-6 ${text}`} />
-                    <div>
-                      <div className={`text-lg font-semibold leading-tight ${text}`}>{label}</div>
-                      <div className={`text-sm ${text}`}>{fmtPct(baro.delta)}</div>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2 leading-snug">
-              Snitt visningar/inlägg — senaste {baroWindow} mån vs föregående {baroWindow} mån
-            </p>
-          </>
+          (() => {
+            const { Icon, text, bg, label: statusLabel } = BARO_STATES[baro.status];
+            return (
+              <>
+                <div className={`rounded-full p-2 mb-2 ${bg}`}>
+                  <Icon className={text} style={{ width: 38, height: 38 }} />
+                </div>
+                <div className={`text-base font-semibold leading-tight ${text}`}>{statusLabel}</div>
+                <div className={`text-sm ${text}`}>{fmtPct(baro.delta)}</div>
+                <p className="text-xs text-muted-foreground mt-2 leading-snug">{detail}</p>
+              </>
+            );
+          })()
         ) : (
-          <div className="flex-1 flex items-center justify-center text-center">
-            <p className="text-sm text-muted-foreground">Otillräcklig data</p>
-          </div>
+          <>
+            <div className="rounded-full p-2 mb-2 bg-gray-100">
+              <Minus className="text-muted-foreground" style={{ width: 38, height: 38 }} />
+            </div>
+            <div className="text-base font-semibold text-muted-foreground">—</div>
+            <p className="text-xs text-muted-foreground mt-2 leading-snug">{insufficientText}</p>
+          </>
         )}
+        {windowToggle && <div className="mt-3">{windowToggle}</div>}
       </CardContent>
     </Card>
   );
@@ -188,6 +209,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
   const months = data?.months || [];
 
   const baro = useMemo(() => calcBarometer(months, baroWindow), [months, baroWindow]);
+  const yoy = useMemo(() => calcYearOverYear(months), [months]);
 
   // Per-card values: latest month value + delta vs the preceding month.
   const cardData = useMemo(() => {
@@ -276,6 +298,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
             position: 'left',
             title: { display: true, text: 'Per inlägg' },
             ticks: {
+              stepSize: 5000,
               callback: (v) => `${Math.round(v / 1000)}k`,
             },
           },
@@ -307,7 +330,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
         <PillGroup
           value={group}
           onChange={setGroup}
-          options={[{ value: 'all', label: 'Alla konton' }, { value: 'p4', label: 'P4 Lokalt' }]}
+          options={[{ value: 'all', label: 'Alla konton' }, { value: 'p4', label: 'P4 Lokalt' }, { value: 'riks', label: 'Riks' }]}
         />
         <PillGroup
           value={platform}
@@ -316,9 +339,29 @@ const PlatformTrendView = ({ periodParams = {} }) => {
         />
       </div>
 
-      {/* Barometer + Summary cards */}
+      {/* Barometers + Summary cards */}
       <div className="flex gap-3 flex-col md:flex-row">
-        <Barometer baro={baro} baroWindow={baroWindow} onWindowChange={setBaroWindow} />
+        <div className="flex gap-3">
+          <BarometerCard
+            label="Kortsiktig trend"
+            baro={baro}
+            detail={`Senaste ${baroWindow} mån vs föregående ${baroWindow} mån`}
+            insufficientText="Otillräcklig data"
+            windowToggle={
+              <PillGroup
+                value={baroWindow}
+                onChange={setBaroWindow}
+                options={[{ value: 4, label: '4 mån' }, { value: 6, label: '6 mån' }]}
+              />
+            }
+          />
+          <BarometerCard
+            label="Jämfört med förra året"
+            baro={yoy}
+            detail={yoy ? `${yoyMonthLabel(yoy.currentMonth)} vs ${yoyMonthLabel(yoy.previousMonth)}` : ''}
+            insufficientText="Data för samma period förra året saknas"
+          />
+        </div>
         <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
           <SummaryCard
             label="Visningar / inlägg"
