@@ -9,7 +9,7 @@ import React, { useState } from 'react';
 const MONTH_NAMES_SV = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
 
 // Plot-area-koordinater
-const X_LEFT = 70;
+const X_LEFT = 90;
 const X_RIGHT = 930;
 const Y_TOP = 70;
 const Y_BOTTOM = 450;
@@ -304,10 +304,10 @@ const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax, flo
               strokeWidth="1"
             />
             <text
-              x={X_LEFT - 5}
+              x={X_LEFT - 8}
               y={yPos + 4}
               textAnchor="end"
-              fontSize="14"
+              fontSize="13"
               fill="#6b7280"
               fontFamily="sans-serif"
             >
@@ -381,46 +381,19 @@ const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax, flo
         </g>
       )}
 
-      {/* ── Golv-polyline (veckomedian) ── */}
-      {floorSvgPoints.length >= 2 && (
-        <polyline
-          points={floorPolylineStr}
-          stroke="#334155"
-          strokeWidth="3"
-          strokeDasharray="6 4"
-          fill="none"
-        />
-      )}
-      {/* Markörer på varje veckopunkt */}
-      {floorSvgPoints.map((fp, i) => (
-        <circle
-          key={i}
-          cx={fp.x}
-          cy={fp.y}
-          r="3.5"
-          fill="#334155"
-          opacity="0.9"
-        />
-      ))}
-      {/* Golv-etikett vid linjens slut — gör golvet identifierbart även när
-          virala inlägg trycker ner det mot x-axeln (linjär y-axel). */}
-      {floorLabel && floorSvgPoints.length >= 1 && (() => {
-        const last = floorSvgPoints[floorSvgPoints.length - 1];
-        const ly = Math.min(Math.max(last.y - 8, Y_TOP + 12), Y_BOTTOM - 4);
-        return (
-          <text
-            x={X_RIGHT - 6}
-            y={ly}
-            textAnchor="end"
-            fontSize="12"
-            fontWeight="bold"
-            fill="#334155"
-            fontFamily="sans-serif"
-          >
-            {floorLabel}
-          </text>
-        );
-      })()}
+      {/* ── Y-axeltitel: tydliggör att varje punkts värde är räckvidd ── */}
+      <text
+        x={20}
+        y={(Y_TOP + Y_BOTTOM) / 2}
+        textAnchor="middle"
+        fontSize="14"
+        fontWeight="bold"
+        fill="#374151"
+        fontFamily="sans-serif"
+        transform={`rotate(-90 20 ${(Y_TOP + Y_BOTTOM) / 2})`}
+      >
+        Räckvidd
+      </text>
 
       {/* ── Inläggspunkter ── */}
       {points.map((p, i) => {
@@ -441,6 +414,61 @@ const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax, flo
           />
         );
       })}
+
+      {/* ── Golv-polyline (veckomedian) — ritas ÖVER punkterna med vit halo ── */}
+      {floorSvgPoints.length >= 2 && (
+        <>
+          {/* Vit halo så den streckade linjen läses mot täta punktmoln */}
+          <polyline
+            points={floorPolylineStr}
+            stroke="white"
+            strokeWidth="6"
+            strokeLinejoin="round"
+            fill="none"
+            opacity="0.85"
+          />
+          <polyline
+            points={floorPolylineStr}
+            stroke="#334155"
+            strokeWidth="3"
+            strokeDasharray="6 4"
+            fill="none"
+          />
+        </>
+      )}
+      {/* Markörer på varje veckopunkt (vit kant för kontrast) */}
+      {floorSvgPoints.map((fp, i) => (
+        <circle
+          key={i}
+          cx={fp.x}
+          cy={fp.y}
+          r="3.5"
+          fill="#334155"
+          stroke="white"
+          strokeWidth="1.5"
+        />
+      ))}
+      {/* Golv-etikett vid linjens slut — identifierbar även i linjär skala */}
+      {floorLabel && floorSvgPoints.length >= 1 && (() => {
+        const last = floorSvgPoints[floorSvgPoints.length - 1];
+        const ly = Math.min(Math.max(last.y - 8, Y_TOP + 12), Y_BOTTOM - 4);
+        return (
+          <text
+            x={X_RIGHT - 6}
+            y={ly}
+            textAnchor="end"
+            fontSize="12"
+            fontWeight="bold"
+            fill="#334155"
+            stroke="white"
+            strokeWidth="3"
+            paintOrder="stroke"
+            fontFamily="sans-serif"
+          >
+            {floorLabel}
+          </text>
+        );
+      })()}
 
       {/* ── Tooltip ── */}
       {renderTooltip()}

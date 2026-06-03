@@ -21,7 +21,6 @@ import {
   ENGAGEMENT_INFO
 } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
-import AccountDetailView from './AccountDetailView';
 import { daysInMonth } from '@/utils/dateHelpers';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 import ProfileIcon from '../ui/ProfileIcon';
@@ -106,7 +105,7 @@ const AccountView = ({
   accountGroups = [],
   onGroupsChanged = null,
   onPlatformChange = null,
-  onDetailChange = null,
+  onOpenScatter = null,
 }) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
@@ -128,19 +127,12 @@ const AccountView = ({
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [showGroups, setShowGroups] = useState(true);
 
-  // Master/detail: valt konto för drill-down + nudge när detalj ej är tillgänglig.
-  const [detailAccount, setDetailAccount] = useState(null);
-  const [nudge, setNudge] = useState(false);
-
-  // Detaljvyn (golv & viraler) kräver en enskild plattforms ankare. Den är därför
-  // bara tillgänglig när Facebook eller Instagram är valt i plattformstoggeln.
-  // I "Alla" (platform = undefined) och GA-läge ges en nudge i stället.
-  const detailAvailable = platform === 'facebook' || platform === 'instagram';
-
+  // Radklick öppnar scatter-explorern (räckvidd per inlägg) med kontot förvalt.
+  // Plattformslogiken hanteras där (kontot bär sin egen plattform), så raderna
+  // är klickbara oavsett vald plattformstoggel.
   const handleOpenDetail = (account) => {
     if (account._reachOnly) return; // reach-only-konton saknar inlägg att visa
-    if (!detailAvailable) { setNudge(true); return; }
-    setDetailAccount(account);
+    if (onOpenScatter) onOpenScatter(account);
   };
 
   // GA Listens state
@@ -346,24 +338,6 @@ const AccountView = ({
       return () => clearTimeout(timer);
     }
   }, [copyStatus]);
-
-  // Nudge-meddelandet försvinner av sig självt efter en stund.
-  useEffect(() => {
-    if (!nudge) return;
-    const timer = setTimeout(() => setNudge(false), 4000);
-    return () => clearTimeout(timer);
-  }, [nudge]);
-
-  // Stäng detaljvyn om plattform/period/läge ändras så vi inte visar inaktuell data.
-  useEffect(() => {
-    setDetailAccount(null);
-  }, [platform, periodParams, gaListensMode, gaSiteVisitsMode]);
-
-  // Signalera uppåt när detaljvyn öppnas/stängs så föräldern kan dölja
-  // fältväljaren ("Välj värden att visa") – kolumnval saknar mening i detaljvyn.
-  useEffect(() => {
-    if (onDetailChange) onDetailChange(!!detailAccount && detailAvailable);
-  }, [detailAccount, detailAvailable, onDetailChange]);
 
   const handleCopyValue = useCallback((value, field, rowId = 'total') => {
     if (value === undefined || value === null) return;
@@ -2028,21 +2002,6 @@ const AccountView = ({
   }
   // ── end GA Listens mode ───────────────────────────────────────────────────
 
-  // Master/detail: när ett konto är valt (och FB/IG är aktivt) ersätter detaljvyn
-  // tabellen. "← Tillbaka" i AccountDetailView nollställer detailAccount.
-  if (detailAccount && detailAvailable) {
-    return (
-      <Card className="p-4">
-        <AccountDetailView
-          account={detailAccount}
-          platform={platform}
-          periodParams={periodParams}
-          onBack={() => setDetailAccount(null)}
-        />
-      </Card>
-    );
-  }
-
   if (selectedFields.length === 0) {
     return (
       <Card className="p-6">
@@ -2061,11 +2020,6 @@ const AccountView = ({
 
   return (
     <Card className="p-4">
-      {nudge && (
-        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Välj Facebook eller Instagram för att se kontots golv och viraler.
-        </div>
-      )}
       <div className="flex items-center justify-between mb-4">
         <div>
           {selectedFields.includes('account_reach') && (
