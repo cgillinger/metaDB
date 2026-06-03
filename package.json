@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "test": "node --test"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.0.5",

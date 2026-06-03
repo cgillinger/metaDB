@@ -59,6 +59,23 @@ router.get('/', (req, res) => {
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
+  // Opaginerat läge: returnera hela det filtrerade och sorterade settet utan LIMIT/OFFSET
+  const noPagination = req.query.paginate === 'false' || req.query.all === 'true';
+
+  if (noPagination) {
+    const data = db.prepare(
+      `SELECT * FROM posts ${whereClause} ORDER BY ${sort} ${order}`
+    ).all(...params);
+
+    return res.json({
+      data,
+      total: data.length,
+      page: 1,
+      pageSize: data.length,
+      totalPages: 1,
+    });
+  }
+
   // Count total
   const countRow = db.prepare(`SELECT COUNT(*) AS total FROM posts ${whereClause}`).get(...params);
   const total = countRow.total;

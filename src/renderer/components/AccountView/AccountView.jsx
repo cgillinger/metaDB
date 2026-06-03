@@ -9,7 +9,7 @@ import InfoTooltip from '../ui/InfoTooltip';
 import CollabBadge from '../ui/CollabBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, LineChart } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
@@ -20,6 +20,7 @@ import {
   ENGAGEMENT_INFO
 } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
+import AccountDetailView from './AccountDetailView';
 
 // P4 Lokalt regional channel names, kept as an explicit Set for O(1) membership
 // lookup. Explicit enumeration is intentional — the list is stable and finite.
@@ -119,6 +120,21 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
   const [reachMonths, setReachMonths] = useState([]);
   const [showReachOnlyAccounts, setShowReachOnlyAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Master/detail: valt konto för drill-down + nudge när detalj ej är tillgänglig.
+  const [detailAccount, setDetailAccount] = useState(null);
+  const [nudge, setNudge] = useState(false);
+
+  // Detaljvyn (golv & viraler) kräver en enskild plattforms ankare. Den är därför
+  // bara tillgänglig när Facebook eller Instagram är valt i plattformstoggeln.
+  // I "Alla" (platform = undefined) och GA-läge ges en nudge i stället.
+  const detailAvailable = platform === 'facebook' || platform === 'instagram';
+
+  const handleOpenDetail = (account) => {
+    if (account._reachOnly) return; // reach-only-konton saknar inlägg att visa
+    if (!detailAvailable) { setNudge(true); return; }
+    setDetailAccount(account);
+  };
 
   // GA Listens state
   const [gaViewMode, setGaViewMode] = useState('summary'); // 'summary' | 'monthly'
@@ -235,6 +251,18 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       return () => clearTimeout(timer);
     }
   }, [copyStatus]);
+
+  // Nudge-meddelandet försvinner av sig självt efter en stund.
+  useEffect(() => {
+    if (!nudge) return;
+    const timer = setTimeout(() => setNudge(false), 4000);
+    return () => clearTimeout(timer);
+  }, [nudge]);
+
+  // Stäng detaljvyn om plattform/period/läge ändras så vi inte visar inaktuell data.
+  useEffect(() => {
+    setDetailAccount(null);
+  }, [platform, periodParams, gaListensMode]);
 
   const handleCopyValue = useCallback((value, field, rowId = 'total') => {
     if (value === undefined || value === null) return;
@@ -656,6 +684,21 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
   }
   // ── end GA Listens mode ───────────────────────────────────────────────────
 
+  // Master/detail: när ett konto är valt (och FB/IG är aktivt) ersätter detaljvyn
+  // tabellen. "← Tillbaka" i AccountDetailView nollställer detailAccount.
+  if (detailAccount && detailAvailable) {
+    return (
+      <Card className="p-4">
+        <AccountDetailView
+          account={detailAccount}
+          platform={platform}
+          periodParams={periodParams}
+          onBack={() => setDetailAccount(null)}
+        />
+      </Card>
+    );
+  }
+
   if (selectedFields.length === 0) {
     return (
       <Card className="p-6">
@@ -674,6 +717,11 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
 
   return (
     <Card className="p-4">
+      {nudge && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Välj Facebook eller Instagram för att se kontots golv och viraler.
+        </div>
+      )}
       <div className="flex items-center justify-between mb-4">
         <div>
           {selectedFields.includes('account_reach') && (
@@ -770,7 +818,9 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
             {paginatedData.map((account, index) => (
               <TableRow
                 key={`${account.account_name}::${account.platform}`}
-                className={account._reachOnly ? 'bg-gray-50/50 opacity-60' : account.is_collab ? 'bg-amber-50/50 opacity-75' : ''}
+                onClick={() => handleOpenDetail(account)}
+                title={account._reachOnly ? undefined : 'Visa kontots golv & viraler'}
+                className={`${account._reachOnly ? 'bg-gray-50/50 opacity-60' : account.is_collab ? 'bg-amber-50/50 opacity-75' : ''} ${account._reachOnly ? '' : 'cursor-pointer hover:bg-muted/30'}`}
               >
                 <TableCell className="text-center font-medium">{(currentPage - 1) * pageSize + index + 1}</TableCell>
                 <TableCell className="font-medium">
@@ -779,6 +829,9 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                     <span>{account.account_name || 'Unknown'}</span>
                     <PlatformBadge platform={account.platform} />
                     {account.is_collab ? <CollabBadge /> : null}
+                    {!account._reachOnly && (
+                      <LineChart className="h-4 w-4 text-muted-foreground/70" />
+                    )}
                   </div>
                 </TableCell>
                 {selectedFields.filter(f => f !== 'account_reach').map(field => (
@@ -819,7 +872,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                   </TableCell>
                 )}
                 <TableCell className="text-center">
-                  <button onClick={() => handleExternalLink(account)} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
+                  <button onClick={(e) => { e.stopPropagation(); handleExternalLink(account); }} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
                     <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna konto</span>
                   </button>
                 </TableCell>
