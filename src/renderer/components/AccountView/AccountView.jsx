@@ -9,7 +9,7 @@ import InfoTooltip from '../ui/InfoTooltip';
 import CollabBadge from '../ui/CollabBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, Trash2, AlertCircle, Users } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, Trash2, AlertCircle, Users, LineChart } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
@@ -21,6 +21,7 @@ import {
   ENGAGEMENT_INFO
 } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
+import AccountDetailView from './AccountDetailView';
 import { daysInMonth } from '@/utils/dateHelpers';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 import ProfileIcon from '../ui/ProfileIcon';
@@ -125,6 +126,21 @@ const AccountView = ({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [showGroups, setShowGroups] = useState(true);
+
+  // Master/detail: valt konto för drill-down + nudge när detalj ej är tillgänglig.
+  const [detailAccount, setDetailAccount] = useState(null);
+  const [nudge, setNudge] = useState(false);
+
+  // Detaljvyn (golv & viraler) kräver en enskild plattforms ankare. Den är därför
+  // bara tillgänglig när Facebook eller Instagram är valt i plattformstoggeln.
+  // I "Alla" (platform = undefined) och GA-läge ges en nudge i stället.
+  const detailAvailable = platform === 'facebook' || platform === 'instagram';
+
+  const handleOpenDetail = (account) => {
+    if (account._reachOnly) return; // reach-only-konton saknar inlägg att visa
+    if (!detailAvailable) { setNudge(true); return; }
+    setDetailAccount(account);
+  };
 
   // GA Listens state
   const [gaViewMode, setGaViewMode] = useState('summary'); // 'summary' | 'monthly'
@@ -329,6 +345,18 @@ const AccountView = ({
       return () => clearTimeout(timer);
     }
   }, [copyStatus]);
+
+  // Nudge-meddelandet försvinner av sig självt efter en stund.
+  useEffect(() => {
+    if (!nudge) return;
+    const timer = setTimeout(() => setNudge(false), 4000);
+    return () => clearTimeout(timer);
+  }, [nudge]);
+
+  // Stäng detaljvyn om plattform/period/läge ändras så vi inte visar inaktuell data.
+  useEffect(() => {
+    setDetailAccount(null);
+  }, [platform, periodParams, gaListensMode, gaSiteVisitsMode]);
 
   const handleCopyValue = useCallback((value, field, rowId = 'total') => {
     if (value === undefined || value === null) return;
@@ -1993,6 +2021,21 @@ const AccountView = ({
   }
   // ── end GA Listens mode ───────────────────────────────────────────────────
 
+  // Master/detail: när ett konto är valt (och FB/IG är aktivt) ersätter detaljvyn
+  // tabellen. "← Tillbaka" i AccountDetailView nollställer detailAccount.
+  if (detailAccount && detailAvailable) {
+    return (
+      <Card className="p-4">
+        <AccountDetailView
+          account={detailAccount}
+          platform={platform}
+          periodParams={periodParams}
+          onBack={() => setDetailAccount(null)}
+        />
+      </Card>
+    );
+  }
+
   if (selectedFields.length === 0) {
     return (
       <Card className="p-6">
@@ -2011,6 +2054,11 @@ const AccountView = ({
 
   return (
     <Card className="p-4">
+      {nudge && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Välj Facebook eller Instagram för att se kontots golv och viraler.
+        </div>
+      )}
       <div className="flex items-center justify-between mb-4">
         <div>
           {selectedFields.includes('account_reach') && (
@@ -2216,6 +2264,10 @@ const AccountView = ({
                 ? 'bg-amber-50/50 opacity-75'
                 : '';
 
+              // Detalj-affordans: bara enskilda konton med inlägg är klickbara.
+              // Grupprader (display-only) och reach-only-konton öppnar INTE detaljvyn.
+              const detailClickable = !isGroup && !account._reachOnly;
+
               return (
                 <React.Fragment key={rowKey}>
                   {showDivider && (
@@ -2235,7 +2287,11 @@ const AccountView = ({
                       </TableCell>
                     </TableRow>
                   )}
-                  <TableRow className={rowCls}>
+                  <TableRow
+                    className={`${rowCls}${detailClickable ? ' cursor-pointer hover:bg-muted/30' : ''}`}
+                    onClick={detailClickable ? () => handleOpenDetail(account) : undefined}
+                    title={detailClickable ? 'Visa kontots golv & viraler' : undefined}
+                  >
                     <TableCell className="text-center font-medium">
                       {isGroup ? '' : (currentPage - 1) * pageSize + groupIndividualsBefore + 1}
                     </TableCell>
@@ -2258,6 +2314,9 @@ const AccountView = ({
                           <span>{account.account_name || 'Unknown'}</span>
                           <PlatformBadge platform={account.platform} />
                           {account.is_collab ? <CollabBadge /> : null}
+                          {detailClickable && (
+                            <LineChart className="h-4 w-4 text-muted-foreground/70" />
+                          )}
                         </div>
                       )}
                     </TableCell>
@@ -2343,11 +2402,11 @@ const AccountView = ({
                       <TableCell className="text-center">
                         {!isGroup && !account._reachOnly && (
                           <button
-                            onClick={() => setDeleteConfirm({
+                            onClick={(e) => { e.stopPropagation(); setDeleteConfirm({
                               accountName: account.account_name,
                               platform: account.platform,
                               postCount: account.post_count,
-                            })}
+                            }); }}
                             className="inline-flex items-center justify-center text-red-400 hover:text-red-600 transition-colors"
                             title={`Radera ${account.account_name} från vald period`}
                           >
@@ -2358,7 +2417,7 @@ const AccountView = ({
                     )}
                     <TableCell className="text-center">
                       {!isGroup && (
-                        <button onClick={() => handleExternalLink(account)} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
+                        <button onClick={(e) => { e.stopPropagation(); handleExternalLink(account); }} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
                           <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna konto</span>
                         </button>
                       )}
