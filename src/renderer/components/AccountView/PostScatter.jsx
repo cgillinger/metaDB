@@ -36,24 +36,49 @@ const calculateNiceYAxis = (maxValue) => {
   return { min: 0, max: niceMax, ticks, tickInterval };
 };
 
-/**
- * Väljer ~5–7 jämnt fördelade x-ticks ur ett tidsintervall.
- * Returnerar array av ms-timestamps.
- */
-const pickXTicks = (xMin, xMax, count = 6) => {
-  if (xMin >= xMax) return [xMin];
-  const step = (xMax - xMin) / (count - 1);
-  const result = [];
-  for (let i = 0; i < count; i++) result.push(Math.round(xMin + i * step));
-  return result;
-};
+// Max antal x-ticks innan vi glesar ut till varannan/var tredje månad.
+const X_TICK_TARGET = 24;
 
 /**
- * Formaterar en ms-timestamp till svensk datumetikett: "15 jan".
+ * Bygger x-ticks på månadsgränser (den 1:a varje månad) inom tidsintervallet.
+ * Strecken ligger exakt en månad isär; vid mycket långa spann glesas de ut
+ * jämnt (var 2:a/3:e månad) så etiketterna inte krockar.
+ * Returnerar [{ ms, month, year, showYear }]. showYear=true vid januari, första
+ * ticken och varje årsbyte – så att årsskiftet alltid framgår.
  */
-const formatDateLabel = (ms) => {
-  const d = new Date(ms);
-  return `${d.getDate()} ${MONTH_NAMES_SV[d.getMonth()]}`;
+const buildMonthTicks = (xMin, xMax) => {
+  if (!(xMax > xMin)) {
+    const d = new Date(xMin);
+    return [{ ms: xMin, month: d.getMonth(), year: d.getFullYear(), showYear: true }];
+  }
+  const first = new Date(xMin);
+  let y = first.getFullYear();
+  let m = first.getMonth();
+  // Hoppa till nästa månadsstart om xMin inte redan ligger på den 1:a kl 00:00.
+  const onMonthStart =
+    first.getDate() === 1 && first.getHours() === 0 &&
+    first.getMinutes() === 0 && first.getSeconds() === 0;
+  if (!onMonthStart) { m += 1; if (m > 11) { m -= 12; y += 1; } }
+
+  const starts = [];
+  for (let t = new Date(y, m, 1).getTime(); t <= xMax; ) {
+    starts.push(t);
+    m += 1; if (m > 11) { m -= 12; y += 1; }
+    t = new Date(y, m, 1).getTime();
+  }
+  if (starts.length === 0) starts.push(xMin);
+
+  const step = Math.max(1, Math.ceil(starts.length / X_TICK_TARGET));
+  const ticks = [];
+  let prevYear = null;
+  for (let i = 0; i < starts.length; i += step) {
+    const d = new Date(starts[i]);
+    const year = d.getFullYear();
+    const showYear = i === 0 || d.getMonth() === 0 || year !== prevYear;
+    prevYear = year;
+    ticks.push({ ms: starts[i], month: d.getMonth(), year, showYear });
+  }
+  return ticks;
 };
 
 /**
@@ -92,7 +117,7 @@ const truncate = (str, maxLen = 60) => {
  *   xMin        – number|undefined  (ms, vänster kant på x-axeln)
  *   xMax        – number|undefined  (ms, höger kant på x-axeln)
  */
-const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax }) => {
+const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax, floorLabel }) => {
   const [hovered, setHovered] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
@@ -138,7 +163,7 @@ const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax }) =
   const { min: yMin, max: yMax, ticks: yTicks } = calculateNiceYAxis(rawYMax);
 
   // ── X-ticks ────────────────────────────────────────────────────────────────
-  const xTicks = pickXTicks(resolvedXMin, resolvedXMax, 6);
+  const xTicks = buildMonthTicks(resolvedXMin, resolvedXMax);
 
   // ── Golv-polyline-punkter ──────────────────────────────────────────────────
   const floorSvgPoints = floorPoints.map(fp => ({
@@ -237,8 +262,8 @@ const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax }) =
         y1={32}
         x2={X_LEFT + 180}
         y2={32}
-        stroke="#475569"
-        strokeWidth="2"
+        stroke="#334155"
+        strokeWidth="3"
         strokeDasharray="6 4"
       />
       <text x={X_LEFT + 186} y={36} fill="#374151" fontSize="12">Golv (veckomedian)</text>
@@ -292,9 +317,9 @@ const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax }) =
         );
       })}
 
-      {/* ── X-axel ticks och gridlinjer ── */}
-      {xTicks.map((ms, i) => {
-        const xPos = toSvgX(ms, resolvedXMin, resolvedXMax);
+      {/* ── X-axel ticks och gridlinjer (månadsgränser) ── */}
+      {xTicks.map((tick, i) => {
+        const xPos = toSvgX(tick.ms, resolvedXMin, resolvedXMax);
         return (
           <g key={i}>
             <line
@@ -309,12 +334,25 @@ const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax }) =
               x={xPos}
               y={Y_BOTTOM + 20}
               textAnchor="middle"
-              fontSize="14"
+              fontSize="13"
               fill="#6b7280"
               fontFamily="sans-serif"
             >
-              {formatDateLabel(ms)}
+              {MONTH_NAMES_SV[tick.month]}
             </text>
+            {tick.showYear && (
+              <text
+                x={xPos}
+                y={Y_BOTTOM + 36}
+                textAnchor="middle"
+                fontSize="12"
+                fontWeight="bold"
+                fill="#374151"
+                fontFamily="sans-serif"
+              >
+                {tick.year}
+              </text>
+            )}
           </g>
         );
       })}
@@ -347,23 +385,42 @@ const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax }) =
       {floorSvgPoints.length >= 2 && (
         <polyline
           points={floorPolylineStr}
-          stroke="#475569"
-          strokeWidth="2"
+          stroke="#334155"
+          strokeWidth="3"
           strokeDasharray="6 4"
           fill="none"
         />
       )}
-      {/* Valfria små markörer på varje veckoveckopunkt */}
+      {/* Markörer på varje veckopunkt */}
       {floorSvgPoints.map((fp, i) => (
         <circle
           key={i}
           cx={fp.x}
           cy={fp.y}
-          r="3"
-          fill="#475569"
-          opacity="0.6"
+          r="3.5"
+          fill="#334155"
+          opacity="0.9"
         />
       ))}
+      {/* Golv-etikett vid linjens slut — gör golvet identifierbart även när
+          virala inlägg trycker ner det mot x-axeln (linjär y-axel). */}
+      {floorLabel && floorSvgPoints.length >= 1 && (() => {
+        const last = floorSvgPoints[floorSvgPoints.length - 1];
+        const ly = Math.min(Math.max(last.y - 8, Y_TOP + 12), Y_BOTTOM - 4);
+        return (
+          <text
+            x={X_RIGHT - 6}
+            y={ly}
+            textAnchor="end"
+            fontSize="12"
+            fontWeight="bold"
+            fill="#334155"
+            fontFamily="sans-serif"
+          >
+            {floorLabel}
+          </text>
+        );
+      })()}
 
       {/* ── Inläggspunkter ── */}
       {points.map((p, i) => {

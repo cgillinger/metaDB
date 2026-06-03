@@ -322,6 +322,7 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack }) => 
         threshold={analysis.threshold}
         xMin={xMin}
         xMax={xMax}
+        floorLabel={`Golv ~${formatK(med)}`}
       />
     </div>
   );

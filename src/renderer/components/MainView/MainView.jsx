@@ -172,6 +172,8 @@ const PLATFORM_TITLE = {
 const MainView = ({ onShowUploader }) => {
   const [selectedFields, setSelectedFields] = useState([]);
   const [activeView, setActiveView] = useState('account');
+  // True när kontodetaljvyn (golv & viraler) är öppen — döljer fältväljaren.
+  const [accountDetailOpen, setAccountDetailOpen] = useState(false);
   const [platformFilter, setPlatformFilter] = useState('all');
   const [stats, setStats] = useState(null);
   const [imports, setImports] = useState([]);
@@ -228,6 +230,12 @@ const MainView = ({ onShowUploader }) => {
   }, []);
 
   useEffect(() => { refreshAccountGroups(); }, [refreshAccountGroups]);
+
+  // Lämnar man kontofliken kan ingen detaljvy vara öppen — nollställ så att
+  // fältväljaren inte felaktigt förblir dold på övriga flikar.
+  useEffect(() => {
+    if (activeView !== 'account') setAccountDetailOpen(false);
+  }, [activeView]);
 
   // Detect platform from imports
   const platformInfo = useMemo(() => {
@@ -475,7 +483,7 @@ const MainView = ({ onShowUploader }) => {
         />
       )}
 
-      {activeView !== 'trend_analysis' && activeView !== 'imports' && activeView !== 'comparison' && activeView !== 'platform_trend' && platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && (
+      {activeView !== 'trend_analysis' && activeView !== 'imports' && activeView !== 'comparison' && activeView !== 'platform_trend' && platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && !(activeView === 'account' && accountDetailOpen) && (
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
@@ -529,6 +537,7 @@ const MainView = ({ onShowUploader }) => {
             accountGroups={accountGroups}
             onGroupsChanged={refreshAccountGroups}
             onPlatformChange={setPlatformFilter}
+            onDetailChange={setAccountDetailOpen}
           />
         </TabsContent>
 
