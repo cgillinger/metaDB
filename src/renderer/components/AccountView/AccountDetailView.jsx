@@ -26,7 +26,7 @@ import {
   reliability,
   viralShare,
   peerMedianOfMedians,
-  floorLevel,
+  floorBand,
   floorTrend,
   statusVerdict,
 } from './golvViral';
@@ -173,8 +173,7 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
       peerMedians.push(periodMedian(posts));
     }
     const peerMed = peerMedianOfMedians(peerMedians); // null om < MIN_PEERS (5)
-    const level = floorLevel(med, peerMed);           // 'högt' | 'lågt' | null
-    const verdict = level ? statusVerdict(level, share) : null;
+    const band = floorBand(med, peerMedians);         // 'högt' | 'normalt' | 'lågt' | null
 
     // Diagrampunkter
     const points = accountPosts
@@ -192,10 +191,20 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
       .filter(Boolean);
     const floorPoints = floor.map(w => ({ date: w.date, median: w.median }));
 
-    return { med, floor, threshold, rel, share, trend, peerMed, peerCount: peerMedians.length, level, verdict, points, floorPoints };
+    return { med, floor, threshold, rel, share, trend, peerMed, peerCount: peerMedians.length, band, points, floorPoints };
   }, [accountPosts, allPosts, account, params]);
 
   const { xMin, xMax } = periodWindow(periodParams);
+
+  // Kadens = inlägg/dag över vald period (inte totalt antal). Faller tillbaka på
+  // spannet mellan första och sista inlägget om perioden inte går att tolka.
+  let periodDays = (xMin != null && xMax != null) ? (xMax - xMin) / 86400000 : null;
+  if (!periodDays || periodDays < 1) {
+    const ts = accountPosts.map(p => new Date(p.publish_time).getTime()).filter(t => !isNaN(t));
+    periodDays = ts.length >= 2 ? Math.max(1, (Math.max(...ts) - Math.min(...ts)) / 86400000) : 1;
+  }
+  const cadence = accountPosts.length / periodDays;
+  const verdict = statusVerdict(analysis.band, analysis.share, cadence);
 
   const platformLabel = account.platform === 'facebook' ? 'Facebook' : 'Instagram';
   const kStr = params.k.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -249,7 +258,7 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
     );
   }
 
-  const { med, rel, share, trend, peerMed, level, verdict } = analysis;
+  const { med, rel, share, trend, peerMed } = analysis;
 
   // Beskrivande golvnivå-text (aldrig skuldbeläggande). Jämförelse visas bara när
   // benchmarken bygger på ≥5 jämförbara konton; annars enbart kontots eget golvtal.
@@ -267,9 +276,7 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
         <div className="text-lg font-bold text-primary">
           {verdict
             ? verdict
-            : level === null
-              ? 'Golvnivå kan inte klassas (för få jämförbara konton) – se golvtalet nedan.'
-              : '—'}
+            : 'Golvnivå kan inte klassas (för få jämförbara konton) – se golvtalet nedan.'}
         </div>
       </div>
 
