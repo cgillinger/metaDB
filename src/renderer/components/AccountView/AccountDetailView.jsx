@@ -105,7 +105,7 @@ const TrendIcon = ({ trend }) => {
   return <Minus className="h-5 w-5 text-gray-400" />;
 };
 
-const AccountDetailView = ({ account, platform, periodParams = {}, onBack }) => {
+const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showHeader = true }) => {
   const [allPosts, setAllPosts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -203,8 +203,9 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack }) => 
     `Viral-tröskel: ${formatK(analysis.threshold)}  ` +
     `(${formatK(params.bas)} + ${kStr} × median ${formatK(analysis.med)})`;
 
-  // Header: bakåtknapp + kontonamn finns alltid.
-  const header = (
+  // Header: bakåtknapp + kontonamn. Döljs (showHeader=false) när en
+  // föräldravy (scatter-explorer) äger sin egen header med kontoväljare.
+  const header = showHeader ? (
     <div className="flex items-center justify-between mb-4">
       <div className="flex items-center gap-3">
         <Button variant="outline" size="sm" onClick={onBack}>
@@ -217,7 +218,7 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack }) => 
         </span>
       </div>
     </div>
-  );
+  ) : null;
 
   if (loading) {
     return (
@@ -316,6 +317,12 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack }) => 
       </div>
 
       {/* Punktdiagram */}
+      <div className="mb-2">
+        <h3 className="text-base font-semibold text-foreground">Räckvidd per inlägg</h3>
+        <p className="text-sm text-muted-foreground">
+          Varje punkt är ett inlägg. Höjden visar inläggets räckvidd, x-axeln när det publicerades.
+        </p>
+      </div>
       <PostScatter
         points={analysis.points}
         floorPoints={analysis.floorPoints}

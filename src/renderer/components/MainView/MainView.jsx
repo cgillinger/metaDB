@@ -12,8 +12,11 @@ import {
   HelpCircle,
   BarChart3,
   Activity,
+  ScatterChart,
+  ArrowRight,
 } from 'lucide-react';
 import AccountView from '../AccountView';
+import ScatterExplorerView from '../AccountView/ScatterExplorerView';
 import PostView from '../PostView';
 import PostTypeView from '../PostTypeView';
 import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
@@ -172,8 +175,9 @@ const PLATFORM_TITLE = {
 const MainView = ({ onShowUploader }) => {
   const [selectedFields, setSelectedFields] = useState([]);
   const [activeView, setActiveView] = useState('account');
-  // True när kontodetaljvyn (golv & viraler) är öppen — döljer fältväljaren.
-  const [accountDetailOpen, setAccountDetailOpen] = useState(false);
+  // Scatter-explorer (räckvidd per inlägg): öppet läge + ev. förvalt konto.
+  // Ersätter flikar + värdepanel medan det är öppet.
+  const [scatterState, setScatterState] = useState({ open: false, account: null });
   const [platformFilter, setPlatformFilter] = useState('all');
   const [stats, setStats] = useState(null);
   const [imports, setImports] = useState([]);
@@ -231,10 +235,16 @@ const MainView = ({ onShowUploader }) => {
 
   useEffect(() => { refreshAccountGroups(); }, [refreshAccountGroups]);
 
-  // Lämnar man kontofliken kan ingen detaljvy vara öppen — nollställ så att
-  // fältväljaren inte felaktigt förblir dold på övriga flikar.
+  const openScatter = useCallback((account = null) => {
+    setScatterState({ open: true, account });
+  }, []);
+  const closeScatter = useCallback(() => {
+    setScatterState({ open: false, account: null });
+  }, []);
+
+  // Lämnar man kontofliken (eller byter GA-läge) stängs scatter-explorern.
   useEffect(() => {
-    if (activeView !== 'account') setAccountDetailOpen(false);
+    if (activeView !== 'account') setScatterState({ open: false, account: null });
   }, [activeView]);
 
   // Detect platform from imports
@@ -483,7 +493,7 @@ const MainView = ({ onShowUploader }) => {
         />
       )}
 
-      {activeView !== 'trend_analysis' && activeView !== 'imports' && activeView !== 'comparison' && activeView !== 'platform_trend' && platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && !(activeView === 'account' && accountDetailOpen) && (
+      {activeView !== 'trend_analysis' && activeView !== 'imports' && activeView !== 'comparison' && activeView !== 'platform_trend' && platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && !scatterState.open && (
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
@@ -495,10 +505,29 @@ const MainView = ({ onShowUploader }) => {
             {selectedFields.includes('engagement') && (
               <EngagementLegend activePlatform={activePlatform} />
             )}
+            {activeView === 'account' && (
+              <div className="mt-4 border-t pt-4 px-4">
+                <Button variant="outline" onClick={() => openScatter(null)}>
+                  <ScatterChart className="w-4 h-4 mr-2" />
+                  Gå till scatterdiagram för räckvidd
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
+      {scatterState.open && (
+        <ScatterExplorerView
+          apiPlatform={apiPlatform}
+          periodParams={periodParams}
+          initialAccount={scatterState.account}
+          onBack={closeScatter}
+        />
+      )}
+
+      {!scatterState.open && (
       <Tabs value={activeView} onValueChange={setActiveView}>
         <TabsList>
           <TabsTrigger value="account">Per konto</TabsTrigger>
@@ -537,7 +566,7 @@ const MainView = ({ onShowUploader }) => {
             accountGroups={accountGroups}
             onGroupsChanged={refreshAccountGroups}
             onPlatformChange={setPlatformFilter}
-            onDetailChange={setAccountDetailOpen}
+            onOpenScatter={openScatter}
           />
         </TabsContent>
 
@@ -589,6 +618,7 @@ const MainView = ({ onShowUploader }) => {
           <AboutView />
         </TabsContent>
       </Tabs>
+      )}
     </div>
   );
 };
