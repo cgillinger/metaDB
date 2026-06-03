@@ -106,6 +106,7 @@ const AccountView = ({
   accountGroups = [],
   onGroupsChanged = null,
   onPlatformChange = null,
+  onDetailChange = null,
 }) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
@@ -357,6 +358,12 @@ const AccountView = ({
   useEffect(() => {
     setDetailAccount(null);
   }, [platform, periodParams, gaListensMode, gaSiteVisitsMode]);
+
+  // Signalera uppåt när detaljvyn öppnas/stängs så föräldern kan dölja
+  // fältväljaren ("Välj värden att visa") – kolumnval saknar mening i detaljvyn.
+  useEffect(() => {
+    if (onDetailChange) onDetailChange(!!detailAccount && detailAvailable);
+  }, [detailAccount, detailAvailable, onDetailChange]);
 
   const handleCopyValue = useCallback((value, field, rowId = 'total') => {
     if (value === undefined || value === null) return;
