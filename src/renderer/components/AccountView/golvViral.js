@@ -12,6 +12,18 @@ export const VIRAL_SHARE_HIGH = 0.40; // viralandel >= detta ≈ "bygger på vir
 
 export const MIN_PEERS = 5; // minst antal jämförbara konton för golvnivå-klassning
 
+// Golvband via percentil mot jämförbara kontons golv. Topp-tredjedel = högt,
+// botten-tredjedel = lågt, mitten = normalt. Höjer ribban för "högt" så att inte
+// halva fältet (allt över medianen) automatiskt kvalificerar.
+export const FLOOR_HIGH_PCT = 0.66;
+export const FLOOR_LOW_PCT = 0.34;
+
+// Kadens = inlägg/dag (inte totalt antal, så en lång period inte "fuskar" förbi).
+// Under MIN går golvet inte att bedöma (räckvidden styrs av enstaka inlägg);
+// vid NORMAL+ delas de positiva omdömena ut fullt ut, däremellan hedgas de.
+export const CADENCE_MIN = 0.3;     // ≲ 2 inlägg/vecka → för glest för ett golv
+export const CADENCE_NORMAL = 1.0;  // ≥ 1 inlägg/dag → uthållig produktion
+
 // Intern hjälpfunktion: beräknar ISO-år och ISO-veckonummer (ISO-8601).
 function isoWeekParts(d) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -161,12 +173,20 @@ export function peerMedianOfMedians(peerMedians) {
 }
 
 /**
- * Returnerar 'högt' | 'lågt' | null.
- * Om peerMedian == null → null.
+ * Golvband via percentil mot jämförbara kontons golv (peerMedians-arrayen).
+ * Returnerar 'högt' | 'normalt' | 'lågt', eller null om < MIN_PEERS jämförbara.
+ *
+ * 'högt'  = kontots golv slår minst FLOOR_HIGH_PCT av jämförbara konton.
+ * 'lågt'  = slår högst FLOOR_LOW_PCT av dem.
+ * 'normalt' = däremellan (i nivå med fältet).
  */
-export function floorLevel(accountMedian, peerMedian) {
-  if (peerMedian == null) return null;
-  return accountMedian >= peerMedian ? 'högt' : 'lågt';
+export function floorBand(accountMedian, peerMedians) {
+  if (!peerMedians || peerMedians.length < MIN_PEERS) return null;
+  const below = peerMedians.filter((m) => m < accountMedian).length;
+  const pct = below / peerMedians.length;
+  if (pct >= FLOOR_HIGH_PCT) return 'högt';
+  if (pct <= FLOOR_LOW_PCT) return 'lågt';
+  return 'normalt';
 }
 
 /**
@@ -190,23 +210,55 @@ export function floorTrend(weeklyFloorArr) {
 }
 
 /**
- * Returnerar statustext baserat på golvnivå och viralandel.
- * 2×2-matris: floorLvl ('högt'|'lågt') × manyViral (bool).
+ * Statustext utifrån golvband, viralandel och kadens (inlägg/dag).
+ *
+ * Kadensen är en faktor, inte en golvhöjare:
+ *  - < cadenceMin       → spärr: golvet går inte att bedöma (oavsett band).
+ *  - cadenceMin..normal → de positiva omdömena (högt golv) hedgas.
+ *  - >= cadenceNormal   → fulla omdömen.
+ * postsPerDay = null/undefined → kadens okänd, behandlas som normal (ingen spärr).
+ *
+ * Returnerar statussträng, eller null när golvet inte kan klassas (för få
+ * jämförbara konton men tillräcklig kadens) – då visar anroparen egen text.
  */
-export function statusVerdict(floorLvl, viralShareValue, highShare = VIRAL_SHARE_HIGH) {
-  const manyViral = viralShareValue >= highShare;
+export function statusVerdict(
+  floorBandValue,
+  viralShareValue,
+  postsPerDay,
+  {
+    highShare = VIRAL_SHARE_HIGH,
+    cadenceMin = CADENCE_MIN,
+    cadenceNormal = CADENCE_NORMAL,
+  } = {}
+) {
+  // Spärr: för gles publicering → inget golvomdöme, oavsett band.
+  if (postsPerDay != null && postsPerDay < cadenceMin) {
+    return 'För gles publicering för att bedöma golvet – räckvidden bygger på enstaka inlägg.';
+  }
+  if (floorBandValue == null) return null;
 
-  if (floorLvl === 'högt' && !manyViral) {
-    return 'Golvbyggt – levererar stabilt och brett, oberoende av viraler';
+  const manyViral = viralShareValue >= highShare;
+  const normalCadence = postsPerDay == null || postsPerDay >= cadenceNormal;
+
+  if (floorBandValue === 'högt') {
+    if (!manyViral) {
+      return normalCadence
+        ? 'Golvbyggt – levererar stabilt och brett, oberoende av viraler'
+        : 'Lovande golv – högt, men för gles publicering för att vara säker';
+    }
+    return normalCadence
+      ? 'Toppform – stark bas och stort genomslag'
+      : 'Stort genomslag, men golvet vilar på få inlägg';
   }
-  if (floorLvl === 'högt' && manyViral) {
-    return 'Toppform – stark bas och stort genomslag';
+  if (floorBandValue === 'normalt') {
+    return manyViral
+      ? 'Räckvidd med tydligt inslag av viraler – golvet i nivå med andra'
+      : 'Stabilt golv – i nivå med liknande konton';
   }
-  if (floorLvl === 'lågt' && !manyViral) {
-    return 'Störst potential att lyfta golvet – varken stabil bas eller genomslag ännu';
+  if (floorBandValue === 'lågt') {
+    return manyViral
+      ? 'Räckvidden vilar på enstaka viraler – ostadig bas'
+      : 'Lägre golv än liknande konton – utrymme att lyfta basen';
   }
-  if (floorLvl === 'lågt' && manyViral) {
-    return 'Räckvidden vilar på enstaka viraler – ostadig bas';
-  }
-  return '';
+  return null;
 }

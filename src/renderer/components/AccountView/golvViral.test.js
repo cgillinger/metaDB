@@ -7,6 +7,10 @@ import {
   TUNT,
   VIRAL_SHARE_HIGH,
   MIN_PEERS,
+  FLOOR_HIGH_PCT,
+  FLOOR_LOW_PCT,
+  CADENCE_MIN,
+  CADENCE_NORMAL,
   median,
   periodMedian,
   weeklyFloor,
@@ -15,7 +19,7 @@ import {
   reliability,
   viralShare,
   peerMedianOfMedians,
-  floorLevel,
+  floorBand,
   floorTrend,
   statusVerdict,
 } from './golvViral.js';
@@ -362,23 +366,38 @@ describe('peerMedianOfMedians', () => {
 });
 
 // ---------------------------------------------------------------------------
-// floorLevel
+// floorBand
 // ---------------------------------------------------------------------------
-describe('floorLevel', () => {
-  it('peerMedian null → null', () => {
-    assert.equal(floorLevel(1000, null), null);
+describe('floorBand', () => {
+  const peers = [10, 20, 30, 40, 50]; // 5 jämförbara konton
+
+  it('< MIN_PEERS jämförbara → null', () => {
+    assert.equal(floorBand(1000, [10, 20, 30, 40]), null);
+    assert.equal(floorBand(1000, []), null);
   });
 
-  it('accountMedian > peerMedian → "högt"', () => {
-    assert.equal(floorLevel(5000, 3000), 'högt');
+  it('slår alla → "högt"', () => {
+    assert.equal(floorBand(1000, peers), 'högt'); // pct 1.0
   });
 
-  it('accountMedian == peerMedian → "högt"', () => {
-    assert.equal(floorLevel(3000, 3000), 'högt');
+  it('slår topp-tredjedel (pct 0.8) → "högt"', () => {
+    assert.equal(floorBand(45, peers), 'högt'); // 4 av 5 under → 0.8 ≥ 0.66
   });
 
-  it('accountMedian < peerMedian → "lågt"', () => {
-    assert.equal(floorLevel(2000, 3000), 'lågt');
+  it('mitten (pct 0.6) → "normalt"', () => {
+    assert.equal(floorBand(35, peers), 'normalt'); // 3 av 5 under → 0.6 < 0.66
+  });
+
+  it('mitten (pct 0.4) → "normalt"', () => {
+    assert.equal(floorBand(30, peers), 'normalt'); // 2 av 5 under → 0.4 > 0.34
+  });
+
+  it('botten (pct 0.2) → "lågt"', () => {
+    assert.equal(floorBand(15, peers), 'lågt'); // 1 av 5 under → 0.2 ≤ 0.34
+  });
+
+  it('slår ingen → "lågt"', () => {
+    assert.equal(floorBand(5, peers), 'lågt'); // pct 0
   });
 });
 
@@ -461,50 +480,99 @@ describe('floorTrend', () => {
 // statusVerdict
 // ---------------------------------------------------------------------------
 describe('statusVerdict', () => {
-  it('"högt" + ej många viraler → Golvbyggt', () => {
+  const NORMAL = 2;   // inlägg/dag ≥ CADENCE_NORMAL
+  const GLES = 0.5;   // mellan MIN och NORMAL
+  const GATE = 0.1;   // < CADENCE_MIN
+
+  // Högt golv ----------------------------------------------------------------
+  it('högt + låg viral + normal kadens → Golvbyggt', () => {
+    assert.equal(
+      statusVerdict('högt', 0.1, NORMAL),
+      'Golvbyggt – levererar stabilt och brett, oberoende av viraler',
+    );
+  });
+
+  it('högt + låg viral + gles kadens → Lovande golv (hedgat)', () => {
+    assert.equal(
+      statusVerdict('högt', 0.1, GLES),
+      'Lovande golv – högt, men för gles publicering för att vara säker',
+    );
+  });
+
+  it('högt + hög viral + normal kadens → Toppform', () => {
+    assert.equal(
+      statusVerdict('högt', VIRAL_SHARE_HIGH, NORMAL),
+      'Toppform – stark bas och stort genomslag',
+    );
+  });
+
+  it('högt + hög viral + gles kadens → genomslag på få inlägg (hedgat)', () => {
+    assert.equal(
+      statusVerdict('högt', VIRAL_SHARE_HIGH, GLES),
+      'Stort genomslag, men golvet vilar på få inlägg',
+    );
+  });
+
+  // Normalt golv -------------------------------------------------------------
+  it('normalt + låg viral → Stabilt golv', () => {
+    assert.equal(
+      statusVerdict('normalt', 0.1, NORMAL),
+      'Stabilt golv – i nivå med liknande konton',
+    );
+  });
+
+  it('normalt + hög viral → inslag av viraler', () => {
+    assert.equal(
+      statusVerdict('normalt', 0.9, NORMAL),
+      'Räckvidd med tydligt inslag av viraler – golvet i nivå med andra',
+    );
+  });
+
+  // Lågt golv ----------------------------------------------------------------
+  it('lågt + låg viral → utrymme att lyfta basen', () => {
+    assert.equal(
+      statusVerdict('lågt', 0.1, NORMAL),
+      'Lägre golv än liknande konton – utrymme att lyfta basen',
+    );
+  });
+
+  it('lågt + hög viral → ostadig bas', () => {
+    assert.equal(
+      statusVerdict('lågt', 0.99, NORMAL),
+      'Räckvidden vilar på enstaka viraler – ostadig bas',
+    );
+  });
+
+  // Kadens-spärr -------------------------------------------------------------
+  it('kadens < CADENCE_MIN → spärr, oavsett band', () => {
+    const gate = 'För gles publicering för att bedöma golvet – räckvidden bygger på enstaka inlägg.';
+    assert.equal(statusVerdict('högt', 0.1, GATE), gate);
+    assert.equal(statusVerdict('lågt', 0.9, GATE), gate);
+    assert.equal(statusVerdict(null, 0.5, GATE), gate); // spärr före "kan inte klassas"
+  });
+
+  it('band null + tillräcklig kadens → null (anroparen visar egen text)', () => {
+    assert.equal(statusVerdict(null, 0.5, NORMAL), null);
+  });
+
+  it('kadens okänd (undefined) → behandlas som normal, ingen spärr', () => {
     assert.equal(
       statusVerdict('högt', 0.1),
       'Golvbyggt – levererar stabilt och brett, oberoende av viraler',
     );
   });
 
-  it('"högt" + många viraler → Toppform', () => {
-    assert.equal(
-      statusVerdict('högt', VIRAL_SHARE_HIGH),
-      'Toppform – stark bas och stort genomslag',
-    );
-  });
-
-  it('"lågt" + ej många viraler → Störst potential', () => {
-    assert.equal(
-      statusVerdict('lågt', 0.1),
-      'Störst potential att lyfta golvet – varken stabil bas eller genomslag ännu',
-    );
-  });
-
-  it('"lågt" + många viraler → ostadig bas', () => {
-    assert.equal(
-      statusVerdict('lågt', 0.99),
-      'Räckvidden vilar på enstaka viraler – ostadig bas',
-    );
-  });
-
-  it('okänt floorLvl → tom sträng', () => {
-    assert.equal(statusVerdict(null, 0.5), '');
-    assert.equal(statusVerdict('medel', 0.5), '');
-  });
-
+  // Viral-tröskel -------------------------------------------------------------
   it('viralShare exakt på VIRAL_SHARE_HIGH → räknas som "många"', () => {
-    // 0.40 >= 0.40 → manyViral = true
     assert.equal(
-      statusVerdict('högt', 0.40),
+      statusVerdict('högt', 0.40, NORMAL),
       'Toppform – stark bas och stort genomslag',
     );
   });
 
   it('viralShare precis under VIRAL_SHARE_HIGH → räknas som "ej många"', () => {
     assert.equal(
-      statusVerdict('högt', 0.399),
+      statusVerdict('högt', 0.399, NORMAL),
       'Golvbyggt – levererar stabilt och brett, oberoende av viraler',
     );
   });
@@ -531,5 +599,13 @@ describe('exporterade konstanter', () => {
   });
   it('MIN_PEERS = 5', () => {
     assert.equal(MIN_PEERS, 5);
+  });
+  it('golvband-percentiler', () => {
+    assert.equal(FLOOR_HIGH_PCT, 0.66);
+    assert.equal(FLOOR_LOW_PCT, 0.34);
+  });
+  it('kadensgränser', () => {
+    assert.equal(CADENCE_MIN, 0.3);
+    assert.equal(CADENCE_NORMAL, 1.0);
   });
 });
