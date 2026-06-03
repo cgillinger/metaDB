@@ -22,6 +22,8 @@ export function getDb() {
 
   // Enable WAL mode for better concurrent read performance
   db.pragma('journal_mode = WAL');
+  // Wait up to 5 s when the DB is locked instead of failing immediately
+  db.pragma('busy_timeout = 5000');
   // Enable foreign keys
   db.pragma('foreign_keys = ON');
 

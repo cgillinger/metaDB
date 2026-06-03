@@ -21,15 +21,12 @@ function isPlaceholderAccount(name) {
 
 /**
  * Parse and import an API-level reach CSV.
- * The CSV has no date information — the month must be provided by the user.
+ * Month is auto-detected from Period_start if present (new format),
+ * otherwise must be provided by the caller (old format).
  *
  * Returns { imported, skipped, month, accounts[] }
  */
 export function importReachCSV(csvContent, month, filename) {
-  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-    throw new Error('Månad måste anges i formatet YYYY-MM.');
-  }
-
   const result = Papa.parse(csvContent, {
     header: true,
     dynamicTyping: true,
@@ -43,6 +40,32 @@ export function importReachCSV(csvContent, month, filename) {
   const headers = Object.keys(result.data[0]);
   if (!isReachCSV(headers)) {
     throw new Error('Filen är inte en API-räckviddsexport. Förväntade kolumnerna Page, Page ID, Reach.');
+  }
+
+  // Auto-detect month from Period_start if present (new CSV format)
+  const hasPeriodStart = result.data[0] && result.data[0]['Period_start'];
+
+  if (!month && hasPeriodStart) {
+    const ps = String(result.data[0]['Period_start']);
+    const m = ps.match(/(\d{4})-(\d{2})/);
+    if (!m) {
+      throw new Error(`Kunde inte tolka månaden från Period_start: ${ps}`);
+    }
+    month = `${m[1]}-${m[2]}`;
+
+    for (const row of result.data) {
+      if (!row['Period_start']) continue;
+      const rm = String(row['Period_start']).match(/(\d{4})-(\d{2})/);
+      if (rm && `${rm[1]}-${rm[2]}` !== month) {
+        throw new Error(`CSV-filen innehåller data för flera månader: ${month} och ${rm[1]}-${rm[2]}.`);
+      }
+    }
+  } else if (!month) {
+    throw new Error('Månad måste anges i formatet YYYY-MM (eller CSV:n måste innehålla Period_start).');
+  }
+
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    throw new Error('Månad måste vara i formatet YYYY-MM.');
   }
 
   const db = getDb();

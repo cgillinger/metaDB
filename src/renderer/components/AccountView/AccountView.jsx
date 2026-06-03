@@ -9,7 +9,8 @@ import InfoTooltip from '../ui/InfoTooltip';
 import CollabBadge from '../ui/CollabBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, LineChart } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, Trash2, AlertCircle, Users, LineChart } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
@@ -21,6 +22,9 @@ import {
 } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
 import AccountDetailView from './AccountDetailView';
+import { daysInMonth } from '@/utils/dateHelpers';
+import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
+import ProfileIcon from '../ui/ProfileIcon';
 
 // P4 Lokalt regional channel names, kept as an explicit Set for O(1) membership
 // lookup. Explicit enumeration is intentional — the list is stable and finite.
@@ -61,39 +65,14 @@ const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'link_clicks': 'Länkklick',
   'other_clicks': 'Övriga klick',
   'post_count': 'Antal publiceringar',
-  'posts_per_day': 'Publiceringar per dag'
+  'posts_per_day': 'Publiceringar per dag',
+  'estimated_unique_clicks': 'Uppsk. unika klickare',
 };
 
-const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
+const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'estimated_unique_clicks'];
 const IG_ONLY_FIELDS = ['saves', 'follows'];
 
-const CHANNEL_COLORS = {
-  'P1': '#0066cc', 'P2': '#ff6600', 'P3': '#00cc66', 'P4': '#cc33cc',
-  'EKOT': '#005eb8', 'RADIOSPORTEN': '#1c5c35', 'SR': '#000000', 'default': '#000000'
-};
-
-const ProfileIcon = ({ accountName }) => {
-  const name = accountName || 'Okänd';
-  const firstLetter = name.charAt(0).toUpperCase();
-  let backgroundColor = CHANNEL_COLORS.default;
-  let channel = '';
-  const nameLower = name.toLowerCase();
-  if (nameLower.includes('ekot') || nameLower.includes('radio sweden')) { backgroundColor = CHANNEL_COLORS.EKOT; channel = 'E'; }
-  else if (nameLower.includes('radiosporten') || nameLower.includes('radio sporten')) { backgroundColor = CHANNEL_COLORS.RADIOSPORTEN; channel = 'RS'; }
-  else if (nameLower.includes('p1')) { backgroundColor = CHANNEL_COLORS.P1; channel = 'P1'; }
-  else if (nameLower.includes('p2')) { backgroundColor = CHANNEL_COLORS.P2; channel = 'P2'; }
-  else if (nameLower.includes('p3')) { backgroundColor = CHANNEL_COLORS.P3; channel = 'P3'; }
-  else if (nameLower.includes('p4')) { backgroundColor = CHANNEL_COLORS.P4; channel = 'P4'; }
-  else if (nameLower.includes('sveriges radio')) { backgroundColor = CHANNEL_COLORS.SR; channel = 'SR'; }
-  const displayLetter = channel || firstLetter;
-  return (
-    <div className="flex-shrink-0 w-6 h-6 rounded-sm flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor }}>
-      {displayLetter}
-    </div>
-  );
-};
-
-const FIELDS_WITHOUT_TOTALS = ['average_reach', 'posts_per_day'];
+const FIELDS_WITHOUT_TOTALS = ['average_reach', 'posts_per_day', 'estimated_unique_clicks'];
 
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun',
                          'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
@@ -109,17 +88,44 @@ const PAGE_SIZE_OPTIONS = [
   { value: '50', label: '50 per sida' }
 ];
 
-const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMode = false }) => {
+// Fields that cannot be meaningfully summed across accounts in a group
+const GROUP_NON_SUMMABLE = new Set(['reach', 'average_reach', 'account_reach', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks']);
+
+// Fields that CAN be summed
+const GROUP_SUMMABLE = new Set([
+  'views', 'likes', 'comments', 'shares', 'saves', 'follows',
+  'total_clicks', 'link_clicks', 'other_clicks', 'interactions', 'engagement', 'post_count',
+]);
+
+const AccountView = ({
+  selectedFields,
+  platform,
+  periodParams = {},
+  gaListensMode = false,
+  gaSiteVisitsMode = false,
+  accountGroups = [],
+  onGroupsChanged = null,
+  onPlatformChange = null,
+}) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [copyStatus, setCopyStatus] = useState({ field: null, rowId: null, copied: false });
   const [accountData, setAccountData] = useState([]);
   const [totalSummary, setTotalSummary] = useState({});
+  const [totalPeriodDays, setTotalPeriodDays] = useState(0);
   const [reachByAccount, setReachByAccount] = useState({});
   const [reachMonths, setReachMonths] = useState([]);
+  const [igReachByAccount, setIgReachByAccount] = useState({});
+  const [igReachMonths, setIgReachMonths] = useState([]);
+  const [estimatedClicksByAccount, setEstimatedClicksByAccount] = useState({});
   const [showReachOnlyAccounts, setShowReachOnlyAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showDeleteColumn, setShowDeleteColumn] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [refreshCounter, setRefreshCounter] = useState(0);
+  const [showGroups, setShowGroups] = useState(true);
 
   // Master/detail: valt konto för drill-down + nudge när detalj ej är tillgänglig.
   const [detailAccount, setDetailAccount] = useState(null);
@@ -138,17 +144,40 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
 
   // GA Listens state
   const [gaViewMode, setGaViewMode] = useState('summary'); // 'summary' | 'monthly'
-  const [gaSummary, setGaSummary] = useState({ programmes: [], grandTotal: 0 });
+  const [gaSummary, setGaSummary] = useState({ programmes: [], grandTotal: 0, grandAvgDaily: 0, totalPeriodDays: 0 });
   const [gaSortDir, setGaSortDir] = useState('desc');
+  const [gaSortKey, setGaSortKey] = useState('total_listens'); // 'total_listens' | 'avg_daily_listens'
   const [gaLoading, setGaLoading] = useState(false);
   // Monthly pivot state
   const [gaData, setGaData] = useState([]);
   const [gaMonths, setGaMonths] = useState([]);
   const [gaMonthlySortConfig, setGaMonthlySortConfig] = useState({ key: null, direction: 'desc' });
 
+  // GA batch delete state
+  const [gaSelectedAccounts, setGaSelectedAccounts] = useState(new Set());
+  const [gaShowDeleteColumn, setGaShowDeleteColumn] = useState(false);
+  const [gaDeleteLoading, setGaDeleteLoading] = useState(false);
+
+  // GSV state — parallel with GA Listens
+  const [gsvViewMode, setGsvViewMode] = useState('summary');
+  const [gsvSummary, setGsvSummary] = useState({ programmes: [], grandTotal: 0, grandAvgDaily: 0, totalPeriodDays: 0 });
+  const [gsvSortKey, setGsvSortKey] = useState('total_visits');
+  const [gsvSortDir, setGsvSortDir] = useState('desc');
+  const [gsvLoading, setGsvLoading] = useState(false);
+  const [gsvData, setGsvData] = useState([]);
+  const [gsvMonths, setGsvMonths] = useState([]);
+  const [gsvMonthlySortConfig, setGsvMonthlySortConfig] = useState({ key: null, direction: 'desc' });
+  const [gsvSelectedAccounts, setGsvSelectedAccounts] = useState(new Set());
+  const [gsvShowDeleteColumn, setGsvShowDeleteColumn] = useState(false);
+  const [gsvDeleteLoading, setGsvDeleteLoading] = useState(false);
+
+  // Group create dialog state
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [groupDialogAccounts, setGroupDialogAccounts] = useState([]);
+
   // Fetch account data from API
   useEffect(() => {
-    if (gaListensMode) return;
+    if (gaListensMode || gaSiteVisitsMode) return;
     if (!selectedFields || selectedFields.length === 0) {
       setAccountData([]);
       return;
@@ -169,8 +198,12 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
         const data = await api.getAccounts(params);
         setAccountData(data.accounts || []);
         setTotalSummary(data.totals || {});
+        setTotalPeriodDays(data.totalPeriodDays || 0);
         setReachByAccount(data.reachByAccount || {});
         setReachMonths(data.reachMonths || []);
+        setIgReachByAccount(data.igReachByAccount || {});
+        setIgReachMonths(data.igReachMonths || []);
+        setEstimatedClicksByAccount(data.estimatedClicksByAccount || {});
       } catch (error) {
         console.error('Fel vid hämtning av kontodata:', error);
       } finally {
@@ -178,7 +211,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       }
     };
     fetchData();
-  }, [selectedFields, platform, periodParams, showReachOnlyAccounts]);
+  }, [selectedFields, platform, periodParams, showReachOnlyAccounts, refreshCounter]);
 
   // Fetch summerade GA-lyssningar
   useEffect(() => {
@@ -190,6 +223,14 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
           ? periodParams.months.split(',').map(m => m.trim())
           : null;
         const result = await api.getGAListensSummary(months, gaSortDir);
+        // Sort client-side if sorting by avg_daily_listens (backend always sorts by total_listens)
+        if (gaSortKey === 'avg_daily_listens') {
+          result.programmes = [...result.programmes].sort((a, b) =>
+            gaSortDir === 'asc'
+              ? (a.avg_daily_listens ?? 0) - (b.avg_daily_listens ?? 0)
+              : (b.avg_daily_listens ?? 0) - (a.avg_daily_listens ?? 0)
+          );
+        }
         setGaSummary(result);
       } catch (err) {
         console.error('Fel vid hämtning av GA-lyssningar:', err);
@@ -198,7 +239,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       }
     };
     fetchGASummary();
-  }, [gaListensMode, periodParams, gaSortDir]);
+  }, [gaListensMode, periodParams, gaSortDir, gaSortKey, refreshCounter]);
 
   // Fetch GA listens per-month data (for monthly pivot view)
   useEffect(() => {
@@ -225,7 +266,60 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       }
     };
     fetchGAMonthly();
-  }, [gaListensMode, gaViewMode, periodParams]);
+  }, [gaListensMode, gaViewMode, periodParams, refreshCounter]);
+
+  // Fetch GSV summary
+  useEffect(() => {
+    if (!gaSiteVisitsMode) return;
+    const fetchGSVSummary = async () => {
+      setGsvLoading(true);
+      try {
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGASiteVisitsSummary(months, gsvSortDir);
+        if (gsvSortKey === 'avg_daily_visits') {
+          result.programmes = [...result.programmes].sort((a, b) =>
+            gsvSortDir === 'asc'
+              ? (a.avg_daily_visits ?? 0) - (b.avg_daily_visits ?? 0)
+              : (b.avg_daily_visits ?? 0) - (a.avg_daily_visits ?? 0)
+          );
+        }
+        setGsvSummary(result);
+      } catch (err) {
+        console.error('Fel vid hämtning av GSV-summary:', err);
+      } finally {
+        setGsvLoading(false);
+      }
+    };
+    fetchGSVSummary();
+  }, [gaSiteVisitsMode, periodParams, gsvSortDir, gsvSortKey, refreshCounter]);
+
+  // Fetch GSV monthly pivot data
+  useEffect(() => {
+    if (!gaSiteVisitsMode || gsvViewMode !== 'monthly') return;
+    const fetchGSVMonthly = async () => {
+      setGsvLoading(true);
+      try {
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGASiteVisits(months);
+        const rows = result.data || [];
+        setGsvData(rows);
+        const uniqueMonths = [...new Set(rows.map(r => r.month))].sort();
+        setGsvMonths(uniqueMonths);
+        if (uniqueMonths.length > 0 && !gsvMonthlySortConfig.key) {
+          setGsvMonthlySortConfig({ key: uniqueMonths[uniqueMonths.length - 1], direction: 'desc' });
+        }
+      } catch (err) {
+        console.error('Fel vid hämtning av GSV-monthly:', err);
+      } finally {
+        setGsvLoading(false);
+      }
+    };
+    fetchGSVMonthly();
+  }, [gaSiteVisitsMode, gsvViewMode, periodParams, refreshCounter]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -238,7 +332,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     prevFieldsRef.current = selectedFields;
     if (selectedFields.length > prev.length) {
       const newField = selectedFields.find(f => !prev.includes(f));
-      if (newField && newField !== 'account_reach') {
+      if (newField && newField !== 'account_reach' && newField !== 'estimated_unique_clicks') {
         const sortKey = newField === 'average_reach' ? 'reach' : newField;
         setSortConfig({ key: sortKey, direction: 'desc' });
       }
@@ -262,7 +356,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
   // Stäng detaljvyn om plattform/period/läge ändras så vi inte visar inaktuell data.
   useEffect(() => {
     setDetailAccount(null);
-  }, [platform, periodParams, gaListensMode]);
+  }, [platform, periodParams, gaListensMode, gaSiteVisitsMode]);
 
   const handleCopyValue = useCallback((value, field, rowId = 'total') => {
     if (value === undefined || value === null) return;
@@ -316,43 +410,6 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     );
   };
 
-  // Client-side sorting and pagination
-  const paginatedData = useMemo(() => {
-    let sorted = [...accountData];
-
-    if (sortConfig.key) {
-      sorted.sort((a, b) => {
-        let aVal, bVal;
-
-        if (sortConfig.key.startsWith('reach_')) {
-          const month = sortConfig.key.replace('reach_', '');
-          // Account reach is Facebook-only
-          aVal = a.platform === 'facebook' ? (reachByAccount[a.account_name]?.[month] ?? -1) : -1;
-          bVal = b.platform === 'facebook' ? (reachByAccount[b.account_name]?.[month] ?? -1) : -1;
-        } else if (sortConfig.key === 'account_name') {
-          aVal = (a.account_name || '').toLowerCase();
-          bVal = (b.account_name || '').toLowerCase();
-          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-          return 0;
-        } else {
-          aVal = a[sortConfig.key];
-          bVal = b[sortConfig.key];
-        }
-
-        if (aVal == null) aVal = -1;
-        if (bVal == null) bVal = -1;
-
-        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
-      });
-    }
-
-    const startIndex = (currentPage - 1) * pageSize;
-    return sorted.slice(startIndex, startIndex + pageSize);
-  }, [accountData, sortConfig, currentPage, pageSize, reachByAccount]);
-
-  const totalPages = Math.ceil(accountData.length / pageSize);
-
   // GA monthly pivot memos
   const gaPivot = useMemo(() => {
     const map = {};
@@ -383,16 +440,343 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     });
   }, [gaPivot, gaMonthlySortConfig]);
 
+  // GSV monthly pivot memos
+  const gsvPivot = useMemo(() => {
+    const map = {};
+    for (const row of gsvData) {
+      if (!map[row.account_name]) map[row.account_name] = {};
+      map[row.account_name][row.month] = row.visits;
+    }
+    return map;
+  }, [gsvData]);
+
+  const gsvTotals = useMemo(() => {
+    const totals = {};
+    for (const monthMap of Object.values(gsvPivot)) {
+      for (const [month, val] of Object.entries(monthMap)) {
+        totals[month] = (totals[month] || 0) + val;
+      }
+    }
+    return totals;
+  }, [gsvPivot]);
+
+  const gsvSortedPrograms = useMemo(() => {
+    const programs = Object.keys(gsvPivot);
+    if (!gsvMonthlySortConfig.key) return [...programs].sort(sortGAPrograms);
+    return [...programs].sort((a, b) => {
+      const aVal = gsvPivot[a][gsvMonthlySortConfig.key] ?? -1;
+      const bVal = gsvPivot[b][gsvMonthlySortConfig.key] ?? -1;
+      return gsvMonthlySortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [gsvPivot, gsvMonthlySortConfig]);
+
+  // Synthetic group rows for GSV summary mode
+  const gsvSummaryWithGroups = useMemo(() => {
+    if (!gsvSummary?.programmes) return { programmes: [], grandTotal: 0, grandAvgDaily: 0, totalPeriodDays: 0 };
+    const gsvGroups = accountGroups.filter(g => g.source === 'ga_site_visits');
+    if (gsvGroups.length === 0) return gsvSummary;
+
+    const progMap = {};
+    for (const p of gsvSummary.programmes) progMap[p.account_name] = p;
+
+    const syntheticRows = [...gsvGroups]
+      .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'))
+      .map(group => {
+        const memberNames = group.members.map(k => k.split('::')[0]);
+        const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
+        const totalVisits = memberRows.reduce((sum, p) => sum + p.total_visits, 0);
+        const maxMonthCount = memberRows.length > 0 ? Math.max(...memberRows.map(p => p.month_count)) : 0;
+        const avgDaily = gsvSummary.totalPeriodDays > 0
+          ? Math.round((totalVisits / gsvSummary.totalPeriodDays) * 10) / 10
+          : 0;
+        return {
+          account_name: group.name,
+          total_visits: totalVisits,
+          month_count: maxMonthCount,
+          avg_daily_visits: avgDaily,
+          _isGroup: true,
+          groupId: group.id,
+          memberCount: memberNames.length,
+          matchedCount: memberRows.length,
+        };
+      });
+
+    return {
+      programmes: [...syntheticRows, ...gsvSummary.programmes],
+      grandTotal: gsvSummary.grandTotal,
+      grandAvgDaily: gsvSummary.grandAvgDaily,
+      totalPeriodDays: gsvSummary.totalPeriodDays,
+    };
+  }, [gsvSummary, accountGroups]);
+
+  // Synthetic group rows for GSV monthly mode
+  const gsvSortedProgramsWithGroups = useMemo(() => {
+    const gsvGroups = accountGroups.filter(g => g.source === 'ga_site_visits');
+    if (gsvGroups.length === 0) return gsvSortedPrograms;
+
+    const syntheticGroupNames = [...gsvGroups]
+      .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'))
+      .map(group => `__group__${group.id}`);
+
+    return [...syntheticGroupNames, ...gsvSortedPrograms];
+  }, [gsvSortedPrograms, accountGroups]);
+
+  // Build a map of groupId → aggregated monthly pivot for GSV monthly mode
+  const gsvGroupPivots = useMemo(() => {
+    const gsvGroups = accountGroups.filter(g => g.source === 'ga_site_visits');
+    if (gsvGroups.length === 0) return {};
+    const result = {};
+    for (const group of gsvGroups) {
+      const memberNames = group.members.map(k => k.split('::')[0]);
+      const agg = {};
+      for (const name of memberNames) {
+        const memberData = gsvPivot[name];
+        if (!memberData) continue;
+        for (const [month, val] of Object.entries(memberData)) {
+          agg[month] = (agg[month] || 0) + val;
+        }
+      }
+      result[`__group__${group.id}`] = { pivot: agg, group };
+    }
+    return result;
+  }, [accountGroups, gsvPivot]);
+
+  // Synthetic group rows for GA summary mode
+  const gaSummaryWithGroups = useMemo(() => {
+    if (!gaSummary?.programmes) return { programmes: [], grandTotal: 0, grandAvgDaily: 0, totalPeriodDays: 0 };
+    const gaGroups = accountGroups.filter(g => g.source === 'ga_listens');
+    if (gaGroups.length === 0) return gaSummary;
+
+    const progMap = {};
+    for (const p of gaSummary.programmes) progMap[p.account_name] = p;
+
+    const syntheticRows = [...gaGroups]
+      .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'))
+      .map(group => {
+        const memberNames = group.members.map(k => k.split('::')[0]);
+        const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
+        const totalListens = memberRows.reduce((sum, p) => sum + p.total_listens, 0);
+        const maxMonthCount = memberRows.length > 0 ? Math.max(...memberRows.map(p => p.month_count)) : 0;
+        const avgDaily = gaSummary.totalPeriodDays > 0
+          ? Math.round((totalListens / gaSummary.totalPeriodDays) * 10) / 10
+          : 0;
+        return {
+          account_name: group.name,
+          total_listens: totalListens,
+          month_count: maxMonthCount,
+          avg_daily_listens: avgDaily,
+          _isGroup: true,
+          groupId: group.id,
+          memberCount: memberNames.length,
+          matchedCount: memberRows.length,
+        };
+      });
+
+    return {
+      programmes: [...syntheticRows, ...gaSummary.programmes],
+      grandTotal: gaSummary.grandTotal,
+      grandAvgDaily: gaSummary.grandAvgDaily,
+      totalPeriodDays: gaSummary.totalPeriodDays,
+    };
+  }, [gaSummary, accountGroups]);
+
+  // Synthetic group rows for GA monthly mode
+  const gaSortedProgramsWithGroups = useMemo(() => {
+    const gaGroups = accountGroups.filter(g => g.source === 'ga_listens');
+    if (gaGroups.length === 0) return gaSortedPrograms;
+
+    const syntheticGroupNames = [...gaGroups]
+      .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'))
+      .map(group => `__group__${group.id}`);
+
+    return [...syntheticGroupNames, ...gaSortedPrograms];
+  }, [gaSortedPrograms, accountGroups]);
+
+  // Build a map of groupId → aggregated monthly pivot for GA monthly mode
+  const gaGroupPivots = useMemo(() => {
+    const gaGroups = accountGroups.filter(g => g.source === 'ga_listens');
+    if (gaGroups.length === 0) return {};
+    const result = {};
+    for (const group of gaGroups) {
+      const memberNames = group.members.map(k => k.split('::')[0]);
+      const agg = {};
+      for (const name of memberNames) {
+        const memberData = gaPivot[name];
+        if (!memberData) continue;
+        for (const [month, val] of Object.entries(memberData)) {
+          agg[month] = (agg[month] || 0) + val;
+        }
+      }
+      result[`__group__${group.id}`] = { pivot: agg, group };
+    }
+    return result;
+  }, [accountGroups, gaPivot]);
+
+  // Synthetic group rows for posts mode
+  const accountDataWithGroups = useMemo(() => {
+    const postGroups = accountGroups.filter(g => g.source === 'posts');
+    if (postGroups.length === 0) return accountData;
+
+    const accountMap = {};
+    for (const a of accountData) {
+      accountMap[`${a.account_name}::${a.platform}`] = a;
+    }
+
+    const syntheticRows = postGroups.map(group => {
+      const memberRows = group.members.map(k => accountMap[k]).filter(Boolean);
+      const matchedCount = memberRows.length;
+      const row = {
+        account_name: group.name,
+        platform: 'group',
+        _isGroup: true,
+        groupId: group.id,
+        memberCount: group.members.length,
+        matchedCount,
+        is_collab: false,
+      };
+      // Sum summable fields
+      for (const field of GROUP_SUMMABLE) {
+        row[field] = memberRows.reduce((sum, a) => sum + (a[field] || 0), 0);
+      }
+      // Map average_reach → reach for display purposes
+      row.reach = null;
+      if (totalPeriodDays > 0) {
+        row.avg_daily_link_clicks = Math.round(((row.link_clicks || 0) / totalPeriodDays) * 10) / 10;
+      }
+      return row;
+    });
+
+    return [...syntheticRows, ...accountData];
+  }, [accountData, accountGroups, totalPeriodDays]);
+
+  const filteredGaSummaryWithGroups = useMemo(() => {
+    if (showGroups) return gaSummaryWithGroups;
+    return {
+      ...gaSummaryWithGroups,
+      programmes: gaSummaryWithGroups.programmes.filter(p => !p._isGroup),
+    };
+  }, [gaSummaryWithGroups, showGroups]);
+
+  const filteredGsvSummaryWithGroups = useMemo(() => {
+    if (showGroups) return gsvSummaryWithGroups;
+    return {
+      ...gsvSummaryWithGroups,
+      programmes: gsvSummaryWithGroups.programmes.filter(p => !p._isGroup),
+    };
+  }, [gsvSummaryWithGroups, showGroups]);
+
+  const filteredAccountDataWithGroups = useMemo(() => {
+    if (showGroups) return accountDataWithGroups;
+    return accountDataWithGroups.filter(a => !a._isGroup);
+  }, [accountDataWithGroups, showGroups]);
+
+  const filteredGaSortedProgramsWithGroups = useMemo(() => {
+    if (showGroups) return gaSortedProgramsWithGroups;
+    return gaSortedProgramsWithGroups.filter(name => !name.startsWith('__group__'));
+  }, [gaSortedProgramsWithGroups, showGroups]);
+
+  const filteredGsvSortedProgramsWithGroups = useMemo(() => {
+    if (showGroups) return gsvSortedProgramsWithGroups;
+    return gsvSortedProgramsWithGroups.filter(name => !name.startsWith('__group__'));
+  }, [gsvSortedProgramsWithGroups, showGroups]);
+
+  // Fields to display in the posts table — injects avg_daily_link_clicks after link_clicks
+  const displayFields = useMemo(() => {
+    const base = selectedFields.filter(f => f !== 'account_reach' && f !== 'ig_account_reach');
+    if (!base.includes('link_clicks') || !totalPeriodDays) return base;
+    const result = [];
+    for (const f of base) {
+      result.push(f);
+      if (f === 'link_clicks') result.push('avg_daily_link_clicks');
+    }
+    return result;
+  }, [selectedFields, totalPeriodDays]);
+
+  // Client-side sorting and pagination — groups always stay at top
+  const paginatedData = useMemo(() => {
+    const groupRows = [...filteredAccountDataWithGroups.filter(a => a._isGroup)]
+      .sort((a, b) => (a.account_name || '').localeCompare((b.account_name || ''), 'sv'));
+    const individualRows = filteredAccountDataWithGroups.filter(a => !a._isGroup);
+    let sorted = [...individualRows];
+
+    if (sortConfig.key) {
+      sorted.sort((a, b) => {
+        let aVal, bVal;
+
+        if (sortConfig.key.startsWith('reach_')) {
+          const month = sortConfig.key.replace('reach_', '');
+          aVal = a.platform === 'facebook' ? (reachByAccount[a.account_name]?.[month] ?? -1) : -1;
+          bVal = b.platform === 'facebook' ? (reachByAccount[b.account_name]?.[month] ?? -1) : -1;
+        } else if (sortConfig.key.startsWith('ig_reach_')) {
+          const month = sortConfig.key.replace('ig_reach_', '');
+          aVal = a.platform === 'instagram' ? (igReachByAccount[a.account_name]?.[month] ?? -1) : -1;
+          bVal = b.platform === 'instagram' ? (igReachByAccount[b.account_name]?.[month] ?? -1) : -1;
+        } else if (sortConfig.key === 'estimated_unique_clicks') {
+          aVal = a.platform === 'facebook' ? (estimatedClicksByAccount[a.account_name]?.upper ?? -1) : -1;
+          bVal = b.platform === 'facebook' ? (estimatedClicksByAccount[b.account_name]?.upper ?? -1) : -1;
+        } else if (sortConfig.key === 'account_name') {
+          aVal = (a.account_name || '').toLowerCase();
+          bVal = (b.account_name || '').toLowerCase();
+          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+        } else {
+          aVal = a[sortConfig.key];
+          bVal = b[sortConfig.key];
+        }
+
+        if (aVal == null) aVal = -1;
+        if (bVal == null) bVal = -1;
+
+        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      });
+    } else {
+      sorted.sort((a, b) => (a.account_name || '').localeCompare((b.account_name || ''), 'sv'));
+    }
+
+    const startIndex = (currentPage - 1) * pageSize;
+    const paginatedIndividuals = sorted.slice(startIndex, startIndex + pageSize);
+    return [...groupRows, ...paginatedIndividuals];
+  }, [filteredAccountDataWithGroups, sortConfig, currentPage, pageSize, reachByAccount]);
+
+  const totalPages = Math.ceil(accountData.length / pageSize);
+
   const getFieldValue = (account, field) => {
-    // Map average_reach → reach from API
     if (field === 'average_reach') return account.reach;
+    if (field === 'estimated_unique_clicks') return estimatedClicksByAccount[account.account_name]?.upper ?? null;
     return account[field];
   };
 
   const renderCellContent = (account, field) => {
     const plat = account.platform;
+    if (field === 'avg_daily_link_clicks') {
+      if (plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
+      const val = account.avg_daily_link_clicks;
+      return <span>{val != null ? val.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span>;
+    }
     if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
     if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
+    if (field === 'estimated_unique_clicks' && plat === 'facebook') {
+      const est = estimatedClicksByAccount[account.account_name];
+      if (!est || est.upper === null || est.quality === 'suppressed') {
+        return <span className="text-muted-foreground cursor-help" title="Kräver kontoräckvidd (API-import) och minst 5 inlägg">—</span>;
+      }
+      const upper = Math.round(est.upper).toLocaleString('sv-SE');
+      const lower = est.lower !== null ? Math.round(est.lower).toLocaleString('sv-SE') : null;
+      const rangeText = `~${lower !== null ? `${lower} – ${upper}` : upper}`;
+      if (est.quality === 'uncertain') {
+        return (
+          <span className="flex items-center gap-1">
+            {rangeText}
+            <span
+              className="text-amber-500 cursor-help"
+              title="Hög osäkerhet — kontot har mycket trogen publik (överlappsfaktor > 5)"
+            >⚠</span>
+          </span>
+        );
+      }
+      return <span>{rangeText}</span>;
+    }
     return formatValue(getFieldValue(account, field));
   };
 
@@ -418,7 +802,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
         formatted['Facebook URL'] = `https://www.facebook.com/${account.account_id}`;
       }
       for (const field of selectedFields) {
-        if (field === 'account_reach') continue;
+        if (field === 'account_reach' || field === 'ig_account_reach') continue;
         const displayName = getDisplayName(field);
         if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { formatted[displayName] = 'N/A'; continue; }
         if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') { formatted[displayName] = 'N/A'; continue; }
@@ -427,8 +811,16 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       if (selectedFields.includes('account_reach')) {
         for (const month of reachMonths) {
           const headerName = formatReachColumnHeader(month);
-          // Account reach is Facebook-only — show dash for other platforms
           const reachMap = plat === 'facebook' ? reachByAccount[account.account_name] : undefined;
+          formatted[headerName] = reachMap?.[month] !== undefined
+            ? formatValue(reachMap[month])
+            : '—';
+        }
+      }
+      if (selectedFields.includes('ig_account_reach')) {
+        for (const month of igReachMonths) {
+          const headerName = `IG-räckvidd ${month}`;
+          const reachMap = plat === 'instagram' ? igReachByAccount[account.account_name] : undefined;
           formatted[headerName] = reachMap?.[month] !== undefined
             ? formatValue(reachMap[month])
             : '—';
@@ -440,7 +832,8 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
 
   const handleExportToExcel = async () => {
     try {
-      const exportData = formatDataForExport(accountData);
+      // Exclude group rows — they are display-only aggregations
+      const exportData = formatDataForExport(accountData.filter(a => !a._isGroup));
       await downloadExcel(exportData, 'meta-statistik-konton.xlsx');
     } catch (error) {
       console.error('Export till Excel misslyckades:', error);
@@ -449,7 +842,8 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
 
   const handleExportToCSV = () => {
     try {
-      const exportData = formatDataForExport(accountData);
+      // Exclude group rows — they are display-only aggregations
+      const exportData = formatDataForExport(accountData.filter(a => !a._isGroup));
       if (!exportData || exportData.length === 0) return;
       const headers = Object.keys(exportData[0]);
       const rows = exportData.map(row =>
@@ -466,6 +860,626 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       console.error('Export till CSV misslyckades:', error);
     }
   };
+
+  const handleDeleteAccount = async () => {
+    if (!deleteConfirm) return;
+    setDeleteLoading(true);
+    try {
+      await api.deleteAccountPosts(
+        deleteConfirm.accountName,
+        deleteConfirm.platform,
+        periodParams
+      );
+      setDeleteConfirm(null);
+      setRefreshCounter(c => c + 1);
+    } catch (err) {
+      console.error('Radering misslyckades:', err);
+      alert(`Radering misslyckades: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleDeleteGAAccount = async () => {
+    if (!deleteConfirm) return;
+    setDeleteLoading(true);
+    try {
+      const monthsArray = periodParams.months
+        ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
+        : [];
+      await api.deleteGAListensAccount(deleteConfirm.accountName, monthsArray);
+      setDeleteConfirm(null);
+      setRefreshCounter(c => c + 1);
+    } catch (err) {
+      console.error('Radering misslyckades:', err);
+      alert(`Radering misslyckades: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  /** Clear checkbox selection when summary data reloads (e.g. after deletion). */
+  useEffect(() => {
+    setGaSelectedAccounts(new Set());
+  }, [gaSummary]);
+
+  /** Clear selection when delete column is hidden. */
+  useEffect(() => {
+    if (!gaShowDeleteColumn) setGaSelectedAccounts(new Set());
+  }, [gaShowDeleteColumn]);
+
+  /** Clear GSV checkbox selection when summary data reloads. */
+  useEffect(() => {
+    setGsvSelectedAccounts(new Set());
+  }, [gsvSummary]);
+
+  /** Clear GSV selection when delete column is hidden. */
+  useEffect(() => {
+    if (!gsvShowDeleteColumn) setGsvSelectedAccounts(new Set());
+  }, [gsvShowDeleteColumn]);
+
+  // ── GSV (GA Site Visits) mode ─────────────────────────────────────────────
+  if (gaSiteVisitsMode) {
+    if (gsvLoading) {
+      return (
+        <Card className="p-6">
+          <p className="text-center text-muted-foreground">Laddar sajtbesöksdata...</p>
+        </Card>
+      );
+    }
+
+    const noGsvData = gsvViewMode === 'summary'
+      ? gsvSummary.programmes.length === 0
+      : gsvData.length === 0;
+
+    if (noGsvData) {
+      return (
+        <Card className="p-6">
+          <div className="flex justify-center mb-4">
+            <div className="inline-flex rounded-md border">
+              <Button variant={gsvViewMode === 'summary' ? 'default' : 'ghost'} size="sm" onClick={() => setGsvViewMode('summary')}>Summerat</Button>
+              <Button variant={gsvViewMode === 'monthly' ? 'default' : 'ghost'} size="sm" onClick={() => setGsvViewMode('monthly')}>Per m&aring;nad</Button>
+            </div>
+          </div>
+          <p className="text-center text-muted-foreground">Ingen sajtbesöksdata tillg&auml;nglig f&ouml;r vald period</p>
+        </Card>
+      );
+    }
+
+    // --- GSV Export helpers ---
+    const handleGSVExportCSV = () => {
+      if (gsvViewMode === 'summary') {
+        const headers = ['#', 'Programnamn', 'Besök', 'Snitt/dag'];
+        const rows = gsvSummary.programmes.map((prog, idx) => [
+          idx + 1,
+          prog.account_name,
+          prog.total_visits,
+          prog.avg_daily_visits != null ? prog.avg_daily_visits.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '',
+        ]);
+        const csvContent = [headers.join(','), ...rows.map(r => r.map(v => {
+          const s = String(v);
+          return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
+        }).join(','))].join('\n');
+        downloadFile(csvContent, 'ga-sajtbesok.csv', 'text/csv;charset=utf-8;');
+      } else {
+        const formatMonth = (month) => { const [y, m] = month.split('-'); return `${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${y.slice(2)}`; };
+        const headers = ['Programnamn', ...gsvMonths.map(formatMonth)];
+        const rows = gsvSortedPrograms.map(prog => [prog, ...gsvMonths.map(m => gsvPivot[prog][m] ?? '')]);
+        const csvContent = [headers.join(','), ...rows.map(r => r.map(v => {
+          const s = String(v);
+          return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
+        }).join(','))].join('\n');
+        downloadFile(csvContent, 'ga-sajtbesok-per-manad.csv', 'text/csv;charset=utf-8;');
+      }
+    };
+
+    const handleGSVExportExcel = async () => {
+      if (gsvViewMode === 'summary') {
+        const exportData = gsvSummary.programmes.map((prog, idx) => ({
+          '#': idx + 1,
+          'Programnamn': prog.account_name,
+          'Besök': prog.total_visits,
+          'Snitt/dag': prog.avg_daily_visits != null ? prog.avg_daily_visits : '',
+        }));
+        await downloadExcel(exportData, 'ga-sajtbesok.xlsx');
+      } else {
+        const formatMonth = (month) => { const [y, m] = month.split('-'); return `${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${y.slice(2)}`; };
+        const exportData = gsvSortedPrograms.map(prog => {
+          const row = { 'Programnamn': prog };
+          for (const m of gsvMonths) { row[formatMonth(m)] = gsvPivot[prog][m] ?? ''; }
+          return row;
+        });
+        await downloadExcel(exportData, 'ga-sajtbesok-per-manad.xlsx');
+      }
+    };
+
+    const handleGSVToggleAccount = (accountName) => {
+      setGsvSelectedAccounts(prev => {
+        const next = new Set(prev);
+        if (next.has(accountName)) next.delete(accountName);
+        else next.add(accountName);
+        return next;
+      });
+    };
+
+    const handleGSVToggleAll = () => {
+      const allNames = gsvSummary.programmes.map(p => p.account_name);
+      if (gsvSelectedAccounts.size === allNames.length) {
+        setGsvSelectedAccounts(new Set());
+      } else {
+        setGsvSelectedAccounts(new Set(allNames));
+      }
+    };
+
+    const handleGSVBatchDelete = async () => {
+      if (gsvSelectedAccounts.size === 0) return;
+      const names = [...gsvSelectedAccounts];
+      const confirmed = confirm(
+        `Radera all sajtbesöksdata (alla månader) för ${names.length} konto${names.length > 1 ? 'n' : ''}?\n\n` +
+        names.slice(0, 10).join('\n') +
+        (names.length > 10 ? `\n... och ${names.length - 10} till` : '') +
+        '\n\nDetta kan inte ångras.'
+      );
+      if (!confirmed) return;
+
+      setGsvDeleteLoading(true);
+      try {
+        await api.deleteGASiteVisitsAccounts(names);
+        setGsvSelectedAccounts(new Set());
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGASiteVisitsSummary(months, gsvSortDir);
+        setGsvSummary(result);
+      } catch (err) {
+        console.error('Batch-radering misslyckades:', err);
+        alert(`Radering misslyckades: ${err.message}`);
+      } finally {
+        setGsvDeleteLoading(false);
+      }
+    };
+
+    const handleDeleteGSVAccount = async () => {
+      if (!deleteConfirm) return;
+      setDeleteLoading(true);
+      try {
+        const monthsArray = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
+          : [];
+        await api.deleteGASiteVisitsAccount(deleteConfirm.accountName, monthsArray);
+        setDeleteConfirm(null);
+        setRefreshCounter(c => c + 1);
+      } catch (err) {
+        console.error('Radering misslyckades:', err);
+        alert(`Radering misslyckades: ${err.message}`);
+      } finally {
+        setDeleteLoading(false);
+      }
+    };
+
+    // --- GSV toolbar ---
+    const gsvToolbar = (
+      <div className="space-y-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Datakälla:</span>
+          <button
+            onClick={() => onPlatformChange?.('ga_listens')}
+            className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
+              gaListensMode
+                ? 'bg-green-100 text-green-800 border-green-300'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+            }`}
+          >
+            Lyssningar
+          </button>
+          <button
+            onClick={() => onPlatformChange?.('ga_site_visits')}
+            className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
+              gaSiteVisitsMode
+                ? 'bg-green-100 text-green-800 border-green-300'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+            }`}
+          >
+            Sajtbesök
+          </button>
+        </div>
+        <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="inline-flex rounded-md border">
+            <Button variant={gsvViewMode === 'summary' ? 'default' : 'ghost'} size="sm"
+              onClick={() => setGsvViewMode('summary')}>Summerat</Button>
+            <Button variant={gsvViewMode === 'monthly' ? 'default' : 'ghost'} size="sm"
+              onClick={() => setGsvViewMode('monthly')}>Per m&aring;nad</Button>
+          </div>
+          {gsvViewMode === 'summary' && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="gsv-show-delete"
+                checked={gsvShowDeleteColumn}
+                onCheckedChange={setGsvShowDeleteColumn}
+              />
+              <Label htmlFor="gsv-show-delete" className="text-sm text-red-600">
+                Radera konton
+              </Label>
+            </div>
+          )}
+          {accountGroups.some(g => g.source === 'ga_site_visits') && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-groups-toggle"
+                checked={showGroups}
+                onCheckedChange={setShowGroups}
+              />
+              <Label htmlFor="show-groups-toggle" className="text-sm text-muted-foreground">
+                Visa grupper
+              </Label>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {gsvShowDeleteColumn && gsvSelectedAccounts.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleGSVBatchDelete}
+              disabled={gsvDeleteLoading}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Radera {gsvSelectedAccounts.size} konto{gsvSelectedAccounts.size > 1 ? 'n' : ''}
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleGSVExportCSV}>
+            <FileDown className="w-4 h-4 mr-2" />CSV
+          </Button>
+          <Button variant="outline" onClick={handleGSVExportExcel}>
+            <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
+          </Button>
+        </div>
+        </div>
+      </div>
+    );
+
+    // --- GSV Summary view ---
+    if (gsvViewMode === 'summary') {
+      return (
+        <Card className="p-4">
+          {deleteConfirm?.type === 'ga_site_visits' && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Bekräfta radering</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">
+                  Radera alla sajtbesök för <strong>{deleteConfirm.accountName}</strong> i vald period
+                  ({deleteConfirm.visitCount.toLocaleString('sv-SE')} besök totalt)? Detta kan inte ångras.
+                </p>
+                <div className="flex space-x-2 mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)} disabled={deleteLoading}>
+                    Avbryt
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={handleDeleteGSVAccount} disabled={deleteLoading}>
+                    {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+          {gsvToolbar}
+          <div className="rounded-md border bg-white">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {gsvShowDeleteColumn && (
+                    <TableHead className="w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={gsvSelectedAccounts.size === gsvSummary.programmes.length && gsvSummary.programmes.length > 0}
+                        onChange={handleGSVToggleAll}
+                        className="rounded border-gray-300"
+                        title="Markera alla"
+                      />
+                    </TableHead>
+                  )}
+                  <TableHead className="w-10 text-center">#</TableHead>
+                  <TableHead>Programnamn</TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => {
+                      if (gsvSortKey === 'total_visits') {
+                        setGsvSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setGsvSortKey('total_visits');
+                        setGsvSortDir('desc');
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-end whitespace-nowrap">
+                      Besök
+                      {gsvSortKey === 'total_visits'
+                        ? (gsvSortDir === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />)
+                        : <ArrowUpDown className="h-4 w-4 ml-1" />}
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => {
+                      if (gsvSortKey === 'avg_daily_visits') {
+                        setGsvSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setGsvSortKey('avg_daily_visits');
+                        setGsvSortDir('desc');
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-end whitespace-nowrap">
+                      Snitt/dag
+                      {gsvSortKey === 'avg_daily_visits'
+                        ? (gsvSortDir === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />)
+                        : <ArrowUpDown className="h-4 w-4 ml-1" />}
+                    </div>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow className="bg-primary/5 border-b-2 border-primary/20">
+                  {gsvShowDeleteColumn && <TableCell />}
+                  <TableCell />
+                  <TableCell className="font-semibold flex items-center">
+                    <Calculator className="w-4 h-4 mr-2 text-primary" />
+                    <span className="text-primary">Totalt</span>
+                  </TableCell>
+                  <TableCell className="text-right font-semibold text-primary">
+                    {formatValue(gsvSummary.grandTotal)}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold text-primary">
+                    {gsvSummary.grandAvgDaily != null ? gsvSummary.grandAvgDaily.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}
+                  </TableCell>
+                </TableRow>
+                {filteredGsvSummaryWithGroups.programmes.map((prog, idx) => {
+                  const prevIsGroup = idx > 0 && filteredGsvSummaryWithGroups.programmes[idx - 1]._isGroup;
+                  const showDivider = !prog._isGroup && idx > 0 && prevIsGroup;
+                  return (
+                    <React.Fragment key={prog._isGroup ? `group-${prog.groupId}` : prog.account_name}>
+                      {showDivider && (
+                        <TableRow>
+                          <TableCell colSpan={gsvShowDeleteColumn ? 5 : 4} className="p-0">
+                            <hr className="border-border" />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      <TableRow className={prog._isGroup ? 'bg-blue-50/60 hover:bg-blue-50' : ''}>
+                        {gsvShowDeleteColumn && (
+                          <TableCell className="text-center">
+                            {!prog._isGroup && (
+                              <input
+                                type="checkbox"
+                                checked={gsvSelectedAccounts.has(prog.account_name)}
+                                onChange={() => handleGSVToggleAccount(prog.account_name)}
+                                className="rounded border-gray-300"
+                              />
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-center font-medium">
+                          {prog._isGroup ? '' : idx + 1 - filteredGsvSummaryWithGroups.programmes.filter((p, i) => i < idx && p._isGroup).length}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {prog._isGroup ? (
+                            <div className="flex items-center gap-2">
+                              <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                              <div>
+                                <div className="font-semibold">{prog.account_name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {prog.matchedCount === prog.memberCount
+                                    ? `${prog.memberCount} konton`
+                                    : `${prog.matchedCount} av ${prog.memberCount} konton i aktuell data`}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <ProfileIcon accountName={prog.account_name} />
+                              <span>{prog.account_name}</span>
+                              <PlatformBadge platform="google_analytics" />
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatValue(prog.total_visits)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {prog.avg_daily_visits != null
+                            ? prog.avg_daily_visits.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                            : '—'}
+                        </TableCell>
+                      </TableRow>
+                    </React.Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <button
+            onClick={() => {
+              setGroupDialogAccounts(
+                gsvSummary.programmes.map(p => ({
+                  account_name: p.account_name,
+                  platform: 'ga_site_visits',
+                  key: `${p.account_name}::ga_site_visits`,
+                }))
+              );
+              setGroupDialogOpen(true);
+            }}
+            className="mt-3 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+          >
+            <Users className="w-3.5 h-3.5" />
+            Skapa kontogrupp
+          </button>
+        </Card>
+      );
+    }
+
+    // --- GSV Monthly pivot view ---
+    const formatGSVMonthHeader = (month) => {
+      const [year, m] = month.split('-');
+      return `${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${year.slice(2)}`;
+    };
+
+    const getGSVSortIcon = (monthKey) => {
+      if (gsvMonthlySortConfig.key !== monthKey) return <ArrowUpDown className="h-4 w-4 ml-1" />;
+      return gsvMonthlySortConfig.direction === 'asc'
+        ? <ArrowUp className="h-4 w-4 ml-1" />
+        : <ArrowDown className="h-4 w-4 ml-1" />;
+    };
+
+    return (
+      <Card className="p-4">
+        {deleteConfirm?.type === 'ga_site_visits' && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Bekräfta radering</AlertTitle>
+            <AlertDescription>
+              <p className="mb-2">
+                Radera alla sajtbesök för <strong>{deleteConfirm.accountName}</strong> i vald period
+                ({deleteConfirm.visitCount.toLocaleString('sv-SE')} besök totalt)? Detta kan inte ångras.
+              </p>
+              <div className="flex space-x-2 mt-2">
+                <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)} disabled={deleteLoading}>
+                  Avbryt
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleDeleteGSVAccount} disabled={deleteLoading}>
+                  {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+        {gsvToolbar}
+        <div className="rounded-md border bg-white">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10 text-center">#</TableHead>
+                <TableHead>Programnamn</TableHead>
+                {gsvMonths.map(month => (
+                  <TableHead
+                    key={month}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => setGsvMonthlySortConfig(prev => ({
+                      key: month,
+                      direction: prev.key === month && prev.direction === 'asc' ? 'desc' : 'asc',
+                    }))}
+                  >
+                    <div className="flex items-center justify-end whitespace-nowrap">
+                      {formatGSVMonthHeader(month)}
+                      {getGSVSortIcon(month)}
+                    </div>
+                  </TableHead>
+                ))}
+                {showDeleteColumn && <TableHead className="w-10" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow className="bg-primary/5 border-b-2 border-primary/20">
+                <TableCell />
+                <TableCell className="font-semibold flex items-center">
+                  <Calculator className="w-4 h-4 mr-2 text-primary" />
+                  <span className="text-primary">Totalt</span>
+                </TableCell>
+                {gsvMonths.map(month => (
+                  <TableCell key={month} className="text-right font-semibold text-primary">
+                    {formatValue(gsvTotals[month])}
+                  </TableCell>
+                ))}
+                {showDeleteColumn && <TableCell />}
+              </TableRow>
+              {filteredGsvSortedProgramsWithGroups.map((prog, idx) => {
+                const isGroupKey = prog.startsWith('__group__');
+                const prevIsGroup = idx > 0 && filteredGsvSortedProgramsWithGroups[idx - 1].startsWith('__group__');
+                const showDivider = !isGroupKey && idx > 0 && prevIsGroup;
+
+                if (isGroupKey) {
+                  const { pivot: groupPivotData, group } = gsvGroupPivots[prog] || {};
+                  if (!group) return null;
+                  return (
+                    <TableRow key={prog} className="bg-blue-50/60 hover:bg-blue-50">
+                      <TableCell className="text-center font-medium"></TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                          <span className="font-semibold">{group.name}</span>
+                        </div>
+                      </TableCell>
+                      {gsvMonths.map(month => (
+                        <TableCell key={month} className="text-right font-medium">
+                          {groupPivotData && groupPivotData[month] !== undefined
+                            ? formatValue(groupPivotData[month])
+                            : <span className="text-muted-foreground">&mdash;</span>}
+                        </TableCell>
+                      ))}
+                      {showDeleteColumn && <TableCell />}
+                    </TableRow>
+                  );
+                }
+
+                return (
+                  <React.Fragment key={prog}>
+                    {showDivider && (
+                      <TableRow>
+                        <TableCell colSpan={gsvMonths.length + 2 + (showDeleteColumn ? 1 : 0)} className="p-0">
+                          <hr className="border-border" />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    <TableRow>
+                      <TableCell className="text-center font-medium">
+                        {idx + 1 - filteredGsvSortedProgramsWithGroups.filter(p => p.startsWith('__group__')).length}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <ProfileIcon accountName={prog} />
+                          <span>{prog}</span>
+                          <PlatformBadge platform="google_analytics" />
+                        </div>
+                      </TableCell>
+                      {gsvMonths.map(month => {
+                        const visits = gsvPivot[prog]?.[month];
+                        const avgDay = visits !== undefined
+                          ? (visits / daysInMonth(month)).toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                          : null;
+                        return (
+                          <TableCell key={month} className="text-right" title={avgDay != null ? `Snitt/dag: ${avgDay}` : undefined}>
+                            {visits !== undefined
+                              ? formatValue(visits)
+                              : <span className="text-muted-foreground">&mdash;</span>}
+                          </TableCell>
+                        );
+                      })}
+                      {showDeleteColumn && (
+                        <TableCell className="text-center">
+                          <button
+                            onClick={() => setDeleteConfirm({
+                              accountName: prog,
+                              type: 'ga_site_visits',
+                              visitCount: Object.values(gsvPivot[prog] || {}).reduce((sum, v) => sum + v, 0),
+                            })}
+                            className="text-red-500 hover:text-red-700"
+                            title="Radera sajtbesök för detta program"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  </React.Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+    );
+  }
+  // ── end GSV mode ────────────────────────────────────────────────────────
 
   // Early-return GA block — placed after all hooks to satisfy React rules of hooks.
   if (gaListensMode) {
@@ -534,16 +1548,135 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
       }
     };
 
+    /** Toggle a single account in the checkbox selection. */
+    const handleGAToggleAccount = (accountName) => {
+      setGaSelectedAccounts(prev => {
+        const next = new Set(prev);
+        if (next.has(accountName)) next.delete(accountName);
+        else next.add(accountName);
+        return next;
+      });
+    };
+
+    /** Toggle all / none. */
+    const handleGAToggleAll = () => {
+      const allNames = gaSummary.programmes.map(p => p.account_name);
+      if (gaSelectedAccounts.size === allNames.length) {
+        setGaSelectedAccounts(new Set());
+      } else {
+        setGaSelectedAccounts(new Set(allNames));
+      }
+    };
+
+    /** Batch-delete selected accounts with confirmation. */
+    const handleGABatchDelete = async () => {
+      if (gaSelectedAccounts.size === 0) return;
+      const names = [...gaSelectedAccounts];
+      const confirmed = confirm(
+        `Radera all lyssningsdata (alla månader) för ${names.length} konto${names.length > 1 ? 'n' : ''}?\n\n` +
+        names.slice(0, 10).join('\n') +
+        (names.length > 10 ? `\n... och ${names.length - 10} till` : '') +
+        '\n\nDetta kan inte ångras.'
+      );
+      if (!confirmed) return;
+
+      setGaDeleteLoading(true);
+      try {
+        await api.deleteGAListensAccounts(names);
+        setGaSelectedAccounts(new Set());
+        const months = periodParams.months
+          ? periodParams.months.split(',').map(m => m.trim())
+          : null;
+        const result = await api.getGAListensSummary(months, gaSortDir);
+        setGaSummary(result);
+      } catch (err) {
+        console.error('Batch-radering misslyckades:', err);
+        alert(`Radering misslyckades: ${err.message}`);
+      } finally {
+        setGaDeleteLoading(false);
+      }
+    };
+
     // --- Shared GA toolbar ---
     const gaToolbar = (
-      <div className="flex items-center justify-between mb-4">
-        <div className="inline-flex rounded-md border">
-          <Button variant={gaViewMode === 'summary' ? 'default' : 'ghost'} size="sm" onClick={() => setGaViewMode('summary')}>Summerat</Button>
-          <Button variant={gaViewMode === 'monthly' ? 'default' : 'ghost'} size="sm" onClick={() => setGaViewMode('monthly')}>Per m&aring;nad</Button>
+      <div className="space-y-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Datakälla:</span>
+          <button
+            onClick={() => onPlatformChange?.('ga_listens')}
+            className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
+              gaListensMode
+                ? 'bg-green-100 text-green-800 border-green-300'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+            }`}
+          >
+            Lyssningar
+          </button>
+          <button
+            onClick={() => onPlatformChange?.('ga_site_visits')}
+            className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
+              gaSiteVisitsMode
+                ? 'bg-green-100 text-green-800 border-green-300'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+            }`}
+          >
+            Sajtbesök
+          </button>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={handleGAExportCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
-          <Button variant="outline" onClick={handleGAExportExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+        <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="inline-flex rounded-md border">
+            <Button variant={gaViewMode === 'summary' ? 'default' : 'ghost'} size="sm"
+              onClick={() => setGaViewMode('summary')}>Summerat</Button>
+            <Button variant={gaViewMode === 'monthly' ? 'default' : 'ghost'} size="sm"
+              onClick={() => setGaViewMode('monthly')}>Per m&aring;nad</Button>
+          </div>
+          {/* Delete toggle — only in summary view */}
+          {gaViewMode === 'summary' && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="ga-show-delete"
+                checked={gaShowDeleteColumn}
+                onCheckedChange={setGaShowDeleteColumn}
+              />
+              <Label htmlFor="ga-show-delete" className="text-sm text-red-600">
+                Radera konton
+              </Label>
+            </div>
+          )}
+          {accountGroups.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-groups-toggle"
+                checked={showGroups}
+                onCheckedChange={setShowGroups}
+              />
+              <Label htmlFor="show-groups-toggle" className="text-sm text-muted-foreground">
+                Visa grupper
+              </Label>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Batch delete button — visible when checkboxes are checked */}
+          {gaShowDeleteColumn && gaSelectedAccounts.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleGABatchDelete}
+              disabled={gaDeleteLoading}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Radera {gaSelectedAccounts.size} konto{gaSelectedAccounts.size > 1 ? 'n' : ''}
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleGAExportCSV}>
+            <FileDown className="w-4 h-4 mr-2" />CSV
+          </Button>
+          <Button variant="outline" onClick={handleGAExportExcel}>
+            <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
+          </Button>
+        </div>
         </div>
       </div>
     );
@@ -552,28 +1685,85 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
     if (gaViewMode === 'summary') {
       return (
         <Card className="p-4">
+          {deleteConfirm?.type === 'ga_listens' && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Bekräfta radering</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">
+                  Radera alla lyssningar för <strong>{deleteConfirm.accountName}</strong> i vald period
+                  ({deleteConfirm.listenCount.toLocaleString('sv-SE')} lyssningar totalt)? Detta kan inte ångras.
+                </p>
+                <div className="flex space-x-2 mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)} disabled={deleteLoading}>
+                    Avbryt
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={handleDeleteGAAccount} disabled={deleteLoading}>
+                    {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
           {gaToolbar}
           <div className="rounded-md border bg-white">
             <Table>
               <TableHeader>
                 <TableRow>
+                  {gaShowDeleteColumn && (
+                    <TableHead className="w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={gaSelectedAccounts.size === gaSummary.programmes.length && gaSummary.programmes.length > 0}
+                        onChange={handleGAToggleAll}
+                        className="rounded border-gray-300"
+                        title="Markera alla"
+                      />
+                    </TableHead>
+                  )}
                   <TableHead className="w-10 text-center">#</TableHead>
                   <TableHead>Programnamn</TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setGaSortDir(prev => prev === 'asc' ? 'desc' : 'asc')}
+                    onClick={() => {
+                      if (gaSortKey === 'total_listens') {
+                        setGaSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setGaSortKey('total_listens');
+                        setGaSortDir('desc');
+                      }
+                    }}
                   >
                     <div className="flex items-center justify-end whitespace-nowrap">
                       Lyssningar
-                      {gaSortDir === 'asc'
-                        ? <ArrowUp className="h-4 w-4 ml-1" />
-                        : <ArrowDown className="h-4 w-4 ml-1" />}
+                      {gaSortKey === 'total_listens'
+                        ? (gaSortDir === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />)
+                        : <ArrowUpDown className="h-4 w-4 ml-1" />}
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => {
+                      if (gaSortKey === 'avg_daily_listens') {
+                        setGaSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setGaSortKey('avg_daily_listens');
+                        setGaSortDir('desc');
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-end whitespace-nowrap">
+                      Snitt/dag
+                      {gaSortKey === 'avg_daily_listens'
+                        ? (gaSortDir === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />)
+                        : <ArrowUpDown className="h-4 w-4 ml-1" />}
                     </div>
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow className="bg-primary/5 border-b-2 border-primary/20">
+                  {gaShowDeleteColumn && <TableCell />}
                   <TableCell />
                   <TableCell className="font-semibold flex items-center">
                     <Calculator className="w-4 h-4 mr-2 text-primary" />
@@ -582,25 +1772,88 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                   <TableCell className="text-right font-semibold text-primary">
                     {formatValue(gaSummary.grandTotal)}
                   </TableCell>
+                  <TableCell className="text-right font-semibold text-primary">
+                    {gaSummary.grandAvgDaily != null ? gaSummary.grandAvgDaily.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}
+                  </TableCell>
                 </TableRow>
-                {gaSummary.programmes.map((prog, idx) => (
-                  <TableRow key={prog.account_name}>
-                    <TableCell className="text-center font-medium">{idx + 1}</TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <ProfileIcon accountName={prog.account_name} />
-                        <span>{prog.account_name}</span>
-                        <PlatformBadge platform="ga_listens" />
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatValue(prog.total_listens)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filteredGaSummaryWithGroups.programmes.map((prog, idx) => {
+                  const prevIsGroup = idx > 0 && filteredGaSummaryWithGroups.programmes[idx - 1]._isGroup;
+                  const showDivider = !prog._isGroup && idx > 0 && prevIsGroup;
+                  return (
+                    <React.Fragment key={prog._isGroup ? `group-${prog.groupId}` : prog.account_name}>
+                      {showDivider && (
+                        <TableRow>
+                          <TableCell colSpan={gaShowDeleteColumn ? 5 : 4} className="p-0">
+                            <hr className="border-border" />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      <TableRow className={prog._isGroup ? 'bg-blue-50/60 hover:bg-blue-50' : ''}>
+                        {gaShowDeleteColumn && (
+                          <TableCell className="text-center">
+                            {!prog._isGroup && (
+                              <input
+                                type="checkbox"
+                                checked={gaSelectedAccounts.has(prog.account_name)}
+                                onChange={() => handleGAToggleAccount(prog.account_name)}
+                                className="rounded border-gray-300"
+                              />
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-center font-medium">
+                          {prog._isGroup ? '' : idx + 1 - filteredGaSummaryWithGroups.programmes.filter((p, i) => i < idx && p._isGroup).length}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {prog._isGroup ? (
+                            <div className="flex items-center gap-2">
+                              <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                              <div>
+                                <div className="font-semibold">{prog.account_name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {prog.matchedCount === prog.memberCount
+                                    ? `${prog.memberCount} konton`
+                                    : `${prog.matchedCount} av ${prog.memberCount} konton i aktuell data`}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <ProfileIcon accountName={prog.account_name} />
+                              <span>{prog.account_name}</span>
+                              <PlatformBadge platform="google_analytics" />
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatValue(prog.total_listens)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {prog.avg_daily_listens != null ? prog.avg_daily_listens.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}
+                        </TableCell>
+                      </TableRow>
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
+          <button
+            onClick={() => {
+              setGroupDialogAccounts(
+                gaSummary.programmes.map(p => ({
+                  account_name: p.account_name,
+                  platform: 'ga_listens',
+                  key: `${p.account_name}::ga_listens`,
+                }))
+              );
+              setGroupDialogOpen(true);
+            }}
+            className="mt-3 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+          >
+            <Users className="w-3.5 h-3.5" />
+            Skapa kontogrupp
+          </button>
         </Card>
       );
     }
@@ -620,6 +1873,26 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
 
     return (
       <Card className="p-4">
+        {deleteConfirm?.type === 'ga_listens' && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Bekräfta radering</AlertTitle>
+            <AlertDescription>
+              <p className="mb-2">
+                Radera alla lyssningar för <strong>{deleteConfirm.accountName}</strong> i vald period
+                ({deleteConfirm.listenCount.toLocaleString('sv-SE')} lyssningar totalt)? Detta kan inte ångras.
+              </p>
+              <div className="flex space-x-2 mt-2">
+                <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)} disabled={deleteLoading}>
+                  Avbryt
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleDeleteGAAccount} disabled={deleteLoading}>
+                  {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
         {gaToolbar}
         <div className="rounded-md border bg-white">
           <Table>
@@ -642,6 +1915,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                     </div>
                   </TableHead>
                 ))}
+                {showDeleteColumn && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -656,26 +1930,89 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                     {formatValue(gaTotals[month])}
                   </TableCell>
                 ))}
+                {showDeleteColumn && <TableCell />}
               </TableRow>
-              {gaSortedPrograms.map((prog, idx) => (
-                <TableRow key={prog}>
-                  <TableCell className="text-center font-medium">{idx + 1}</TableCell>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
-                      <ProfileIcon accountName={prog} />
-                      <span>{prog}</span>
-                      <PlatformBadge platform="ga_listens" />
-                    </div>
-                  </TableCell>
-                  {gaMonths.map(month => (
-                    <TableCell key={month} className="text-right">
-                      {gaPivot[prog][month] !== undefined
-                        ? formatValue(gaPivot[prog][month])
-                        : <span className="text-muted-foreground">&mdash;</span>}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
+              {filteredGaSortedProgramsWithGroups.map((prog, idx) => {
+                const isGroupKey = prog.startsWith('__group__');
+                const prevIsGroup = idx > 0 && filteredGaSortedProgramsWithGroups[idx - 1].startsWith('__group__');
+                const showDivider = !isGroupKey && idx > 0 && prevIsGroup;
+
+                if (isGroupKey) {
+                  const { pivot: groupPivotData, group } = gaGroupPivots[prog] || {};
+                  if (!group) return null;
+                  return (
+                    <TableRow key={prog} className="bg-blue-50/60 hover:bg-blue-50">
+                      <TableCell className="text-center font-medium"></TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                          <span className="font-semibold">{group.name}</span>
+                        </div>
+                      </TableCell>
+                      {gaMonths.map(month => (
+                        <TableCell key={month} className="text-right font-medium">
+                          {groupPivotData && groupPivotData[month] !== undefined
+                            ? formatValue(groupPivotData[month])
+                            : <span className="text-muted-foreground">&mdash;</span>}
+                        </TableCell>
+                      ))}
+                      {showDeleteColumn && <TableCell />}
+                    </TableRow>
+                  );
+                }
+
+                return (
+                  <React.Fragment key={prog}>
+                    {showDivider && (
+                      <TableRow>
+                        <TableCell colSpan={gaMonths.length + 2 + (showDeleteColumn ? 1 : 0)} className="p-0">
+                          <hr className="border-border" />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    <TableRow>
+                      <TableCell className="text-center font-medium">
+                        {idx + 1 - filteredGaSortedProgramsWithGroups.filter(p => p.startsWith('__group__')).length}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <ProfileIcon accountName={prog} />
+                          <span>{prog}</span>
+                          <PlatformBadge platform="google_analytics" />
+                        </div>
+                      </TableCell>
+                      {gaMonths.map(month => {
+                        const listens = gaPivot[prog]?.[month];
+                        const avgDay = listens !== undefined
+                          ? (listens / daysInMonth(month)).toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                          : null;
+                        return (
+                          <TableCell key={month} className="text-right" title={avgDay != null ? `Snitt/dag: ${avgDay}` : undefined}>
+                            {listens !== undefined
+                              ? formatValue(listens)
+                              : <span className="text-muted-foreground">&mdash;</span>}
+                          </TableCell>
+                        );
+                      })}
+                      {showDeleteColumn && (
+                        <TableCell className="text-center">
+                          <button
+                            onClick={() => setDeleteConfirm({
+                              accountName: prog,
+                              type: 'ga_listens',
+                              listenCount: Object.values(gaPivot[prog] || {}).reduce((sum, v) => sum + v, 0),
+                            })}
+                            className="text-red-500 hover:text-red-700"
+                            title="Radera lyssningar för detta program"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  </React.Fragment>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -737,11 +2074,68 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
             </div>
           )}
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={handleExportToCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
-          <Button variant="outline" onClick={handleExportToExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+        <div className="flex items-center gap-4">
+          {!gaListensMode && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-delete-column"
+                checked={showDeleteColumn}
+                onCheckedChange={setShowDeleteColumn}
+              />
+              <Label htmlFor="show-delete-column" className="text-sm text-red-600">
+                Visa raderingskolumn
+              </Label>
+            </div>
+          )}
+          {accountGroups.some(g => g.source === 'posts') && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-groups-toggle"
+                checked={showGroups}
+                onCheckedChange={setShowGroups}
+              />
+              <Label htmlFor="show-groups-toggle" className="text-sm text-muted-foreground">
+                Visa grupper
+              </Label>
+            </div>
+          )}
+          <div className="flex space-x-2">
+            <Button variant="outline" onClick={handleExportToCSV}><FileDown className="w-4 h-4 mr-2" />CSV</Button>
+            <Button variant="outline" onClick={handleExportToExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+          </div>
         </div>
       </div>
+      {deleteConfirm && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Bekräfta radering</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">
+              Radera alla <strong>{deleteConfirm.postCount}</strong> poster för{' '}
+              <strong>{deleteConfirm.accountName}</strong> ({deleteConfirm.platform === 'facebook' ? 'Facebook' : 'Instagram'})
+              {' '}i vald period? Detta kan inte ångras.
+            </p>
+            <div className="flex space-x-2 mt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleteLoading}
+              >
+                Avbryt
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteAccount}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? 'Raderar...' : 'Ja, radera'}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
       <div className="rounded-md border bg-white">
         <Table>
           <TableHeader>
@@ -750,7 +2144,7 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
               <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort('account_name')}>
                 <div className="flex items-center">Kontonamn {getSortIcon('account_name')}</div>
               </TableHead>
-              {selectedFields.filter(f => f !== 'account_reach').map(field => (
+              {displayFields.map(field => (
                 <TableHead key={field} className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort(field === 'average_reach' ? 'reach' : field)}>
                   <div className="flex items-center justify-end">
                     {getDisplayName(field)}
@@ -783,6 +2177,34 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                   </div>
                 </TableHead>
               )}
+              {selectedFields.includes('ig_account_reach') && igReachMonths.length > 0 && igReachMonths.map(month => (
+                <TableHead
+                  key={`ig-reach-${month}`}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => setSortConfig(current => ({
+                    key: `ig_reach_${month}`,
+                    direction: current.key === `ig_reach_${month}` && current.direction === 'asc' ? 'desc' : 'asc'
+                  }))}
+                  title="API-uttag täcker max 30 dagar. 31-dagarsmånader kan vara ~1 % lägre."
+                >
+                  <div className="flex items-center justify-end whitespace-nowrap">
+                    {formatReachColumnHeader(month)}
+                    <PlatformBadge platform="instagram" />
+                    {getSortIcon(`ig_reach_${month}`)}
+                  </div>
+                </TableHead>
+              ))}
+              {selectedFields.includes('ig_account_reach') && igReachMonths.length === 0 && (
+                <TableHead>
+                  <div className="flex items-center justify-end whitespace-nowrap">
+                    Kontoräckvidd IG
+                    <PlatformBadge platform="instagram" />
+                  </div>
+                </TableHead>
+              )}
+              {showDeleteColumn && (
+                <TableHead className="w-12 text-center text-red-500">Radera</TableHead>
+              )}
               <TableHead className="w-12 text-center">Länk</TableHead>
             </TableRow>
           </TableHeader>
@@ -794,9 +2216,11 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
                 <Calculator className="w-4 h-4 mr-2 text-primary" />
                 <span className="text-primary">Totalt</span>
               </TableCell>
-              {selectedFields.filter(f => f !== 'account_reach').map(field => (
+              {displayFields.map(field => (
                 <TableCell key={field} className="text-right font-semibold text-primary">
-                  {!FIELDS_WITHOUT_TOTALS.includes(field) ? (
+                  {field === 'avg_daily_link_clicks' ? (
+                    <span>{totalSummary.avg_daily_link_clicks != null ? totalSummary.avg_daily_link_clicks.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span>
+                  ) : !FIELDS_WITHOUT_TOTALS.includes(field) ? (
                     <div className="flex items-center justify-end group">
                       <span>{formatValue(field === 'average_reach' ? totalSummary.reach : totalSummary[field])}</span>
                       <CopyButton value={field === 'average_reach' ? totalSummary.reach : totalSummary[field]} field={field} rowId="total" />
@@ -812,72 +2236,196 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
               {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
                 <TableCell className="text-right font-semibold text-primary">—</TableCell>
               )}
+              {selectedFields.includes('ig_account_reach') && igReachMonths.length > 0 && igReachMonths.map(month => (
+                <TableCell key={`total-ig-reach-${month}`} className="text-right font-semibold text-primary">—</TableCell>
+              ))}
+              {selectedFields.includes('ig_account_reach') && igReachMonths.length === 0 && (
+                <TableCell className="text-right font-semibold text-primary">—</TableCell>
+              )}
+              {showDeleteColumn && <TableCell />}
               <TableCell></TableCell>
             </TableRow>
 
-            {paginatedData.map((account, index) => (
-              <TableRow
-                key={`${account.account_name}::${account.platform}`}
-                onClick={() => handleOpenDetail(account)}
-                title={account._reachOnly ? undefined : 'Visa kontots golv & viraler'}
-                className={`${account._reachOnly ? 'bg-gray-50/50 opacity-60' : account.is_collab ? 'bg-amber-50/50 opacity-75' : ''} ${account._reachOnly ? '' : 'cursor-pointer hover:bg-muted/30'}`}
-              >
-                <TableCell className="text-center font-medium">{(currentPage - 1) * pageSize + index + 1}</TableCell>
-                <TableCell className="font-medium">
-                  <div className="flex items-center space-x-2">
-                    <ProfileIcon accountName={account.account_name} />
-                    <span>{account.account_name || 'Unknown'}</span>
-                    <PlatformBadge platform={account.platform} />
-                    {account.is_collab ? <CollabBadge /> : null}
-                    {!account._reachOnly && (
-                      <LineChart className="h-4 w-4 text-muted-foreground/70" />
-                    )}
-                  </div>
-                </TableCell>
-                {selectedFields.filter(f => f !== 'account_reach').map(field => (
-                  <TableCell key={field} className="text-right">
-                    <div className="flex items-center justify-end group">
-                      <span>{renderCellContent(account, field)}</span>
-                      {getCellValue(account, field) !== null && (
-                        <CopyButton value={getFieldValue(account, field)} field={field} rowId={`${account.account_id}-${field}`} />
-                      )}
-                    </div>
-                  </TableCell>
-                ))}
-                {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => {
-                  const reachMap = account.platform === 'facebook' ? reachByAccount[account.account_name] : undefined;
-                  const reachValue = reachMap ? reachMap[month] : undefined;
+            {paginatedData.map((account, index) => {
+              const isGroup = account._isGroup;
+              const groupIndividualsBefore = paginatedData.filter((a, i) => i < index && !a._isGroup).length;
+              const prevIsGroup = index > 0 && paginatedData[index - 1]._isGroup;
+              const showDivider = !isGroup && index > 0 && prevIsGroup;
 
-                  return (
-                    <TableCell key={`reach-${month}`} className="text-right">
-                      {reachValue !== undefined ? (
-                        <div className="flex items-center justify-end group">
-                          <span>{formatValue(reachValue)}</span>
-                          <CopyButton value={reachValue} field={`reach-${month}`} rowId={`${account.account_id}-reach-${month}`} />
+              const rowKey = isGroup
+                ? `__group__${account.groupId}`
+                : `${account.account_name}::${account.platform}`;
+
+              const rowCls = isGroup
+                ? 'bg-blue-50/60 hover:bg-blue-50'
+                : account._reachOnly
+                ? 'bg-gray-50/50 opacity-60'
+                : account.is_collab
+                ? 'bg-amber-50/50 opacity-75'
+                : '';
+
+              // Detalj-affordans: bara enskilda konton med inlägg är klickbara.
+              // Grupprader (display-only) och reach-only-konton öppnar INTE detaljvyn.
+              const detailClickable = !isGroup && !account._reachOnly;
+
+              return (
+                <React.Fragment key={rowKey}>
+                  {showDivider && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={
+                          2 +
+                          displayFields.length +
+                          (selectedFields.includes('account_reach') ? Math.max(reachMonths.length, 1) : 0) +
+                          (selectedFields.includes('ig_account_reach') ? Math.max(igReachMonths.length, 1) : 0) +
+                          (showDeleteColumn ? 1 : 0) +
+                          1
+                        }
+                        className="p-0"
+                      >
+                        <hr className="border-border" />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  <TableRow
+                    className={`${rowCls}${detailClickable ? ' cursor-pointer hover:bg-muted/30' : ''}`}
+                    onClick={detailClickable ? () => handleOpenDetail(account) : undefined}
+                    title={detailClickable ? 'Visa kontots golv & viraler' : undefined}
+                  >
+                    <TableCell className="text-center font-medium">
+                      {isGroup ? '' : (currentPage - 1) * pageSize + groupIndividualsBefore + 1}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {isGroup ? (
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                          <div>
+                            <div className="font-semibold">{account.account_name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {account.matchedCount === account.memberCount
+                                ? `${account.memberCount} konton`
+                                : `${account.matchedCount} av ${account.memberCount} konton i aktuell data`}
+                            </div>
+                          </div>
                         </div>
                       ) : (
-                        <span
-                          className="text-muted-foreground cursor-help"
-                          title="Kontoräckvidd saknas för denna månad"
-                        >
-                          —
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          <ProfileIcon accountName={account.account_name} />
+                          <span>{account.account_name || 'Unknown'}</span>
+                          <PlatformBadge platform={account.platform} />
+                          {account.is_collab ? <CollabBadge /> : null}
+                          {detailClickable && (
+                            <LineChart className="h-4 w-4 text-muted-foreground/70" />
+                          )}
+                        </div>
                       )}
                     </TableCell>
-                  );
-                })}
-                {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
-                  <TableCell className="text-right">
-                    <span className="text-muted-foreground text-xs">Saknas</span>
-                  </TableCell>
-                )}
-                <TableCell className="text-center">
-                  <button onClick={(e) => { e.stopPropagation(); handleExternalLink(account); }} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
-                    <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna konto</span>
-                  </button>
-                </TableCell>
-              </TableRow>
-            ))}
+                    {displayFields.map(field => (
+                      <TableCell key={field} className="text-right">
+                        {isGroup ? (
+                          field === 'avg_daily_link_clicks' ? (
+                            <span>{account.avg_daily_link_clicks != null ? account.avg_daily_link_clicks.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span>
+                          ) : GROUP_NON_SUMMABLE.has(field) ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <div className="flex items-center justify-end group">
+                              <span>{formatValue(account[field])}</span>
+                            </div>
+                          )
+                        ) : (
+                          <div className="flex items-center justify-end group">
+                            <span>{renderCellContent(account, field)}</span>
+                            {field !== 'avg_daily_link_clicks' && getCellValue(account, field) !== null && (
+                              <CopyButton value={getFieldValue(account, field)} field={field} rowId={`${account.account_id}-${field}`} />
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+                    ))}
+                    {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => {
+                      if (isGroup) {
+                        return (
+                          <TableCell key={`reach-${month}`} className="text-right">
+                            <span className="text-muted-foreground">—</span>
+                          </TableCell>
+                        );
+                      }
+                      const reachMap = account.platform === 'facebook' ? reachByAccount[account.account_name] : undefined;
+                      const reachValue = reachMap ? reachMap[month] : undefined;
+                      return (
+                        <TableCell key={`reach-${month}`} className="text-right">
+                          {reachValue !== undefined ? (
+                            <div className="flex items-center justify-end group">
+                              <span>{formatValue(reachValue)}</span>
+                              <CopyButton value={reachValue} field={`reach-${month}`} rowId={`${account.account_id}-reach-${month}`} />
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground cursor-help" title="Kontoräckvidd saknas för denna månad">—</span>
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                    {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
+                      <TableCell className="text-right">
+                        <span className="text-muted-foreground text-xs">{isGroup ? '—' : 'Saknas'}</span>
+                      </TableCell>
+                    )}
+                    {selectedFields.includes('ig_account_reach') && igReachMonths.length > 0 && igReachMonths.map(month => {
+                      if (isGroup) {
+                        return (
+                          <TableCell key={`ig-reach-${month}`} className="text-right">
+                            <span className="text-muted-foreground">—</span>
+                          </TableCell>
+                        );
+                      }
+                      const igReachMap = account.platform === 'instagram' ? igReachByAccount[account.account_name] : undefined;
+                      const igReachValue = igReachMap ? igReachMap[month] : undefined;
+                      return (
+                        <TableCell key={`ig-reach-${month}`} className="text-right">
+                          {igReachValue !== undefined ? (
+                            <div className="flex items-center justify-end group">
+                              <span>{formatValue(igReachValue)}</span>
+                              <CopyButton value={igReachValue} field={`ig-reach-${month}`} rowId={`${account.account_name}-ig-reach-${month}`} />
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground cursor-help" title="IG-kontoräckvidd saknas för denna månad">—</span>
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                    {selectedFields.includes('ig_account_reach') && igReachMonths.length === 0 && (
+                      <TableCell className="text-right">
+                        <span className="text-muted-foreground text-xs">{isGroup ? '—' : 'Saknas'}</span>
+                      </TableCell>
+                    )}
+                    {showDeleteColumn && (
+                      <TableCell className="text-center">
+                        {!isGroup && !account._reachOnly && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setDeleteConfirm({
+                              accountName: account.account_name,
+                              platform: account.platform,
+                              postCount: account.post_count,
+                            }); }}
+                            className="inline-flex items-center justify-center text-red-400 hover:text-red-600 transition-colors"
+                            title={`Radera ${account.account_name} från vald period`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell className="text-center">
+                      {!isGroup && (
+                        <button onClick={(e) => { e.stopPropagation(); handleExternalLink(account); }} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
+                          <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna konto</span>
+                        </button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                </React.Fragment>
+              );
+            })}
           </TableBody>
         </Table>
 
@@ -906,6 +2454,33 @@ const AccountView = ({ selectedFields, platform, periodParams = {}, gaListensMod
           </div>
         </div>
       </div>
+      {accountData.length > 0 && (
+        <button
+          onClick={() => {
+            setGroupDialogAccounts(
+              accountData.map(a => ({
+                account_name: a.account_name,
+                platform: a.platform,
+                key: `${a.account_name}::${a.platform}`,
+              }))
+            );
+            setGroupDialogOpen(true);
+          }}
+          className="mt-3 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+        >
+          <Users className="w-3.5 h-3.5" />
+          Skapa kontogrupp
+        </button>
+      )}
+
+      <GroupCreateDialog
+        open={groupDialogOpen}
+        onOpenChange={setGroupDialogOpen}
+        source={gaSiteVisitsMode ? 'ga_site_visits' : gaListensMode ? 'ga_listens' : 'posts'}
+        availableAccounts={groupDialogAccounts}
+        editGroup={null}
+        onSave={() => { if (onGroupsChanged) onGroupsChanged(); }}
+      />
     </Card>
   );
 };

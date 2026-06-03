@@ -13,9 +13,14 @@ import {
   Users,
   Database,
   HardDrive,
-  Download
+  Download,
+  Plus,
+  Pencil,
+  FolderOpen,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
+import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
+import HiddenAccountsManager from '../HiddenAccountsManager/HiddenAccountsManager';
 
 const PLATFORM_LABELS = {
   facebook: { label: 'Facebook', className: 'bg-blue-100 text-blue-800' },
@@ -28,30 +33,50 @@ const PlatformBadge = ({ platform }) => {
   return <span className={`inline-block text-xs font-medium px-1.5 py-0.5 rounded ml-2 ${config.className}`}>{config.label}</span>;
 };
 
-const ImportManager = ({ onImportsChanged }) => {
+const SOURCE_LABELS = {
+  ga_listens: 'GA-lyssningar',
+  ga_site_visits: 'GA-besök',
+  posts: 'Inlägg',
+};
+
+const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }) => {
   const [imports, setImports] = useState([]);
   const [stats, setStats] = useState(null);
   const [coverage, setCoverage] = useState(null);
   const [reachMonths, setReachMonths] = useState([]);
+  const [igReachMonths, setIgReachMonths] = useState([]);
   const [gaListensMonths, setGaListensMonths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [vacuuming, setVacuuming] = useState(false);
 
+  // Group management state
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [dialogAccounts, setDialogAccounts] = useState([]);
+  const [dialogSource, setDialogSource] = useState('ga_listens');
+  const [showSourcePicker, setShowSourcePicker] = useState(false);
+  const [newGroupSource, setNewGroupSource] = useState('ga_listens');
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(null);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [importsData, statsData, coverageData, reachMonthsData, gaMonthsData] = await Promise.all([
+      const [importsData, statsData, coverageData, reachMonthsData, igReachMonthsData, gaMonthsData] = await Promise.all([
         api.getImports(),
         api.getStats(),
         api.getCoverage().catch(() => null),
         api.getReachMonths().catch(() => ({ months: [] })),
+        api.getIGReachMonths().catch(() => ({ months: [] })),
         api.getGAListensMonths().catch(() => ({ months: [] })),
       ]);
       setImports(importsData);
       setStats(statsData);
       setCoverage(coverageData);
       setReachMonths(reachMonthsData.months || []);
+      setIgReachMonths(igReachMonthsData.months || []);
       setGaListensMonths(gaMonthsData.months || []);
     } catch (error) {
       console.error('Fel vid hämtning av importdata:', error);
@@ -83,6 +108,85 @@ const ImportManager = ({ onImportsChanged }) => {
     } finally {
       setVacuuming(false);
     }
+  };
+
+  const fetchAccountsForSource = async (source) => {
+    setLoadingAccounts(true);
+    try {
+      if (source === 'ga_listens') {
+        const result = await api.getGAListensSummary(null);
+        const programmes = result.programmes || [];
+        return programmes.map(p => ({
+          account_name: p.account_name,
+          platform: 'ga_listens',
+          key: `${p.account_name}::ga_listens`,
+        }));
+      } else if (source === 'ga_site_visits') {
+        const result = await api.getGASiteVisitsSummary(null);
+        const programmes = result.programmes || [];
+        return programmes.map(p => ({
+          account_name: p.account_name,
+          platform: 'ga_site_visits',
+          key: `${p.account_name}::ga_site_visits`,
+        }));
+      } else {
+        const result = await api.getAccounts({ fields: 'views' });
+        const accounts = result.accounts || [];
+        return accounts.map(a => ({
+          account_name: a.account_name,
+          platform: a.platform,
+          key: `${a.account_name}::${a.platform}`,
+        }));
+      }
+    } finally {
+      setLoadingAccounts(false);
+    }
+  };
+
+  const handleOpenCreateDialog = async () => {
+    setShowSourcePicker(false);
+    const accounts = await fetchAccountsForSource(newGroupSource);
+    setDialogSource(newGroupSource);
+    setDialogAccounts(accounts);
+    setEditingGroup(null);
+    setDialogOpen(true);
+  };
+
+  const handleOpenEditDialog = async (group) => {
+    const accounts = await fetchAccountsForSource(group.source);
+    setDialogSource(group.source);
+    setDialogAccounts(accounts);
+    setEditingGroup(group);
+    setDialogOpen(true);
+  };
+
+  const handleGroupSaved = () => {
+    if (onGroupsChanged) onGroupsChanged();
+  };
+
+  const handleDeleteGroup = async (id) => {
+    try {
+      await api.deleteAccountGroup(id);
+      setDeleteGroupConfirm(null);
+      if (onGroupsChanged) onGroupsChanged();
+    } catch (err) {
+      console.error('Fel vid borttagning av grupp:', err);
+    }
+  };
+
+  const handleDeleteAllGroups = async () => {
+    try {
+      await api.deleteAllAccountGroups();
+      setShowDeleteAllConfirm(false);
+      if (onGroupsChanged) onGroupsChanged();
+    } catch (err) {
+      console.error('Fel vid borttagning av alla grupper:', err);
+    }
+  };
+
+  const formatDate = (isoString) => {
+    if (!isoString) return '-';
+    return new Date(isoString).toLocaleDateString('sv-SE');
   };
 
   const formatDateTime = (isoString) => {
@@ -152,6 +256,161 @@ const ImportManager = ({ onImportsChanged }) => {
         </CardContent>
       </Card>
 
+      {/* Account groups */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <FolderOpen className="h-5 w-5" />
+            Kontogrupper
+          </CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowSourcePicker(v => !v)}
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Ny grupp
+          </Button>
+        </CardHeader>
+
+        <CardContent className="space-y-3">
+          {/* Source picker — shown when "+ Ny grupp" is clicked */}
+          {showSourcePicker && (
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-md border">
+              <span className="text-sm font-medium">Källa:</span>
+              {['ga_listens', 'ga_site_visits', 'posts'].map(src => (
+                <label key={src} className="flex items-center gap-1.5 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="new-group-source"
+                    value={src}
+                    checked={newGroupSource === src}
+                    onChange={() => setNewGroupSource(src)}
+                    className="accent-primary"
+                  />
+                  {SOURCE_LABELS[src]}
+                </label>
+              ))}
+              <Button
+                size="sm"
+                onClick={handleOpenCreateDialog}
+                disabled={loadingAccounts}
+                className="ml-auto"
+              >
+                {loadingAccounts ? <RefreshCw className="w-4 h-4 animate-spin mr-1" /> : null}
+                Fortsätt
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowSourcePicker(false)}
+              >
+                Avbryt
+              </Button>
+            </div>
+          )}
+
+          {/* Delete-all confirmation */}
+          {showDeleteAllConfirm && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Bekräfta</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">Ta bort alla kontogrupper? Denna åtgärd kan inte ångras.</p>
+                <div className="flex gap-2 mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowDeleteAllConfirm(false)}>Avbryt</Button>
+                  <Button variant="destructive" size="sm" onClick={handleDeleteAllGroups}>Ja, rensa alla</Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Delete single group confirmation */}
+          {deleteGroupConfirm !== null && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Bekräfta borttagning</AlertTitle>
+              <AlertDescription>
+                <p className="mb-2">
+                  Ta bort gruppen &quot;{accountGroups.find(g => g.id === deleteGroupConfirm)?.name}&quot;?{' '}
+                  Underliggande konton påverkas inte.
+                </p>
+                <div className="flex gap-2 mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setDeleteGroupConfirm(null)}>Avbryt</Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDeleteGroup(deleteGroupConfirm)}>Ta bort</Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Group list */}
+          {accountGroups.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-2">Inga grupper skapade ännu.</p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {accountGroups.map(group => (
+                  <div
+                    key={group.id}
+                    className="flex items-center justify-between p-3 rounded-md border bg-muted/30"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{group.name}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                          group.source === 'ga_listens'
+                            ? 'bg-green-100 text-green-800'
+                            : group.source === 'ga_site_visits'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {SOURCE_LABELS[group.source]}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {group.members.length} konton
+                        {group.created_at ? ` · Skapad ${formatDate(group.created_at)}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 ml-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenEditDialog(group)}
+                        disabled={loadingAccounts}
+                        title="Redigera"
+                      >
+                        <Pencil className="w-3.5 h-3.5 mr-1" />
+                        Redigera
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setDeleteGroupConfirm(group.id)}
+                        title="Ta bort grupp"
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive"
+                onClick={() => setShowDeleteAllConfirm(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                Rensa alla grupper
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Coverage map */}
       {coverage && coverage.months && coverage.months.length > 0 && (
         <Card>
@@ -207,6 +466,39 @@ const ImportManager = ({ onImportsChanged }) => {
             </div>
             <p className="text-xs text-muted-foreground mt-2">
               Räckviddsdata importerad från Metas Graph API. Gäller bara Facebook.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* IG Reach data */}
+      {igReachMonths.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Kontoräckvidd (Instagram API)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {igReachMonths.map(month => (
+                <div key={month} className="flex items-center gap-1 px-3 py-1.5 rounded border bg-pink-50 border-pink-200 text-pink-800 text-sm font-medium">
+                  {month}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Radera IG-räckviddsdata för ${month}?`)) {
+                        api.deleteIGReachMonth(month).then(fetchData);
+                      }
+                    }}
+                    className="ml-1 hover:text-red-600"
+                    title="Radera"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Räckviddsdata importerad från Metas Graph API. Gäller bara Instagram.
+              OBS: API-uttag täcker max 30 dagar — 31-dagarsmånader kan vara ~1 % lägre.
             </p>
           </CardContent>
         </Card>
@@ -347,6 +639,19 @@ const ImportManager = ({ onImportsChanged }) => {
           )}
         </CardContent>
       </Card>
+
+      {/* Hidden accounts management */}
+      <HiddenAccountsManager onImportsChanged={onImportsChanged} />
+
+      {/* Group create/edit dialog */}
+      <GroupCreateDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        source={dialogSource}
+        availableAccounts={dialogAccounts}
+        editGroup={editingGroup}
+        onSave={handleGroupSaved}
+      />
     </div>
   );
 };

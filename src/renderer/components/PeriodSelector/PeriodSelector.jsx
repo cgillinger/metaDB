@@ -1,6 +1,18 @@
 /**
  * PeriodSelector — interactive month-picker with collapsible year groups.
- * Accepts pre-filtered availableMonths so callers control which months appear.
+ *
+ * @param {Object} props
+ * @param {Array}    props.availableMonths  - Coverage data from API
+ * @param {string[]} props.selectedMonths   - Currently selected YYYY-MM keys
+ * @param {Function} props.onMonthsChange   - Callback when month selection changes
+ * @param {Object}   props.customRange      - { from: string, to: string } date range
+ * @param {Function} props.onCustomRangeChange - Callback when custom range changes
+ * @param {'months'|'custom'} props.mode    - Active period mode
+ * @param {Function} props.onModeChange     - Callback when mode toggles
+ * @param {boolean}  [props.allowCustom=true] - Whether to show the custom date range option.
+ *        Set to false when the active data source only supports monthly granularity
+ *        (e.g. GA listens, account reach). Prevents misleading UX where the user
+ *        picks a date range that the backend cannot honour.
  */
 import React, { useMemo, useState } from 'react';
 import { Calendar, SlidersHorizontal, ChevronRight } from 'lucide-react';
@@ -16,6 +28,7 @@ const PeriodSelector = ({
   onCustomRangeChange,
   mode,
   onModeChange,
+  allowCustom = true,
 }) => {
   // All available month keys sorted chronologically
   const sortedAvailableKeys = useMemo(() => {
@@ -105,7 +118,10 @@ const PeriodSelector = ({
         const newSelection = sortedAvailableKeys.slice(newMin, newMax + 1);
         onMonthsChange(newSelection);
       } else {
-        onMonthsChange([monthKey]);
+        const newMin = Math.min(clickedIdx, minIdx);
+        const newMax = Math.max(clickedIdx, maxIdx);
+        const newSelection = sortedAvailableKeys.slice(newMin, newMax + 1);
+        onMonthsChange(newSelection);
       }
     }
   };
@@ -154,17 +170,19 @@ const PeriodSelector = ({
           >
             Månader
           </button>
-          <button
-            onClick={() => onModeChange('custom')}
-            className={`px-3 py-1.5 font-medium transition-colors border-l border-border ${
-              mode === 'custom'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-white text-muted-foreground hover:bg-muted/50'
-            }`}
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5 inline mr-1" />
-            Anpassad
-          </button>
+          {allowCustom && (
+            <button
+              onClick={() => onModeChange('custom')}
+              className={`px-3 py-1.5 font-medium transition-colors border-l border-border ${
+                mode === 'custom'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-white text-muted-foreground hover:bg-muted/50'
+              }`}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5 inline mr-1" />
+              Anpassad
+            </button>
+          )}
         </div>
       </div>
 
@@ -226,6 +244,30 @@ const PeriodSelector = ({
                         </button>
                       );
                     })}
+                    {monthsByYear[year].length >= 4 && (() => {
+                      const yearMonthKeys = monthsByYear[year].map(m => m.month);
+                      const allYearSelected = yearMonthKeys.every(k => selectedSet.has(k));
+                      return (
+                        <button
+                          onClick={() => {
+                            if (allYearSelected) {
+                              const remaining = sortedSelected.filter(k => !yearMonthKeys.includes(k));
+                              if (remaining.length === 0) return;
+                              onMonthsChange(remaining);
+                            } else {
+                              onMonthsChange(yearMonthKeys);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                            allYearSelected
+                              ? 'bg-gray-700 text-white border-transparent'
+                              : 'bg-white text-gray-600 border-gray-300 hover:border-primary/60 hover:bg-gray-50'
+                          }`}
+                        >
+                          Alla
+                        </button>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -235,7 +277,7 @@ const PeriodSelector = ({
       )}
 
       {/* Custom date range */}
-      {mode === 'custom' && (
+      {mode === 'custom' && allowCustom && (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <label className="text-sm text-muted-foreground">Från:</label>

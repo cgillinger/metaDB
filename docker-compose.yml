@@ -11,4 +11,8 @@ services:
       - DB_PATH=/data/analytics.db
       - HOST=0.0.0.0
       - PORT=3001
+      # Uncomment and set a strong secret to protect maintenance endpoints
+      # (stats, vacuum, redetect-collab). Backup remains open but rate-limited.
+      # Without this variable all maintenance routes are open (LAN/Tailscale only).
+      # - ADMIN_TOKEN=byt-till-ditt-eget-token
     restart: unless-stopped

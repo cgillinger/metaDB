@@ -4,9 +4,23 @@ import fs from 'fs';
 import { getDb } from '../db/connection.js';
 import { parseCSV } from '../services/csvProcessor.js';
 import { redetectAllCollabs } from '../services/collabDetector.js';
+import { uploadLimiter } from '../middleware/rateLimiters.js';
+import { hiddenPostsFilter, hiddenGAFilter, hiddenSiteVisitsFilter } from '../services/hiddenAccounts.js';
 
 const router = Router();
-const upload = multer({ dest: '/tmp/meta-uploads/' });
+
+// Multer config: 50 MB cap, CSV-only filter
+const upload = multer({
+  dest: '/tmp/meta-uploads/',
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'text/csv' || file.originalname.toLowerCase().endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Endast CSV-filer tillåtna.'));
+    }
+  },
+});
 
 // GET /api/imports — list all imports
 router.get('/', (req, res) => {
@@ -34,6 +48,7 @@ router.get('/coverage', (req, res) => {
       SUM(CASE WHEN platform = 'instagram' THEN 1 ELSE 0 END) AS ig_count
     FROM posts
     WHERE publish_time IS NOT NULL
+    ${hiddenPostsFilter()} -- Hidden accounts filter
     GROUP BY strftime('%Y-%m', publish_time)
     ORDER BY month ASC
   `).all();
@@ -49,6 +64,17 @@ router.get('/coverage', (req, res) => {
     // account_reach table may not exist yet
   }
 
+  // Get all months that have ig_account_reach data
+  let igReachMonthSet = new Set();
+  try {
+    const igReachRows = db.prepare(`
+      SELECT DISTINCT month FROM ig_account_reach ORDER BY month ASC
+    `).all();
+    for (const r of igReachRows) igReachMonthSet.add(r.month);
+  } catch (e) {
+    // ig_account_reach table may not exist yet
+  }
+
   // Count distinct programmes with GA listens data per month.
   // Used by the frontend to filter the period selector by platform.
   let gaListensCountMap = new Map();
@@ -56,11 +82,28 @@ router.get('/coverage', (req, res) => {
     const gaCountRows = db.prepare(`
       SELECT month, COUNT(DISTINCT account_name) AS ga_listens_count
       FROM ga_listens
+      WHERE 1=1
+      ${hiddenGAFilter()} -- Hidden accounts filter
       GROUP BY month
     `).all();
     for (const r of gaCountRows) gaListensCountMap.set(r.month, r.ga_listens_count);
   } catch (e) {
     // ga_listens table may not exist yet
+  }
+
+  // Count distinct accounts with GA site visits per month
+  let gaSiteVisitsCountMap = new Map();
+  try {
+    const gsvCountRows = db.prepare(`
+      SELECT month, COUNT(DISTINCT account_name) AS ga_site_visits_count
+      FROM ga_site_visits
+      WHERE 1=1
+      ${hiddenSiteVisitsFilter()}
+      GROUP BY month
+    `).all();
+    for (const r of gsvCountRows) gaSiteVisitsCountMap.set(r.month, r.ga_site_visits_count);
+  } catch (e) {
+    // ga_site_visits may not exist yet
   }
 
   const months = postRows.map(r => ({
@@ -71,8 +114,11 @@ router.get('/coverage', (req, res) => {
     has_facebook: r.fb_count > 0,
     has_instagram: r.ig_count > 0,
     has_reach: reachMonthSet.has(r.month),
+    has_ig_reach: igReachMonthSet.has(r.month),
     has_ga_listens: gaListensCountMap.has(r.month),
     ga_listens_count: gaListensCountMap.get(r.month) || 0,
+    has_ga_site_visits: gaSiteVisitsCountMap.has(r.month),
+    ga_site_visits_count: gaSiteVisitsCountMap.get(r.month) || 0,
   }));
 
   // Add reach-only months (no posts, but have account reach data)
@@ -87,15 +133,40 @@ router.get('/coverage', (req, res) => {
         has_facebook: true,
         has_instagram: false,
         has_reach: true,
+        has_ig_reach: igReachMonthSet.has(reachMonth),
         has_ga_listens: gaListensCountMap.has(reachMonth),
         ga_listens_count: gaListensCountMap.get(reachMonth) || 0,
+        has_ga_site_visits: gaSiteVisitsCountMap.has(reachMonth),
+        ga_site_visits_count: gaSiteVisitsCountMap.get(reachMonth) || 0,
       });
     }
   }
 
-  // Add GA-only months (no posts, no reach, but have ga_listens data)
+  // Add IG reach-only months (no posts, no FB reach, but have IG reach data)
+  const coveredByPostOrFBReach = new Set([...postMonthSet, ...reachMonthSet]);
+  for (const igMonth of igReachMonthSet) {
+    if (!coveredByPostOrFBReach.has(igMonth)) {
+      months.push({
+        month: igMonth,
+        post_count: 0,
+        fb_count: 0,
+        ig_count: 0,
+        has_facebook: false,
+        has_instagram: true,
+        has_reach: false,
+        has_ig_reach: true,
+        has_ga_listens: gaListensCountMap.has(igMonth),
+        ga_listens_count: gaListensCountMap.get(igMonth) || 0,
+        has_ga_site_visits: gaSiteVisitsCountMap.has(igMonth),
+        ga_site_visits_count: gaSiteVisitsCountMap.get(igMonth) || 0,
+      });
+    }
+  }
+
+  // Add GA-only months (no posts, no FB reach, no IG reach, but have ga_listens data)
+  const coveredByPostFBReachIGReach = new Set([...postMonthSet, ...reachMonthSet, ...igReachMonthSet]);
   for (const [gaMonth, gaCount] of gaListensCountMap) {
-    if (!postMonthSet.has(gaMonth) && !reachMonthSet.has(gaMonth)) {
+    if (!coveredByPostFBReachIGReach.has(gaMonth)) {
       months.push({
         month: gaMonth,
         post_count: 0,
@@ -104,8 +175,32 @@ router.get('/coverage', (req, res) => {
         has_facebook: false,
         has_instagram: false,
         has_reach: false,
+        has_ig_reach: false,
         has_ga_listens: true,
         ga_listens_count: gaCount,
+        has_ga_site_visits: gaSiteVisitsCountMap.has(gaMonth),
+        ga_site_visits_count: gaSiteVisitsCountMap.get(gaMonth) || 0,
+      });
+    }
+  }
+
+  // Add GSV-only months (no posts, no reach, no IG reach, no ga_listens)
+  const coveredMonths = new Set([...postMonthSet, ...reachMonthSet, ...igReachMonthSet, ...gaListensCountMap.keys()]);
+  for (const [gsvMonth, gsvCount] of gaSiteVisitsCountMap) {
+    if (!coveredMonths.has(gsvMonth)) {
+      months.push({
+        month: gsvMonth,
+        post_count: 0,
+        fb_count: 0,
+        ig_count: 0,
+        has_facebook: false,
+        has_instagram: false,
+        has_reach: false,
+        has_ig_reach: false,
+        has_ga_listens: false,
+        ga_listens_count: 0,
+        has_ga_site_visits: true,
+        ga_site_visits_count: gsvCount,
       });
     }
   }
@@ -117,7 +212,8 @@ router.get('/coverage', (req, res) => {
 });
 
 // POST /api/imports — upload and process a CSV file
-router.post('/', upload.single('file'), (req, res) => {
+// uploadLimiter: max 10 uploads per minute to prevent abuse
+router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Ingen fil bifogades.' });
   }
@@ -248,6 +344,8 @@ router.post('/', upload.single('file'), (req, res) => {
       },
       stats: {
         totalRowsInFile: parsed.stats.totalRows,
+        parsedPosts: parsed.stats.parsedPosts,
+        duplicatesRemoved: parsed.stats.duplicatesRemoved,
         postsInserted: result.inserted,
         postsUpdated: result.updated,
         collabDetection: collabResult,

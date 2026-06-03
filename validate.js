@@ -82,7 +82,11 @@ function mapRow(row, mappings) {
     for (const [mk, mv] of Object.entries(mappings)) {
       if (norm(mk) === nc) { internal = mv; break; }
     }
-    mapped[internal || col] = val;
+    const key = internal || col;
+    if (internal && key in mapped && mapped[key] != null && mapped[key] !== '') {
+      if (val == null || val === '') continue;
+    }
+    mapped[key] = val;
   }
   return mapped;
 }

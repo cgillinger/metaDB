@@ -86,6 +86,15 @@ function convertPacificToStockholm(dateStr) {
 }
 
 /**
+ * Strip HTML-significant characters from free-text fields imported from CSV.
+ * Prevents stored XSS if values are ever rendered without escaping.
+ */
+function sanitizeText(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/[<>]/g, '');
+}
+
+/**
  * Map a single raw CSV row to internal field names using column mappings.
  */
 function mapRow(rawRow, columnMappings, platform) {
@@ -100,7 +109,14 @@ function mapRow(rawRow, columnMappings, platform) {
         break;
       }
     }
-    mapped[internalName || originalCol] = value;
+    const key = internalName || originalCol;
+    // First-non-empty-wins: skip overwriting a valid mapped value with null/empty.
+    // Handles CSVs with duplicate SV+EN columns where the English column may be
+    // empty (null via dynamicTyping).
+    if (internalName && key in mapped && mapped[key] != null && mapped[key] !== '') {
+      if (value == null || value === '') continue;
+    }
+    mapped[key] = value;
   }
 
   // Fallback for account fields that sometimes appear in English
@@ -199,9 +215,9 @@ export function parseCSV(csvContent, filename) {
     posts.push({
       post_id: String(mapped.post_id || ''),
       account_id: mapped.account_id ? String(mapped.account_id) : null,
-      account_name: mapped.account_name || null,
-      account_username: mapped.account_username || null,
-      description: mapped.description || null,
+      account_name:     sanitizeText(mapped.account_name || null),
+      account_username: sanitizeText(mapped.account_username || null),
+      description:      sanitizeText(mapped.description || null),
       publish_time: mapped.publish_time || null,
       post_type: normalizedType,
       permalink: mapped.permalink || null,
@@ -220,6 +236,25 @@ export function parseCSV(csvContent, filename) {
       engagement,
     });
   }
+
+  // --- Deduplicate by post_id: keep the row with highest interactions ---
+  const postMap = new Map();
+  let dupCount = 0;
+  for (const post of posts) {
+    if (!post.post_id) continue;
+    const existing = postMap.get(post.post_id);
+    if (existing) {
+      dupCount++;
+      if (post.interactions > existing.interactions) {
+        postMap.set(post.post_id, post);
+      }
+    } else {
+      postMap.set(post.post_id, post);
+    }
+  }
+  const dedupedPosts = [...postMap.values()];
+  const noIdPosts = posts.filter(p => !p.post_id);
+  const finalPosts = [...dedupedPosts, ...noIdPosts];
 
   // Derive month from post dates
   let month = 'unknown';
@@ -242,7 +277,7 @@ export function parseCSV(csvContent, filename) {
 
   // Count unique accounts
   const uniqueAccounts = new Set(
-    posts.map(p => p.account_id).filter(Boolean)
+    finalPosts.map(p => p.account_id).filter(Boolean)
   );
 
   return {
@@ -250,10 +285,11 @@ export function parseCSV(csvContent, filename) {
     month,
     dateRangeStart,
     dateRangeEnd,
-    posts,
+    posts: finalPosts,
     stats: {
       totalRows: result.data.length,
-      parsedPosts: posts.length,
+      parsedPosts: finalPosts.length,
+      duplicatesRemoved: dupCount,
       accountCount: uniqueAccounts.size || 1,
     },
   };

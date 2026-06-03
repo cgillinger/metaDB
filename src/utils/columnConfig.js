@@ -114,7 +114,9 @@ export const DISPLAY_NAMES = {
   'other_clicks': 'Övriga klick',
   'link_clicks': 'Länkklick',
   'post_count': 'Antal publiceringar',
-  'posts_per_day': 'Publiceringar per dag'
+  'posts_per_day': 'Publiceringar per dag',
+  'estimated_unique_clicks': 'Uppsk. unika klickare',
+  'avg_daily_link_clicks': 'Länkklick snitt/dag',
 };
 
 // Info tooltips explaining what engagement means per platform
@@ -271,6 +273,28 @@ export function formatDate(dateStr) {
       minute: '2-digit'
     });
   } catch (error) {
+    return dateStr;
+  }
+}
+
+const MONTH_NAMES_SHORT = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun',
+                           'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+
+/**
+ * Human-readable date: "25 apr 2026, 05:58"
+ */
+export function formatDateHuman(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    const day = date.getDate();
+    const month = MONTH_NAMES_SHORT[date.getMonth()];
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${day} ${month} ${year}, ${hours}:${minutes}`;
+  } catch {
     return dateStr;
   }
 }

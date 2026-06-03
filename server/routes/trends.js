@@ -1,15 +1,59 @@
 import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
+import { hiddenPostsFilter, hiddenReachFilter, hiddenIGReachFilter } from '../services/hiddenAccounts.js';
+import { getEstimatedUniqueClicks } from '../services/estimatedUniqueClicks.js';
 
 const router = Router();
 
-const ALLOWED_METRICS = new Set([
-  'views', 'reach', 'average_reach', 'likes', 'comments', 'shares',
-  'total_clicks', 'link_clicks', 'other_clicks',
-  'saves', 'follows', 'interactions', 'engagement',
-  'post_count', 'posts_per_day', 'account_reach'
-]);
+/**
+ * Whitelist map: metric name → SQL aggregation expression.
+ * Only metrics listed here are accepted; anything else returns 400.
+ * account_reach is handled separately (own table, own query path).
+ */
+const METRIC_SQL_MAP = {
+  views:          'SUM(views)',
+  reach:          'CAST(ROUND(AVG(reach)) AS INTEGER)',
+  average_reach:  'CAST(ROUND(AVG(reach)) AS INTEGER)',
+  likes:          'SUM(likes)',
+  comments:       'SUM(comments)',
+  shares:         'SUM(shares)',
+  total_clicks:   'SUM(total_clicks)',
+  link_clicks:    'SUM(link_clicks)',
+  other_clicks:   'SUM(other_clicks)',
+  saves:          'SUM(saves)',
+  follows:        'SUM(follows)',
+  interactions:   'SUM(interactions)',
+  engagement:     'SUM(engagement)',
+  post_count:     'COUNT(*)',
+  posts_per_day:  'COUNT(*)',
+};
+
+/**
+ * Build a complete 'YYYY-MM' month span from period filter query params.
+ * Returns the full list of months covered by the period filter so that the
+ * client can render zero-value months that have no matching posts.
+ * Returns null when no period filter is set — callers should then fall back
+ * to the months that actually have data.
+ */
+function buildMonthSpan(query) {
+  if (query.months) {
+    return query.months.split(',').map(m => m.trim()).filter(Boolean).sort();
+  }
+  if (query.dateFrom && query.dateTo) {
+    const start = query.dateFrom.slice(0, 7);
+    const end = query.dateTo.slice(0, 7);
+    const months = [];
+    let current = start;
+    while (current <= end) {
+      months.push(current);
+      const [y, m] = current.split('-').map(Number);
+      current = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    }
+    return months;
+  }
+  return null;
+}
 
 // Parse composite keys "name::platform" into {name, platform} pairs.
 // Keys are separated by "||" to avoid conflicts with commas in account names.
@@ -41,13 +85,12 @@ function buildAccountFilter(pairs, tableAlias = '') {
 router.get('/', (req, res) => {
   const db = getDb();
 
-  let metric = ALLOWED_METRICS.has(req.query.metric) ? req.query.metric : 'interactions';
+  const metric = req.query.metric;
   const granularity = req.query.granularity === 'week' ? 'week' : 'month';
 
   const accountPairs = parseAccountKeys(req.query.accountKeys);
 
-  // account_reach comes from a separate table (FB only).
-  // Always returns ALL imported months — period selection is ignored.
+  // account_reach is served from a separate table (FB only) — validate and handle early
   if (metric === 'account_reach') {
     const reachConditions = [];
     const reachParams = [];
@@ -60,7 +103,21 @@ router.get('/', (req, res) => {
       reachParams.push(...names);
     }
 
-    const reachWhere = reachConditions.length > 0 ? `WHERE ${reachConditions.join(' AND ')}` : '';
+    // Hidden accounts filter
+    reachConditions.push(hiddenReachFilter('ar').slice(4));
+
+    // Period filtering for account_reach
+    const { months: monthsParam } = req.query;
+    if (monthsParam) {
+      const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
+      if (monthList.length > 0) {
+        const placeholders = monthList.map(() => '?').join(',');
+        reachConditions.push(`ar.month IN (${placeholders})`);
+        reachParams.push(...monthList);
+      }
+    }
+
+    const reachWhere = `WHERE ${reachConditions.join(' AND ')}`;
     const reachQuery = `
       SELECT
         ar.month AS period,
@@ -90,7 +147,11 @@ router.get('/', (req, res) => {
       byAccount[key].dataMap[row.period] = row.value;
     }
 
-    const months = Array.from(monthSet).sort();
+    // Prefer the full period span so that months without reach data still
+    // appear on the x-axis as zero values. Fall back to months with data
+    // when no period filter was supplied.
+    const spanMonths = buildMonthSpan(req.query);
+    const months = spanMonths || Array.from(monthSet).sort();
     const series = Object.values(byAccount).map(account => ({
       account_id: account.account_name,
       account_name: account.account_name,
@@ -100,6 +161,129 @@ router.get('/', (req, res) => {
     }));
 
     return res.json({ metric, granularity: 'month', months, series });
+  }
+
+  // ig_account_reach: IG reach from ig_account_reach table (mirrors account_reach logic)
+  if (metric === 'ig_account_reach') {
+    const igConditions = [];
+    const igParams = [];
+
+    if (accountPairs.length > 0) {
+      const names = accountPairs.map(p => p.name);
+      const placeholders = names.map(() => '?').join(',');
+      igConditions.push(`ar.account_name IN (${placeholders})`);
+      igParams.push(...names);
+    }
+
+    igConditions.push(hiddenIGReachFilter('ar').slice(4));
+
+    const { months: monthsParam } = req.query;
+    if (monthsParam) {
+      const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
+      if (monthList.length > 0) {
+        const placeholders = monthList.map(() => '?').join(',');
+        igConditions.push(`ar.month IN (${placeholders})`);
+        igParams.push(...monthList);
+      }
+    }
+
+    const igWhere = `WHERE ${igConditions.join(' AND ')}`;
+    const igQuery = `
+      SELECT
+        ar.month AS period,
+        ar.account_name,
+        ar.reach AS value
+      FROM ig_account_reach ar
+      ${igWhere}
+      ORDER BY ar.month ASC, ar.account_name ASC
+    `;
+
+    const rows = db.prepare(igQuery).all(...igParams);
+
+    const monthSet = new Set();
+    const byAccount = {};
+
+    for (const row of rows) {
+      monthSet.add(row.period);
+      const key = row.account_name;
+      if (!byAccount[key]) {
+        byAccount[key] = {
+          account_name: row.account_name,
+          platform: 'instagram',
+          is_collab: false,
+          dataMap: {},
+        };
+      }
+      byAccount[key].dataMap[row.period] = row.value;
+    }
+
+    const spanMonths = buildMonthSpan(req.query);
+    const months = spanMonths || Array.from(monthSet).sort();
+    const series = Object.values(byAccount).map(account => ({
+      account_id: account.account_name,
+      account_name: account.account_name,
+      platform: account.platform,
+      is_collab: account.is_collab,
+      data: months.map(m => account.dataMap[m] || 0),
+    }));
+
+    return res.json({ metric, granularity: 'month', months, series });
+  }
+
+  // estimated_unique_clicks: computed from posts + account_reach join
+  if (metric === 'estimated_unique_clicks') {
+    const accountNames = accountPairs.map(p => p.name);
+    const spanMonths = buildMonthSpan(req.query);
+
+    let filterMonths = null;
+    if (req.query.months) {
+      filterMonths = req.query.months.split(',').map(m => m.trim()).filter(Boolean);
+    } else if (spanMonths) {
+      filterMonths = spanMonths;
+    }
+
+    const rows = getEstimatedUniqueClicks({
+      accountNames: accountNames.length > 0 ? accountNames : undefined,
+      months: filterMonths || undefined,
+    });
+
+    const monthSet = new Set();
+    const byAccount = {};
+
+    for (const row of rows) {
+      monthSet.add(row.month);
+      const key = row.account_name;
+      if (!byAccount[key]) {
+        byAccount[key] = {
+          account_name: row.account_name,
+          platform: 'facebook',
+          is_collab: false,
+          dataMap: {},
+        };
+      }
+      byAccount[key].dataMap[row.month] = {
+        value: row.estimated_unique_upper !== null ? Math.round(row.estimated_unique_upper) : null,
+        lower: row.estimated_unique_lower !== null ? Math.round(row.estimated_unique_lower) : null,
+        quality: row.quality || 'suppressed',
+      };
+    }
+
+    const months = spanMonths || Array.from(monthSet).sort();
+    const series = Object.values(byAccount).map(account => ({
+      account_id: account.account_name,
+      account_name: account.account_name,
+      platform: 'facebook',
+      is_collab: account.is_collab,
+      data: months.map(m => account.dataMap[m] ?? null),
+    }));
+
+    return res.json({ metric, granularity: 'month', months, series });
+  }
+
+  // Validate metric against the whitelist map — reject anything not explicitly listed
+  const valueExpr = METRIC_SQL_MAP[metric];
+  if (!valueExpr) {
+    return res.status(400).json({ error: 'Ogiltigt mätvärde.' });
   }
 
   // Regular metrics from posts table
@@ -126,23 +310,14 @@ router.get('/', (req, res) => {
     conditions.push('is_collab = 0');
   }
 
+  // Hidden accounts filter
+  conditions.push(hiddenPostsFilter().slice(4));
+
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   const timeExpr = granularity === 'week'
     ? "strftime('%Y-W%W', publish_time)"
     : "strftime('%Y-%m', publish_time)";
-
-  // Determine SQL aggregation based on metric
-  let valueExpr;
-  if (metric === 'reach' || metric === 'average_reach') {
-    valueExpr = 'CAST(ROUND(AVG(reach)) AS INTEGER)';
-  } else if (metric === 'post_count') {
-    valueExpr = 'COUNT(*)';
-  } else if (metric === 'posts_per_day') {
-    valueExpr = 'COUNT(*)';
-  } else {
-    valueExpr = `SUM(${metric})`;
-  }
 
   // Group by period + account_name + platform to keep FB/IG separate
   const query = `
@@ -190,7 +365,11 @@ router.get('/', (req, res) => {
     byAccount[key].dataMap[row.period] = value;
   }
 
-  const months = Array.from(monthSet).sort();
+  // Use the complete month span from the period filter so months without
+  // posts still render as zero. Week granularity keeps the legacy behaviour
+  // (only periods with data) since we don't generate week spans.
+  const spanMonths = granularity === 'month' ? buildMonthSpan(req.query) : null;
+  const months = spanMonths || Array.from(monthSet).sort();
 
   const series = Object.values(byAccount).map(account => ({
     account_id: account.account_id,

@@ -9,7 +9,9 @@ export function errorHandler(err, req, res, _next) {
     return res.status(400).json({ error: 'Ogiltigt request-format.' });
   }
 
+  // In production, hide internal error details from clients
+  const isDev = process.env.NODE_ENV !== 'production';
   res.status(err.status || 500).json({
-    error: err.message || 'Ett oväntat fel uppstod.'
+    error: isDev ? err.message : 'Ett oväntat fel uppstod.',
   });
 }

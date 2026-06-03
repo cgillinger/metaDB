@@ -36,4 +36,9 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD wget -qO- http://localhost:3001/api/health || exit 1
 
+# Run as non-root for reduced attack surface
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN chown -R appuser:appgroup /app /data
+USER appuser
+
 CMD ["node", "server/index.js"]

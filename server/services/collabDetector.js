@@ -1,4 +1,5 @@
 import { getDb } from '../db/connection.js';
+import { hiddenPostsFilter } from './hiddenAccounts.js';
 
 // Partial terms — any account whose name contains these is never flagged.
 const COLLAB_SAFE_TERMS = ['Sveriges Radio', 'P1', 'P2', 'P3', 'P4'];
@@ -34,10 +35,11 @@ function isSafeAccount(accountName) {
 export function redetectAllCollabs() {
   const db = getDb();
 
-  // Count posts per account_id, grouped by platform
+  // Count posts per account_id, grouped by platform — exclude hidden accounts
   const accountCounts = db.prepare(`
     SELECT account_id, account_name, platform, COUNT(*) AS post_count
     FROM posts
+    WHERE ${hiddenPostsFilter().slice(4)}
     GROUP BY account_id, platform
   `).all();
 
@@ -62,8 +64,10 @@ export function redetectAllCollabs() {
 
   // Update in a transaction
   db.transaction(() => {
-    // Clear all collab flags first
-    db.prepare('UPDATE posts SET is_collab = 0').run();
+    // Clear collab flags — leave hidden accounts unchanged
+    db.prepare(
+      `UPDATE posts SET is_collab = 0 WHERE ${hiddenPostsFilter().slice(4)}`
+    ).run();
 
     // Set collab flags for detected accounts
     if (collabAccountIds.size > 0) {

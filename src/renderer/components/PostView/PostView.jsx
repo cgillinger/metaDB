@@ -7,8 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
-import { formatValue, formatDate, DISPLAY_NAMES, ENGAGEMENT_INFO } from '@/utils/columnConfig';
+import { formatValue, formatDate, formatDateHuman, DISPLAY_NAMES, ENGAGEMENT_INFO } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
+import ProfileIcon from '../ui/ProfileIcon';
 
 const ALL_ACCOUNTS = 'all_accounts';
 
@@ -40,7 +41,6 @@ const POST_VIEW_AVAILABLE_FIELDS = {
 
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
 const IG_ONLY_FIELDS = ['saves', 'follows'];
-const MAX_DESCRIPTION_LENGTH = 100;
 
 const getDisplayName = (field) => POST_VIEW_AVAILABLE_FIELDS[field] || DISPLAY_NAMES[field] || field;
 
@@ -65,7 +65,6 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [selectedAccount, setSelectedAccount] = useState(ALL_ACCOUNTS);
-  const [expandedDescriptions, setExpandedDescriptions] = useState({});
 
   const [posts, setPosts] = useState([]);
   const [totalPosts, setTotalPosts] = useState(0);
@@ -117,12 +116,14 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
         const params = { fields: 'views', ...periodParams };
         if (platform) params.platform = platform;
         const data = await api.getAccounts(params);
-        const accounts = (data.accounts || []).map(a => ({
-          name: a.account_name,
-          platform: a.platform,
-          isCollab: a.is_collab,
-          key: `${a.account_name}::${a.platform}`,
-        }));
+        const accounts = (data.accounts || [])
+          .map(a => ({
+            name: a.account_name,
+            platform: a.platform,
+            isCollab: a.is_collab,
+            key: `${a.account_name}::${a.platform}`,
+          }))
+          .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'));
         setUniqueAccounts(accounts);
         const platforms = new Set(accounts.map(a => a.platform));
         setHasMixedData(platforms.size > 1);
@@ -162,24 +163,6 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
   const getSortIcon = (columnKey) => {
     if (sortConfig.key !== columnKey) return <ArrowUpDown className="h-4 w-4 ml-1" />;
     return sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
-  };
-
-  const toggleDescription = (postId) => {
-    setExpandedDescriptions(prev => ({ ...prev, [postId]: !prev[postId] }));
-  };
-
-  const formatDescription = (description, postId) => {
-    if (!description) return '-';
-    const isExpanded = expandedDescriptions[postId];
-    if (description.length <= MAX_DESCRIPTION_LENGTH) return <span>{description}</span>;
-    return (
-      <div>
-        {isExpanded ? description : `${description.substring(0, MAX_DESCRIPTION_LENGTH)}...`}
-        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDescription(postId); }} className="ml-2 text-primary text-sm hover:underline">
-          {isExpanded ? 'Visa mindre' : 'Läs mer'}
-        </button>
-      </div>
-    );
   };
 
   const handleExternalLink = (post) => {
@@ -304,8 +287,6 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
     );
   }
 
-  const showPostType = selectedFields.includes('post_type');
-
   return (
     <Card>
       <div className="flex justify-between items-center p-4">
@@ -334,30 +315,18 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
       </div>
 
       <div className="rounded-md overflow-x-auto bg-white">
-        <Table>
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10 text-center">#</TableHead>
-              <TableHead className="w-1/3 cursor-pointer hover:bg-muted/50" onClick={() => handleSort('description')}>
-                <div className="flex items-center">{getDisplayName('description')} {getSortIcon('description')}</div>
+              <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort('publish_time')}>
+                <div className="flex items-center">Inlägg {getSortIcon('publish_time')}</div>
               </TableHead>
-              <TableHead className="w-24 whitespace-nowrap cursor-pointer hover:bg-muted/50" onClick={() => handleSort('publish_time')}>
-                <div className="flex items-center">{getDisplayName('publish_time')} {getSortIcon('publish_time')}</div>
-              </TableHead>
-              <TableHead className="w-28 cursor-pointer hover:bg-muted/50" onClick={() => handleSort('account_name')}>
-                <div className="flex items-center">{getDisplayName('account_name')} {getSortIcon('account_name')}</div>
-              </TableHead>
-              <TableHead className="w-16 text-center">Plattform</TableHead>
-              {showPostType && (
-                <TableHead className="w-28 cursor-pointer hover:bg-muted/50" onClick={() => handleSort('post_type')}>
-                  <div className="flex items-center whitespace-nowrap">Typ {getSortIcon('post_type')}</div>
-                </TableHead>
-              )}
               {selectedFields.map(field => {
                 if (['description', 'publish_time', 'account_name', 'post_type'].includes(field)) return null;
                 return (
-                  <TableHead key={field} className="w-28 cursor-pointer hover:bg-muted/50" onClick={() => handleSort(field)}>
-                    <div className="flex items-center justify-end">
+                  <TableHead key={field} className="w-[130px] cursor-pointer hover:bg-muted/50" onClick={() => handleSort(field)}>
+                    <div className="flex items-center justify-end whitespace-nowrap">
                       {getDisplayName(field)}
                       {field === 'engagement' && hasMixedData && <InfoTooltip text="Engagemanget beräknas olika per plattform. FB: inkl. klick. IG: inkl. sparade & följare." />}
                       {getSortIcon(field)}
@@ -365,49 +334,59 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
                   </TableHead>
                 );
               })}
-              <TableHead className="w-12 text-center">{getDisplayName('permalink')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {posts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5 + (showPostType ? 1 : 0) + selectedFields.filter(f => !['description', 'publish_time', 'account_name', 'post_type'].includes(f)).length} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={2 + selectedFields.filter(f => !['description', 'publish_time', 'account_name', 'post_type'].includes(f)).length} className="text-center text-muted-foreground py-8">
                   {loading ? 'Laddar...' : 'Ingen data tillgänglig för valda filter'}
                 </TableCell>
               </TableRow>
             ) : posts.map((post, index) => (
               <TableRow key={`post-${post.post_id || index}`}>
-                <TableCell className="text-center font-medium">{(currentPage - 1) * pageSize + index + 1}</TableCell>
-                <TableCell className="max-w-md">
-                  <div className="text-sm text-muted-foreground">{formatDescription(post.description, post.post_id || index)}</div>
+                <TableCell className="text-center font-medium align-top pt-5 text-muted-foreground">
+                  {(currentPage - 1) * pageSize + index + 1}
                 </TableCell>
-                <TableCell className="whitespace-nowrap">{formatDate(post.publish_time)}</TableCell>
-                <TableCell>{formatValue(post.account_name)}</TableCell>
-                <TableCell className="text-center">
-                  <div className="flex items-center justify-center gap-1">
-                    <PlatformBadge platform={post.platform} />
-                    {post.is_collab ? <CollabBadge compact /> : null}
+                <TableCell className="py-4">
+                  <div className="flex gap-3">
+                    <ProfileIcon accountName={post.account_name} size="md" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                        <span className="text-sm font-medium">{post.account_name || 'Okänt konto'}</span>
+                        <PlatformBadge platform={post.platform} />
+                        <PostTypeBadge type={post.post_type} />
+                        {post.is_collab ? <CollabBadge compact /> : null}
+                      </div>
+                      <div className="text-sm leading-relaxed">
+                        {post.description || '-'}
+                      </div>
+                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                        <span>{formatDateHuman(post.publish_time)}</span>
+                        <button
+                          onClick={() => handleExternalLink(post)}
+                          className="inline-flex items-center gap-1 text-primary hover:text-primary/80 hover:underline"
+                        >
+                          Öppna inlägg
+                          <ExternalLink className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </TableCell>
-                {showPostType && <TableCell className="text-center"><PostTypeBadge type={post.post_type} /></TableCell>}
                 {selectedFields.map(field => {
                   if (['description', 'publish_time', 'account_name', 'post_type'].includes(field)) return null;
                   const showMixedIcon = field === 'engagement' && hasMixedData;
                   const mixedTip = showMixedIcon ? (post.platform === 'facebook' ? ENGAGEMENT_INFO.facebook : ENGAGEMENT_INFO.instagram) : null;
                   return (
-                    <TableCell key={field} className="text-right">
-                      <span className="inline-flex items-center justify-end gap-1">
+                    <TableCell key={field} className="text-right align-top pt-5 w-[130px]">
+                      <span className="inline-flex items-center justify-end gap-1 text-lg font-medium whitespace-nowrap tabular-nums">
                         {renderFieldValue(post, field)}
                         {showMixedIcon && <InfoTooltip text={mixedTip} />}
                       </span>
                     </TableCell>
                   );
                 })}
-                <TableCell className="text-center">
-                  <button onClick={() => handleExternalLink(post)} className="inline-flex items-center justify-center text-primary hover:text-primary/80" title="Öppna i webbläsare">
-                    <ExternalLink className="h-4 w-4" /><span className="sr-only">Öppna inlägg</span>
-                  </button>
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -2,22 +2,32 @@ import { Router } from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import { importReachCSV, getReachMonths, deleteReachMonth } from '../services/reachImporter.js';
+import { uploadLimiter } from '../middleware/rateLimiters.js';
 
 const router = Router();
-const upload = multer({ dest: '/tmp/meta-uploads/' });
+
+// Multer config: 50 MB cap, CSV-only filter
+const upload = multer({
+  dest: '/tmp/meta-uploads/',
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'text/csv' || file.originalname.toLowerCase().endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Endast CSV-filer tillåtna.'));
+    }
+  },
+});
 
 // POST / — upload API-level reach CSV
 // Expects multipart form with 'file' and 'month' (YYYY-MM)
-router.post('/', upload.single('file'), (req, res) => {
+// uploadLimiter: max 10 uploads per minute to prevent abuse
+router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Ingen fil bifogades.' });
   }
 
-  const month = req.body.month;
-  if (!month) {
-    fs.unlinkSync(req.file.path);
-    return res.status(400).json({ error: 'Månad (month) måste anges i formatet YYYY-MM.' });
-  }
+  const month = req.body.month || null;  // null triggers auto-detect in importer
 
   try {
     const csvContent = fs.readFileSync(req.file.path, 'utf-8');
@@ -45,6 +55,10 @@ router.get('/months', (req, res) => {
 
 // DELETE /:month — delete reach data for a month
 router.delete('/:month', (req, res) => {
+  // Validate month format to prevent unexpected values reaching the DB
+  if (!/^\d{4}-\d{2}$/.test(req.params.month)) {
+    return res.status(400).json({ error: 'Ogiltigt månadsformat. Förväntat: YYYY-MM.' });
+  }
   const result = deleteReachMonth(req.params.month);
   res.json({ deleted: result.changes });
 });
