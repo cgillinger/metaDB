@@ -304,6 +304,32 @@
           "value": 240348
         }
       ]
+    },
+    "C2_trend_series_zero_fill_no_filter": {
+      "endpoint": "/api/trends?metric=views&accountKeys=P4+DANS%3A%3Afacebook&granularity=month",
+      "note": "No period filter. INTENTIONAL: empty month 2025-11 absent → 0-point.",
+      "account": "P4 DANS",
+      "metric": "views",
+      "monthsCount": 29,
+      "firstMonth": "2024-01",
+      "lastMonth": "2026-05",
+      "emptyMonth": "2025-11",
+      "emptyMonthPresent": true,
+      "emptyMonthValue": 0,
+      "neighbours": {
+        "before": {
+          "month": "2025-10",
+          "value": 986992
+        },
+        "at": {
+          "month": "2025-11",
+          "value": 0
+        },
+        "after": {
+          "month": "2025-12",
+          "value": 236593
+        }
+      }
     }
   }
 }

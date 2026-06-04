@@ -48,7 +48,7 @@ klienten är detta den exakta regressionsankaren som Fas 1/2 hävdar mot
 | Estimerade unika klickare (**service**) | **SERVER** | `server/services/estimatedUniqueClicks.js`, via `trends.js:234-275` (per månad) och `accounts.js` (period, `getEstimatedUniqueClicksByAccount`) | `F=sum_post_reach/account_reach; upper=clicks/F; lower=upper/1.5` |
 | ~~Estimerade unika klickare (AccountView-tabell, inline)~~ | **BORTTAGEN** | ~~`accounts.js:172-206`~~ | ~~inline-reimpl. med `SUM(ar.reach)` per inlägg~~ — **åtgärdad**, se driftfynd #1 |
 | Namnnormalisering (Comparison) | **SERVER** | `server/services/comparisonService.js:9-34` | strip `", Sveriges Radio"` + manuell karta |
-| Zero-fill av tomma månader | **DELAT** | `trends.js:39-56,372,379` (server) + `TrendAnalysisView.jsx:398,440,572` (`||0`/`??0`) | full månadsaxel via `buildMonthSpan` **endast** när periodfilter finns |
+| Zero-fill av tomma månader | **SERVER** (Fas 2) | `trends.js:resolveSeriesMonths` → `trend/series.js:fullMonthAxis`; `TrendAnalysisView` renderar serverns `months` (defensiva `??0` kvar) | full månadsaxel min→max **även utan** periodfilter — avsiktlig empty→0 (se öppen ändring nedan) |
 | Räckvidd | **SERVER (AVG, aldrig SUM)** | `account_reach`-väg, per månad | aldrig summerad/aggregerad |
 
 `PostView` / `ComparisonView` / `ComparisonChart` gör **ingen** klientberäkning av mått —
@@ -136,7 +136,8 @@ exakt.
 |---|---|---|
 | **A** snitt/dag, 2 konton × feb 2026 | `/api/accounts?months=2026-02` | P4 Göteborg: ppd **7.89**, snitt/dag länkklick **3898.5**; P4 Stockholm: ppd **7.29**, **1883.7** (Ekot saknar FB-inlägg i prod → byttes ut) |
 | **B** Plattformstrend YoY (P4, FB) | `/api/platform-trends?platform=facebook&group=p4` | sista mån 2026-06 vs 2025-06: delta **−0.3503** (falling), 37836 vs 58232 |
-| **C** Trendserie med tom månad | `/api/trends?metric=views&accountKeys=P4 DANS::facebook&months=2024-01…2026-05` | **2025-11 = 0** (zero-fill), grannar 2025-10=986992, 2025-12=236593 |
+| **C** Trendserie med tom månad (periodfilter) | `/api/trends?metric=views&accountKeys=P4 DANS::facebook&months=2024-01…2026-05` | **2025-11 = 0** (server zero-fill via periodfilter), grannar 986992/236593 — oförändrad |
+| **C2** Trendserie utan periodfilter (zero-fill) | `/api/trends?metric=views&accountKeys=P4 DANS::facebook` (inga months) | **AVSIKTLIG:** 2025-11 frånvarande → **0**; 28→29 mån, full axel 2024-01…2026-05 |
 | **D** Uppsk. unika klickare (service-ankare) | `/api/trends?metric=estimated_unique_clicks` P4 Göteborg feb 2026 | **value 24312, lower 16208, quality "ok"** (F≈4.49) — får **inte** ändras |
 | **D2** AccountView estimat-display (efter fix) | `/api/accounts?months=2026-02` | matchar servicen (`matchesServicePath: true`); display per gren: ok `~16 208 – 24 312`, uncertain `~12 045 – 18 068 ⚠`, suppressed `—`; fördelning 52 ok / 4 uncertain / 8 suppressed |
 | **E** Grupp-SBS "Alla P4" feb 2026 | accounts + account-groups | 25/25 medlemmar, Σlänkklick 1518417 / 28 dgr → snitt/dag **54229.2** |
@@ -181,3 +182,23 @@ ankrar. Konsekvensen gäller endast vid flermånaders-/custom-period i AccountVi
   bara när exakt en månad är vald), eller (b) visa vid flermånad **med dokumenterad bias**
   (overestimate-flagga). 
 - **Rör inte detta i Fas 1.** Loggat för spårbarhet; ingen kodändring nu.
+
+---
+
+## Avsiktliga beteendeändringar (skilda från no-op-refaktorn)
+
+**A — AccountView estimat: tom → tal.** Se driftfynd #1. Egen commit.
+
+**B — TrendAnalysisView zero-fill: frånvarande månad → 0-punkt (Fas 2).**
+Tidigare byggde `trends.js` full månadsaxel **endast** när ett periodfilter fanns; utan
+filter blev axeln bara månader med data → inre tomma månader var **frånvarande** ur
+serien. Nu bygger `resolveSeriesMonths` → `trend/series.js:fullMonthAxis` en full
+min→max-axel även utan filter, så tomma månader blir **explicita 0-punkter** (för
+estimat: `null`, oförändrad suppress-semantik). Vecko-granularitet oförändrad.
+- **Avsiktlig empty→0** (inte drift): en frånvarande månad i en linje ritas nu som en
+  nedgång till 0 i stället för att hoppa över hålet. Ankrat i `baseline.json` **Fixture
+  C2** (P4 DANS, utan filter: 2025-11 frånvarande → 0; 28→29 mån).
+- **Periodfilter-fallet oförändrat** (Fixture C byte-identisk) och alla övriga
+  fixtures/serier byte-identiska. TrendAnalysisView behövde **ingen** klientändring —
+  den renderar redan serverns `months`-axel; de defensiva `??0`/`||0` är kvar (de är
+  inte en dubblerad kalkyl, utan skyddar grupp-summe- och estimat-null-vägar).

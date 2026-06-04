@@ -4,8 +4,21 @@ import { buildPeriodConditions } from '../utils/periodFilter.js';
 import { hiddenPostsFilter, hiddenReachFilter, hiddenIGReachFilter } from '../services/hiddenAccounts.js';
 import { getEstimatedUniqueClicks } from '../services/estimatedUniqueClicks.js';
 import { resolveMonthAxis } from '../services/period/resolve.js';
+import { fullMonthAxis } from '../services/trend/series.js';
 
 const router = Router();
+
+/**
+ * Resolve the month/week axis for a series. With a period filter, use the requested
+ * span. WITHOUT one, build a full min..max month axis (trend/series.js) so empty
+ * months become explicit zero/null points instead of being absent. Week granularity
+ * keeps the plain sorted list of present weeks.
+ */
+function resolveSeriesMonths(spanMonths, monthSet, granularity) {
+  if (spanMonths) return spanMonths;
+  if (granularity === 'month') return fullMonthAxis([...monthSet]);
+  return [...monthSet].sort();
+}
 
 /**
  * Whitelist map: metric name → SQL aggregation expression.
@@ -139,7 +152,7 @@ router.get('/', (req, res) => {
     // appear on the x-axis as zero values. Fall back to months with data
     // when no period filter was supplied.
     const spanMonths = buildMonthSpan(req.query);
-    const months = spanMonths || Array.from(monthSet).sort();
+    const months = resolveSeriesMonths(spanMonths, monthSet, granularity);
     const series = Object.values(byAccount).map(account => ({
       account_id: account.account_name,
       account_name: account.account_name,
@@ -206,7 +219,7 @@ router.get('/', (req, res) => {
     }
 
     const spanMonths = buildMonthSpan(req.query);
-    const months = spanMonths || Array.from(monthSet).sort();
+    const months = resolveSeriesMonths(spanMonths, monthSet, granularity);
     const series = Object.values(byAccount).map(account => ({
       account_id: account.account_name,
       account_name: account.account_name,
@@ -256,7 +269,7 @@ router.get('/', (req, res) => {
       };
     }
 
-    const months = spanMonths || Array.from(monthSet).sort();
+    const months = resolveSeriesMonths(spanMonths, monthSet, granularity);
     const series = Object.values(byAccount).map(account => ({
       account_id: account.account_name,
       account_name: account.account_name,
@@ -353,11 +366,12 @@ router.get('/', (req, res) => {
     byAccount[key].dataMap[row.period] = value;
   }
 
-  // Use the complete month span from the period filter so months without
-  // posts still render as zero. Week granularity keeps the legacy behaviour
-  // (only periods with data) since we don't generate week spans.
+  // With a period filter, use its complete span so months without posts render as
+  // zero. WITHOUT a filter, build a full min..max month axis (resolveSeriesMonths →
+  // trend/series.js) so interior empty months become explicit 0 points instead of
+  // being absent. Week granularity keeps the legacy behaviour (present weeks only).
   const spanMonths = granularity === 'month' ? buildMonthSpan(req.query) : null;
-  const months = spanMonths || Array.from(monthSet).sort();
+  const months = resolveSeriesMonths(spanMonths, monthSet, granularity);
 
   const series = Object.values(byAccount).map(account => ({
     account_id: account.account_id,

@@ -251,6 +251,33 @@ async function main() {
     fullSeries: trMonths.map((m, i) => ({ month: m, value: data[i] })),
   };
 
+  // ===== Fixture C2: no-filter zero-fill (INTENTIONAL empty→0 change) =====
+  // Same series WITHOUT a period filter. Before: interior empty months were absent.
+  // After (trend/series.js full min..max axis): 2025-11 is present as an explicit 0.
+  const qs2 = new URLSearchParams({
+    metric: 'views', accountKeys: 'P4 DANS::facebook', granularity: 'month',
+  });
+  const tr2 = await get(`/api/trends?${qs2}`);
+  const tr2Months = tr2.months || [];
+  const series2 = (tr2.series || [])[0] || null;
+  const data2 = series2 ? (series2.data || []) : [];
+  const idxNov2 = tr2Months.indexOf('2025-11');
+  out.fixtures.C2_trend_series_zero_fill_no_filter = {
+    endpoint: `/api/trends?${qs2}`,
+    note: 'No period filter. INTENTIONAL: empty month 2025-11 absent → 0-point.',
+    account: 'P4 DANS', metric: 'views',
+    monthsCount: tr2Months.length,
+    firstMonth: tr2Months[0], lastMonth: tr2Months[tr2Months.length - 1],
+    emptyMonth: '2025-11',
+    emptyMonthPresent: idxNov2 >= 0,
+    emptyMonthValue: idxNov2 >= 0 ? data2[idxNov2] : null,
+    neighbours: idxNov2 >= 0
+      ? { before: { month: tr2Months[idxNov2 - 1], value: data2[idxNov2 - 1] },
+          at: { month: '2025-11', value: data2[idxNov2] },
+          after: { month: tr2Months[idxNov2 + 1], value: data2[idxNov2 + 1] } }
+      : null,
+  };
+
   process.stdout.write(JSON.stringify(out, null, 2));
 }
 
