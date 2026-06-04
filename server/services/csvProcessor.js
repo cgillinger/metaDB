@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { resolveAccountFromPermalink } from './permalinkResolver.js';
 import {
   detectPlatform,
   getMappingsForPlatform,
@@ -145,7 +146,14 @@ function mapRow(rawRow, columnMappings, platform) {
  * Parse a CSV buffer/string and return structured post data.
  * Returns { platform, month, posts[], stats }.
  */
-export function parseCSV(csvContent, filename) {
+/**
+ * @param {string} csvContent
+ * @param {string} filename
+ * @param {{slugMap?: Map, overrides?: object}} [opts] - permalink-based account
+ *        resolution for rows with empty Sidnamn (self-healing import). See
+ *        services/permalinkResolver.js. Without a slugMap, no resolution is attempted.
+ */
+export function parseCSV(csvContent, filename, opts = {}) {
   const result = Papa.parse(csvContent, {
     header: true,
     dynamicTyping: true,
@@ -256,6 +264,24 @@ export function parseCSV(csvContent, filename) {
   const noIdPosts = posts.filter(p => !p.post_id);
   const finalPosts = [...dedupedPosts, ...noIdPosts];
 
+  // Self-healing: rows where Meta exported an empty Sidnamn but a permalink is present
+  // get their account derived from the permalink's page handle (shared resolver +
+  // optional override map). Order: existing name → DB slug-map → override → leave empty.
+  // Generic/denylisted URL segments never attribute — leave empty (export-guarded).
+  let attributedViaPermalink = 0;
+  if (opts.slugMap) {
+    for (const p of finalPosts) {
+      if (p.account_name && p.account_name !== '') continue;
+      if (!p.permalink) continue;
+      const res = resolveAccountFromPermalink(p, opts.slugMap, opts.overrides || {});
+      if (res && res.account_name) {
+        p.account_name = res.account_name;
+        if (!p.account_id && res.account_id) p.account_id = String(res.account_id);
+        attributedViaPermalink++;
+      }
+    }
+  }
+
   // Derive month from post dates
   let month = 'unknown';
   let dateRangeStart = null;
@@ -291,6 +317,7 @@ export function parseCSV(csvContent, filename) {
       parsedPosts: finalPosts.length,
       duplicatesRemoved: dupCount,
       accountCount: uniqueAccounts.size || 1,
+      attributedViaPermalink,
     },
   };
 }

@@ -3,6 +3,11 @@ import multer from 'multer';
 import fs from 'fs';
 import { getDb } from '../db/connection.js';
 import { parseCSV } from '../services/csvProcessor.js';
+import { buildSlugToAccount } from '../services/permalinkResolver.js';
+
+// Manual slug→account overrides for handles with no DB match. Empty: the dry-run
+// found 0 unresolved slugs. Key "<platform>::<slug>" → { account_name, account_id }.
+const PERMALINK_OVERRIDES = {};
 import { redetectAllCollabs } from '../services/collabDetector.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { hiddenPostsFilter, hiddenGAFilter, hiddenSiteVisitsFilter } from '../services/hiddenAccounts.js';
@@ -225,10 +230,12 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
     // Clean up temp file
     fs.unlinkSync(req.file.path);
 
-    // Parse CSV
-    const parsed = parseCSV(csvContent, req.file.originalname);
-
     const db = getDb();
+
+    // Parse CSV. Pass the slug→account map so rows with an empty Sidnamn self-heal
+    // from their permalink (shared resolver). Overrides empty for now (0 unresolved).
+    const slugMap = buildSlugToAccount(db);
+    const parsed = parseCSV(csvContent, req.file.originalname, { slugMap, overrides: PERMALINK_OVERRIDES });
 
     // Insert import record and posts in a transaction
     const result = db.transaction(() => {
@@ -346,6 +353,7 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
         totalRowsInFile: parsed.stats.totalRows,
         parsedPosts: parsed.stats.parsedPosts,
         duplicatesRemoved: parsed.stats.duplicatesRemoved,
+        attributedViaPermalink: parsed.stats.attributedViaPermalink,
         postsInserted: result.inserted,
         postsUpdated: result.updated,
         collabDetection: collabResult,

@@ -371,6 +371,9 @@ export function FileUploader({ onImportComplete, onCancel }) {
                         <p className="text-xs text-green-600">
                           {entry.result.stats?.postsInserted || 0} nya,{' '}
                           {entry.result.stats?.postsUpdated || 0} uppdaterade
+                          {entry.result.stats?.attributedViaPermalink > 0 && (
+                            <>, {entry.result.stats.attributedViaPermalink} kontonamn återställda via länk</>
+                          )}
                         </p>
                       )}
                       {entry.fileType === 'reach' && entry.status === FILE_STATUS.PENDING && entry.reachMonth && (
