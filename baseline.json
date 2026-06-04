@@ -91,6 +91,60 @@
         "avg_daily_link_clicks": 54229.2
       }
     },
+    "F_ga_listens_group_sbs_feb2026": {
+      "endpoint": "/api/ga-listens/summary?months=2026-02",
+      "totalPeriodDays": 28,
+      "groups": {
+        "10": {
+          "name": "Alla P4 Lokalt",
+          "memberCount": 25,
+          "matchedCount": 25,
+          "sum_total_listens": 944482,
+          "avg_daily_listens": 33731.5
+        }
+      }
+    },
+    "G_ga_site_visits_group_sbs_feb2026": {
+      "endpoint": "/api/ga-site-visits/summary?months=2026-02",
+      "totalPeriodDays": 28,
+      "groups": {
+        "4": {
+          "name": "P4 Storstad",
+          "memberCount": 3,
+          "matchedCount": 3,
+          "sum_total_visits": 345355,
+          "avg_daily_visits": 12334.1
+        },
+        "5": {
+          "name": "P4 Norr",
+          "memberCount": 4,
+          "matchedCount": 4,
+          "sum_total_visits": 360064,
+          "avg_daily_visits": 12859.4
+        },
+        "6": {
+          "name": "P4 Mitt",
+          "memberCount": 7,
+          "matchedCount": 7,
+          "sum_total_visits": 565838,
+          "avg_daily_visits": 20208.5
+        },
+        "7": {
+          "name": "P4 Syd",
+          "memberCount": 9,
+          "matchedCount": 9,
+          "sum_total_visits": 960072,
+          "avg_daily_visits": 34288.3
+        },
+        "8": {
+          "name": "Alla P4",
+          "memberCount": 25,
+          "matchedCount": 25,
+          "sum_total_visits": 2495212,
+          "avg_daily_visits": 89114.7
+        }
+      }
+    },
     "B_platform_yoy_p4_fb": {
       "endpoint": "/api/platform-trends?platform=facebook&group=p4",
       "monthsCount": 31,

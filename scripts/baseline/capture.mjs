@@ -175,6 +175,35 @@ async function main() {
     group: sbs,
   };
 
+  // ===== Fixtures F & G: AccountView GA group SBS (snitt/dag) =====
+  // Group avg_daily_* for GA listens / site-visits, anchored as the client computes
+  // them today: sum members' total over the period, divide by the period-wide
+  // totalPeriodDays (NOT per-account), round to 1 decimal. AccountView.jsx:463-491,534-562.
+  async function gaGroupFixture(source, summaryPath, totalField, avgField) {
+    const groups = (await get(`/api/account-groups?source=${source}`)).groups || [];
+    const sum = await get(summaryPath);
+    const progMap = {};
+    for (const p of sum.programmes || []) progMap[p.account_name] = p;
+    const out = { endpoint: summaryPath, totalPeriodDays: sum.totalPeriodDays, groups: {} };
+    for (const g of groups) {
+      const names = g.members.map(k => k.split('::')[0]);
+      const rows = names.map(n => progMap[n]).filter(Boolean);
+      const total = rows.reduce((s, p) => s + (p[totalField] || 0), 0);
+      const avg = sum.totalPeriodDays > 0 ? round1(total / sum.totalPeriodDays) : 0;
+      out.groups[g.id] = {
+        name: g.name, memberCount: names.length, matchedCount: rows.length,
+        [`sum_${totalField}`]: total, [avgField]: avg,
+      };
+    }
+    return out;
+  }
+  out.fixtures.F_ga_listens_group_sbs_feb2026 =
+    await gaGroupFixture('ga_listens', '/api/ga-listens/summary?months=2026-02',
+      'total_listens', 'avg_daily_listens');
+  out.fixtures.G_ga_site_visits_group_sbs_feb2026 =
+    await gaGroupFixture('ga_site_visits', '/api/ga-site-visits/summary?months=2026-02',
+      'total_visits', 'avg_daily_visits');
+
   // ===== Fixture B: PlatformTrend YoY + barometer (P4, facebook) =====
   const pt = await get('/api/platform-trends?platform=facebook&group=p4');
   const ptMonths = pt.months || [];
