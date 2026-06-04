@@ -159,7 +159,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
         const monthsArray = periodParams.months
           ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
           : null;
-        const result = await api.getPlatformTrends(platform, group, monthsArray, baroWindow);
+        const result = await api.getPlatformTrends(platform, group, monthsArray);
         setData(result);
       } catch (err) {
         console.error('Fel vid hämtning av plattformstrend:', err);
@@ -169,12 +169,13 @@ const PlatformTrendView = ({ periodParams = {} }) => {
       }
     };
     fetchData();
-  }, [platform, group, periodParams, baroWindow]);
+  }, [platform, group, periodParams]);
 
   const months = data?.months || [];
 
-  // Barometrar beräknas server-side (trend/barometer.js); vyn renderar färdiga fält.
-  const baro = data?.barometer ?? null;
+  // Barometrar beräknas server-side (trend/barometer.js); vyn väljer rätt fönster ur
+  // den färdiga barometers-mapen — pillen växlar instant, utan refetch.
+  const baro = data?.barometers?.[baroWindow] ?? null;
   const yoy = data?.yoy ?? null;
 
   // Per-card values: latest month value + delta vs the preceding month.

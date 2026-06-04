@@ -4,8 +4,9 @@ import { hiddenPostsFilter } from '../services/hiddenAccounts.js';
 import { P4_REGIONS } from '../../shared/p4Regions.js';
 import { calcBarometer, calcYearOverYear } from '../services/trend/barometer.js';
 
-// Default rolling-trend window — mirrors PlatformTrendView's baroWindow default.
-const DEFAULT_BAROMETER_WINDOW = 4;
+// Rolling-trend windows offered by PlatformTrendView's pill (default first).
+const BAROMETER_WINDOWS = [4, 6];
+const DEFAULT_BAROMETER_WINDOW = BAROMETER_WINDOWS[0];
 
 const router = Router();
 
@@ -97,9 +98,10 @@ router.get('/', (req, res) => {
       ? Math.max(...rows.map(r => r.account_count))
       : 0;
 
-    // Rolling-trend window is user-selectable in PlatformTrendView (4 or 6 months);
-    // honour it server-side, default 4. Fixture B uses the default → unchanged.
-    const barometerWindow = Number.parseInt(req.query.barometerWindow, 10) || DEFAULT_BAROMETER_WINDOW;
+    // Server-side barometrar (single source of truth: trend/barometer.js). Compute
+    // every offered window so the view's pill switches client-side without a refetch.
+    const barometers = {};
+    for (const w of BAROMETER_WINDOWS) barometers[w] = calcBarometer(rows, w);
 
     res.json({
       months: rows,
@@ -107,10 +109,9 @@ router.get('/', (req, res) => {
       accountCount: maxAccounts,
       platform,
       group,
-      // Server-side barometrar (single source of truth: trend/barometer.js). The view
-      // renders these fields directly instead of recomputing client-side.
-      barometer: calcBarometer(rows, barometerWindow),
-      barometerWindow,
+      barometers,                                       // { 4: {...}, 6: {...} }
+      barometer: barometers[DEFAULT_BAROMETER_WINDOW],  // default-window convenience
+      barometerWindow: DEFAULT_BAROMETER_WINDOW,
       yoy: calcYearOverYear(rows),
     });
   } catch (err) {
