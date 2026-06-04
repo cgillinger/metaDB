@@ -23,7 +23,7 @@ import { hiddenPostsFilter } from './hiddenAccounts.js';
  *   'uncertain'  — F > 5 → beräkning visas men flaggas
  *   'ok'         — alla andra fall
  */
-export function getEstimatedUniqueClicks({ accountNames, months } = {}) {
+export function getEstimatedUniqueClicks({ accountNames, months, excludeCollab } = {}) {
   const db = getDb();
   const conditions = ["p.platform = 'facebook'", 'p.publish_time IS NOT NULL'];
   const params = [];
@@ -41,6 +41,7 @@ export function getEstimatedUniqueClicks({ accountNames, months } = {}) {
   }
 
   conditions.push(hiddenPostsFilter('p').slice(4));
+  if (excludeCollab) conditions.push('p.is_collab = 0');
 
   const sql = `
     SELECT
@@ -62,6 +63,54 @@ export function getEstimatedUniqueClicks({ accountNames, months } = {}) {
 
   const rows = db.prepare(sql).all(...params);
   return rows.map(computeEstimates);
+}
+
+/**
+ * Period-aggregerade estimat per konto — för AccountView-tabellen, som visar ETT
+ * estimat per konto över hela den valda perioden (inte per månad).
+ *
+ * Summerar råkomponenterna (link_clicks, post-räckvidd, kontoräckvidd, antal inlägg)
+ * över de månader i perioden som har giltig kontoräckvidd, och kör därefter EXAKT
+ * samma F-beräkning som månadsvyn (computeEstimates). Månader utan kontoräckvidd
+ * exkluderas helt så att de inte blåser upp F. En enmånadsperiod reproducerar därmed
+ * exakt den månadens estimat.
+ *
+ * Ersätter den tidigare inline-reimplementationen i routes/accounts.js, som joinade
+ * SUM(ar.reach) per inlägg och därför multiplicerade kontoräckvidden med antalet
+ * inlägg → F < 1 → allt suppressades. Detta är den enda sanningskällan nu.
+ *
+ * @returns {Object<string, {upper: number|null, lower: number|null, quality: string}>}
+ *          map nycklad på account_name (samma kontrakt som AccountView förväntar sig).
+ */
+export function getEstimatedUniqueClicksByAccount(opts = {}) {
+  const rows = getEstimatedUniqueClicks(opts);
+  const agg = {};
+  for (const r of rows) {
+    if (!agg[r.account_name]) {
+      agg[r.account_name] = {
+        account_name: r.account_name,
+        total_link_clicks: 0, sum_post_reach: 0, account_reach: 0, post_count: 0,
+      };
+    }
+    // Endast månader med giltig kontoräckvidd bidrar (täljare och nämnare i takt).
+    if (r.account_reach && r.account_reach > 0) {
+      const a = agg[r.account_name];
+      a.total_link_clicks += r.total_link_clicks || 0;
+      a.sum_post_reach += r.sum_post_reach || 0;
+      a.account_reach += r.account_reach || 0;
+      a.post_count += r.post_count || 0;
+    }
+  }
+  const out = {};
+  for (const a of Object.values(agg)) {
+    const e = computeEstimates(a); // account_reach=0 → quality 'suppressed'
+    out[a.account_name] = {
+      upper: e.estimated_unique_upper,
+      lower: e.estimated_unique_lower,
+      quality: e.quality,
+    };
+  }
+  return out;
 }
 
 function computeEstimates(row) {

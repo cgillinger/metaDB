@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
 import { hiddenPostsFilter, hiddenReachFilter, hiddenIGReachFilter } from '../services/hiddenAccounts.js';
+import { getEstimatedUniqueClicksByAccount } from '../services/estimatedUniqueClicks.js';
 import { periodDays } from '../utils/dateHelpers.js';
 
 const router = Router();
@@ -158,52 +159,13 @@ router.get('/', (req, res) => {
     reachByAccount[row.account_name][row.month] = row.reach;
   }
 
-  // Estimated unique clicks for Facebook accounts (period total)
-  const estPeriodFilter = buildPeriodConditions(req.query);
-  const estConditions = [
-    "p.platform = 'facebook'",
-    ...estPeriodFilter.conditions,
-    hiddenPostsFilter('p').slice(4),
-  ];
-  if (req.query.excludeCollab === 'true') {
-    estConditions.push('p.is_collab = 0');
-  }
-
-  const estRows = db.prepare(`
-    SELECT
-      p.account_name,
-      COUNT(*) AS post_count,
-      SUM(p.link_clicks) AS total_link_clicks,
-      SUM(p.reach) AS sum_post_reach,
-      SUM(ar.reach) AS sum_account_reach
-    FROM posts p
-    LEFT JOIN account_reach ar
-      ON p.account_name = ar.account_name
-      AND strftime('%Y-%m', p.publish_time) = ar.month
-    WHERE ${estConditions.join(' AND ')}
-    GROUP BY p.account_name
-  `).all(...estPeriodFilter.params);
-
-  const estimatedClicksByAccount = {};
-  for (const row of estRows) {
-    const { post_count, total_link_clicks, sum_post_reach, sum_account_reach } = row;
-    if (!sum_account_reach || sum_account_reach <= 0 || !sum_post_reach || sum_post_reach <= 0) {
-      estimatedClicksByAccount[row.account_name] = { upper: null, lower: null, quality: 'suppressed' };
-      continue;
-    }
-    const overlap_factor = sum_post_reach / sum_account_reach;
-    if (overlap_factor < 1 || post_count < 5) {
-      estimatedClicksByAccount[row.account_name] = { upper: null, lower: null, quality: 'suppressed' };
-      continue;
-    }
-    const upper = Math.round(total_link_clicks / overlap_factor);
-    const lower = Math.round(upper / 1.5);
-    estimatedClicksByAccount[row.account_name] = {
-      upper,
-      lower,
-      quality: overlap_factor > 5 ? 'uncertain' : 'ok',
-    };
-  }
+  // Estimated unique clicks per account (period total) — single source of truth is
+  // services/estimatedUniqueClicks.js (same F-math as TrendAnalysisView). Period is
+  // expressed as the monthly list `reachMonths` since account_reach is monthly.
+  const estimatedClicksByAccount = getEstimatedUniqueClicksByAccount({
+    months: reachMonths.length > 0 ? reachMonths : undefined,
+    excludeCollab: req.query.excludeCollab === 'true',
+  });
 
   // IG account reach — same pattern as FB reach but from ig_account_reach
   let igReachData = [];

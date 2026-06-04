@@ -52,6 +52,23 @@ function calcBarometer(months, window) {
 
 const round1 = v => Math.round(v * 10) / 10; // AccountView snitt/dag rounding
 
+// Exact reproduction of the AccountView estimate cell (AccountView.jsx:742-759).
+// Returns the structured pieces plus the rendered display string. sv-SE grouping
+// uses a (narrow) no-break space whose codepoint differs by ICU version, so we also
+// expose a whitespace-normalized form for stable Phase-2 assertions.
+function renderEstimate(est) {
+  if (!est || est.upper === null || est.quality === 'suppressed') {
+    return { quality: est ? est.quality : 'suppressed', upper: est ? est.upper : null,
+      lower: est ? est.lower : null, rangeText: null, display: '—', display_normalized: '—' };
+  }
+  const upper = Math.round(est.upper).toLocaleString('sv-SE');
+  const lower = est.lower !== null ? Math.round(est.lower).toLocaleString('sv-SE') : null;
+  const rangeText = `~${lower !== null ? `${lower} – ${upper}` : upper}`;
+  const display = est.quality === 'uncertain' ? `${rangeText} ⚠` : rangeText;
+  return { quality: est.quality, upper: est.upper, lower: est.lower, rangeText,
+    display, display_normalized: display.replace(/\s+/g, ' ').trim() };
+}
+
 async function main() {
   const out = { meta: {}, fixtures: {} };
 
@@ -101,15 +118,35 @@ async function main() {
     months: estTr.months,
     data: estSeries ? estSeries.data : null,
   };
-  // D2: AccountView table uses a DIVERGENT inline reimplementation in accounts.js
-  // (SUM(ar.reach) post-multiplied) that suppresses every account. Documented drift.
-  out.fixtures.D2_accountview_inline_divergence = {
+  // D2: AccountView estimate column AFTER the bugfix — now sourced from the same
+  // service as TrendAnalysisView. The divergent inline path in accounts.js was removed,
+  // so the column went from "suppressed for all" to showing real values (INTENTIONAL
+  // empty→value change, approved). Anchors the display string of all three render
+  // branches (ok / uncertain F>5 / suppressed) so a future change can't silently break
+  // guardrail rendering, plus a cross-check that AccountView == the service path.
+  const estMap = accFeb.estimatedClicksByAccount || {};
+  const qualityDist = Object.values(estMap).reduce((m, v) => {
+    m[v.quality] = (m[v.quality] || 0) + 1; return m;
+  }, {});
+  out.fixtures.D2_accountview_estimate_display = {
     endpoint: '/api/accounts?months=2026-02',
-    note: 'DIVERGENT inline path (accounts.js:172-206). Currently suppresses all rows.',
-    estimatedClicksByAccount_gbg: (accFeb.estimatedClicksByAccount || {})['P4 Göteborg, Sveriges Radio'],
-    nonSuppressedCount: Object.values(accFeb.estimatedClicksByAccount || {})
-      .filter(v => v.quality !== 'suppressed').length,
-    totalAccountsWithEstimate: Object.keys(accFeb.estimatedClicksByAccount || {}).length,
+    note: 'Post-fix: AccountView estimate now via services/estimatedUniqueClicks.js.',
+    qualityDistribution: qualityDist,
+    totalAccountsWithEstimate: Object.keys(estMap).length,
+    matchesServicePath:
+      estSeries && estMap['P4 Göteborg, Sveriges Radio']
+        ? estMap['P4 Göteborg, Sveriges Radio'].upper === estSeries.data[0].value &&
+          estMap['P4 Göteborg, Sveriges Radio'].lower === estSeries.data[0].lower &&
+          estMap['P4 Göteborg, Sveriges Radio'].quality === estSeries.data[0].quality
+        : null,
+    branches: {
+      ok: { account: 'P4 Göteborg, Sveriges Radio',
+        ...renderEstimate(estMap['P4 Göteborg, Sveriges Radio']) },
+      uncertain: { account: 'P4 Jämtland Sveriges Radio',
+        ...renderEstimate(estMap['P4 Jämtland Sveriges Radio']) },
+      suppressed: { account: 'Barnradion Sveriges Radio',
+        ...renderEstimate(estMap['Barnradion Sveriges Radio']) },
+    },
   };
 
   // ===== Fixture E: AccountView group SBS (sum-before-scale) =====

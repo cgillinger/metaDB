@@ -37,16 +37,45 @@
         }
       ]
     },
-    "D2_accountview_inline_divergence": {
+    "D2_accountview_estimate_display": {
       "endpoint": "/api/accounts?months=2026-02",
-      "note": "DIVERGENT inline path (accounts.js:172-206). Currently suppresses all rows.",
-      "estimatedClicksByAccount_gbg": {
-        "upper": null,
-        "lower": null,
-        "quality": "suppressed"
+      "note": "Post-fix: AccountView estimate now via services/estimatedUniqueClicks.js.",
+      "qualityDistribution": {
+        "suppressed": 8,
+        "ok": 52,
+        "uncertain": 4
       },
-      "nonSuppressedCount": 0,
-      "totalAccountsWithEstimate": 64
+      "totalAccountsWithEstimate": 64,
+      "matchesServicePath": true,
+      "branches": {
+        "ok": {
+          "account": "P4 Göteborg, Sveriges Radio",
+          "quality": "ok",
+          "upper": 24312,
+          "lower": 16208,
+          "rangeText": "~16 208 – 24 312",
+          "display": "~16 208 – 24 312",
+          "display_normalized": "~16 208 – 24 312"
+        },
+        "uncertain": {
+          "account": "P4 Jämtland Sveriges Radio",
+          "quality": "uncertain",
+          "upper": 18068,
+          "lower": 12045,
+          "rangeText": "~12 045 – 18 068",
+          "display": "~12 045 – 18 068 ⚠",
+          "display_normalized": "~12 045 – 18 068 ⚠"
+        },
+        "suppressed": {
+          "account": "Barnradion Sveriges Radio",
+          "quality": "suppressed",
+          "upper": null,
+          "lower": null,
+          "rangeText": null,
+          "display": "—",
+          "display_normalized": "—"
+        }
+      }
     },
     "E_group_sbs_alla_p4_feb2026": {
       "endpoint": "/api/accounts?months=2026-02 + /api/account-groups?source=posts",

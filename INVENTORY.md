@@ -45,8 +45,8 @@ klienten är detta den exakta regressionsankaren som Fas 1/2 hävdar mot
 | Barometer (rullande korttrend) | **KLIENT** | `PlatformTrendView.jsx:46-56` (`calcBarometer`, fönster=4) | `(recentAvg-prevAvg)/prevAvg` över `avg_views` |
 | `calcYearOverYear` | **KLIENT** | `PlatformTrendView.jsx:62-79` | `(curr.avg_views - sameMonthLastYear.avg_views)/prev` |
 | Kort-deltan (views/reach/posts vs förra mån) | **KLIENT** | `PlatformTrendView.jsx:215-228` | `(senaste-föregående)/föregående` |
-| Estimerade unika klickare (**service**) | **SERVER** | `server/services/estimatedUniqueClicks.js:67-94`, via `trends.js:234-275` | `F=sum_post_reach/account_reach; upper=clicks/F; lower=upper/1.5` |
-| Estimerade unika klickare (**AccountView-tabell**) | **SERVER (avvikande)** | `server/routes/accounts.js:172-206` | inline-reimpl. med `SUM(ar.reach)` per inlägg — **suppressar allt** |
+| Estimerade unika klickare (**service**) | **SERVER** | `server/services/estimatedUniqueClicks.js`, via `trends.js:234-275` (per månad) och `accounts.js` (period, `getEstimatedUniqueClicksByAccount`) | `F=sum_post_reach/account_reach; upper=clicks/F; lower=upper/1.5` |
+| ~~Estimerade unika klickare (AccountView-tabell, inline)~~ | **BORTTAGEN** | ~~`accounts.js:172-206`~~ | ~~inline-reimpl. med `SUM(ar.reach)` per inlägg~~ — **åtgärdad**, se driftfynd #1 |
 | Namnnormalisering (Comparison) | **SERVER** | `server/services/comparisonService.js:9-34` | strip `", Sveriges Radio"` + manuell karta |
 | Zero-fill av tomma månader | **DELAT** | `trends.js:39-56,372,379` (server) + `TrendAnalysisView.jsx:398,440,572` (`||0`/`??0`) | full månadsaxel via `buildMonthSpan` **endast** när periodfilter finns |
 | Räckvidd | **SERVER (AVG, aldrig SUM)** | `account_reach`-väg, per månad | aldrig summerad/aggregerad |
@@ -95,20 +95,27 @@ Verifierat i baslinjen (Fixture E).
 
 ---
 
-## Driftfynd (det direktivet vill bort) — flaggas för Fas 1-beslut
+## Driftfynd (det direktivet vill bort)
 
-1. **Två implementationer av estimerade unika klickare som ger olika svar.**
+1. **Två implementationer av estimerade unika klickare som gav olika svar — ÅTGÄRDAT
+   (avsiktlig bugfix, egen commit, separerad från refaktorn).**
    - `services/estimatedUniqueClicks.js` (korrekt): `F = sum_post_reach / account_reach`.
      Används av TrendAnalysisView via `trends.js`. För P4 Göteborg feb 2026:
      **F≈4.49, upper=24312, lower=16208, quality "ok"** (Fixture D).
-   - `accounts.js:172-206` (avvikande inline): joinar `SUM(ar.reach)` **per inlägg**,
-     vilket multiplicerar account_reach med antal inlägg → `F<1` → **allt suppressas**.
-     Baslinje: **0 av 64** konton har icke-suppressed estimat i AccountView-tabellen
-     (Fixture D2). Detta är sannolikt en latent bugg, men **ändras inte i Fas 0**.
-   - Konsekvens för Fas 1: när AccountView-tabellen flyttas till samma service kommer
-     dess estimat-kolumn att **ändra visat värde** (från tomt/suppressed till riktiga
-     tal). Det bryter regeln "ingen fas avslutas med drift i en visad siffra" om det
-     görs tyst. **Måste beslutas av direktivägaren** innan AccountView-vägen rörs.
+   - `accounts.js:172-206` (avvikande inline, NU BORTTAGEN): joinade `SUM(ar.reach)`
+     **per inlägg** → multiplicerade account_reach med antal inlägg → `F<1` → **allt
+     suppressades** (0 av 64 konton hade estimat i AccountView-tabellen).
+   - **Åtgärd:** AccountView går nu via servicen. Ny period-aggregerande funktion
+     `getEstimatedUniqueClicksByAccount` summerar råkomponenter över månader med giltig
+     kontoräckvidd och kör samma `computeEstimates`. Enmånadsperiod reproducerar exakt
+     månadsvyns värde. Verifierat: AccountViews estimat för P4 Göteborg feb 2026 ==
+     TrendAnalysisView-servicen (24312/16208/"ok"), `matchesServicePath: true`.
+   - **AVSIKTLIG beteendeändring (tom → tal):** estimat-kolumnen gick från "suppressed
+     för alla" till **52 ok / 4 uncertain / 8 suppressed** av 64. Detta är *inte* drift i
+     no-drift-regelns mening (regeln fångar oavsiktlig drift när matte flyttas mellan
+     lager, inte fredande av en felräknande dubblett). Baslinjen (`baseline.json`
+     Fixture D2) ankrar nu de KORREKTA visade display-strängarna i alla tre render-
+     grenar, så att AccountView-arbetet i Fas 2 (snitt/dag m.m.) blir en äkta no-op.
 
 2. **Snitt/dag finns på tre ställen** (server konto, klient grupprad, klient trendserie)
    med två olika granulariteter → exakt den dubbelräkning som ska konsolideras till
@@ -131,7 +138,7 @@ exakt.
 | **B** Plattformstrend YoY (P4, FB) | `/api/platform-trends?platform=facebook&group=p4` | sista mån 2026-06 vs 2025-06: delta **−0.3503** (falling), 37836 vs 58232 |
 | **C** Trendserie med tom månad | `/api/trends?metric=views&accountKeys=P4 DANS::facebook&months=2024-01…2026-05` | **2025-11 = 0** (zero-fill), grannar 2025-10=986992, 2025-12=236593 |
 | **D** Uppsk. unika klickare (service-ankare) | `/api/trends?metric=estimated_unique_clicks` P4 Göteborg feb 2026 | **value 24312, lower 16208, quality "ok"** (F≈4.49) — får **inte** ändras |
-| **D2** AccountView inline-divergens | `/api/accounts?months=2026-02` | GBG **suppressed**, **0/64** icke-suppressed (dokumenterad bugg) |
+| **D2** AccountView estimat-display (efter fix) | `/api/accounts?months=2026-02` | matchar servicen (`matchesServicePath: true`); display per gren: ok `~16 208 – 24 312`, uncertain `~12 045 – 18 068 ⚠`, suppressed `—`; fördelning 52 ok / 4 uncertain / 8 suppressed |
 | **E** Grupp-SBS "Alla P4" feb 2026 | accounts + account-groups | 25/25 medlemmar, Σlänkklick 1518417 / 28 dgr → snitt/dag **54229.2** |
 
 ---
@@ -147,6 +154,11 @@ exakt.
   (täcker luckan i nuvarande `buildMonthSpan`).
 - `period/resolve.js`: ena `months` vs `dateFrom/dateTo`; dokumentera upplösning per
   källa (posts: dag; account_reach: månad; GA: månad).
-- **Öppen fråga (blockerar AccountView-estimatkolumnen):** ska AccountView byta till
-  service-vägen (och därmed börja visa riktiga estimat istället för tomt)? Det är en
-  *avsiktlig* beteendeändring och måste godkännas — annars bryts baslinjeregeln.
+- **AccountView-estimatkolumnen: LÖST** i separat avsiktlig bugfix-commit (se driftfynd
+  #1). AccountView använder nu servicen; baslinjen är omtagen mot de korrekta värdena.
+  Återstående AccountView-arbete i Fas 2 (snitt/dag) är därmed en äkta no-op mot
+  `baseline.json`. Enhetstest för `getEstimatedUniqueClicksByAccount` skrivs i Fas 1
+  tillsammans med övriga service-tester.
+- **Lågprio (guardrail-ankare):** F≈4.49 ligger nära varningströskeln F>5. Fixture D2
+  ankrar nu en fixture i varje display-gren (ok/uncertain/suppressed) så att en framtida
+  ändring inte tyst bryter guardrail-renderingen.
