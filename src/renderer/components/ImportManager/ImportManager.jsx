@@ -17,6 +17,7 @@ import {
   Plus,
   Pencil,
   FolderOpen,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
@@ -548,6 +549,12 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
               {vacuuming ? <RefreshCw className="w-4 h-4 animate-spin" /> : <HardDrive className="w-4 h-4" />}
               <span className="ml-1 hidden sm:inline">Optimera</span>
             </Button>
+            <a href={api.getFlatExportUrl()} download>
+              <Button size="sm" variant="outline" title="Ladda ner en Excel-fil med färdiga siffror per konto och månad – för Power BI eller egen analys">
+                <FileSpreadsheet className="w-4 h-4" />
+                <span className="ml-1 hidden sm:inline">Exportera för analys (.xlsx)</span>
+              </Button>
+            </a>
             <a href={api.getBackupUrl()} download>
               <Button size="sm" variant="outline" title="Ladda ner databasbackup">
                 <Download className="w-4 h-4" />

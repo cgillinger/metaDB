@@ -21,6 +21,7 @@ import accountGroupsRouter from './routes/accountGroups.js';
 import hiddenAccountsRouter from './routes/hiddenAccounts.js';
 import comparisonRouter from './routes/comparison.js';
 import platformTrendsRouter from './routes/platformTrends.js';
+import exportRouter from './routes/export.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -91,6 +92,7 @@ app.use('/api/ga-site-visits', gaSiteVisitsRouter); // Google Analytics site vis
 app.use('/api/account-groups', accountGroupsRouter);
 app.use('/api/comparison', comparisonRouter);
 app.use('/api/platform-trends', platformTrendsRouter);
+app.use('/api/export', exportRouter);
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {

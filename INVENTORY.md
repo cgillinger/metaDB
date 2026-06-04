@@ -202,3 +202,31 @@ estimat: `null`, oförändrad suppress-semantik). Vecko-granularitet oförändra
   fixtures/serier byte-identiska. TrendAnalysisView behövde **ingen** klientändring —
   den renderar redan serverns `months`-axel; de defensiva `??0`/`||0` är kvar (de är
   inte en dubblerad kalkyl, utan skyddar grupp-summe- och estimat-null-vägar).
+
+---
+
+## EXPORT_DESIGN — platt analysexport (Fas 3, v2.15.0)
+
+`GET /api/export/flat` → `server/services/export/flatExport.js:buildFlatWorkbook()`.
+Bygger UTESLUTANDE på serviceskiktet — ingen ny kalkyl. Flikar och deras källor:
+
+| Flik | Grain | Service / källa (snitt via `dailyAverages.avgPerDay`, dagar = `daysInMonth(month)`) |
+|---|---|---|
+| `_LÄS_MIG` | — | README (klarspråk, FÖRST i boken) |
+| `posts_monthly` | konto×mån | SQL `posts` + `hiddenPostsFilter`; avg_daily_link_clicks, posts_per_day via `dailyAverages` |
+| `estimated_unique_clicks_monthly` | konto×mån | `getEstimatedUniqueClicks()` (per månad, inkl. uncertain/suppressed; kringgår öppen fråga #2) |
+| `ga_listens_monthly` | konto×mån | SQL `ga_listens` + `hiddenGAFilter`; avg_daily_listens via `dailyAverages` |
+| `ga_site_visits_monthly` | konto×mån | SQL `ga_site_visits` + `hiddenSiteVisitsFilter`; avg_daily_visits |
+| `account_reach_monthly` | konto×mån | `account_reach` (FB, `hiddenReachFilter`) + `ig_account_reach` (IG, `hiddenIGReachFilter`) |
+| `posts_groups_monthly` | grupp×mån | `getAccountGroups('posts')` + SBS-summering av posts_monthly; avg_daily_link_clicks (SBS) |
+| `ga_listens_groups_monthly` | grupp×mån | `getAccountGroups('ga_listens')` + SBS av listens |
+| `ga_site_visits_groups_monthly` | grupp×mån | `getAccountGroups('ga_site_visits')` + SBS av visits |
+| `dim_accounts` | dim | distinct konto×plattform; `is_p4` via `p4Regions` |
+| `dim_groups` | dim | `getAccountGroups()` |
+| `dim_group_members` | dim | medlemskap (en rad per `group_id`×`account_name`) |
+
+Regler: dolda konton exkluderade; endast verkliga rader (ingen zero-fill — exporten är
+ett *dataval*, zero-fill var ett *chart*val); numeriska råvärden (ej display-strängar);
+`month` (text) + `month_date` (äkta datum); räckvidd/posts_per_day/estimat UTESLUTNA
+från grupp-flikar (icke-summerbara / GROUP_NON_SUMMABLE). Verifieras mot `baseline.json`
+Fixtures A/D/E/F/G i `flatExport.baseline.test.js` (skippar utan snapshot).

@@ -60,6 +60,7 @@ export const api = {
   getStats: () => fetchWithRetry('/api/maintenance/stats').then(handleResponse),
   getHealth: () => fetchWithRetry('/api/health').then(handleResponse),
   getBackupUrl: () => '/api/maintenance/backup',
+  getFlatExportUrl: () => '/api/export/flat',
 
   // Reach imports
   uploadReachCSV: (file, month) => {
