@@ -14,3 +14,6 @@ old_csv/
 
 # baseline production DB snapshot (do not commit)
 .baseline-prod/
+
+# Playwright MCP smoke-test artifacts
+.playwright-mcp/
