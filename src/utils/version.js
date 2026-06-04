@@ -2,4 +2,4 @@
  * Application version — single source of truth.
  * Synced with package.json. Update both when releasing.
  */
-export const VERSION = '2.15.1';
+export const VERSION = '2.16.0';

@@ -230,3 +230,13 @@ ett *dataval*, zero-fill var ett *chart*val); numeriska råvärden (ej display-s
 `month` (text) + `month_date` (äkta datum); räckvidd/posts_per_day/estimat UTESLUTNA
 från grupp-flikar (icke-summerbara / GROUP_NON_SUMMABLE). Verifieras mot `baseline.json`
 Fixtures A/D/E/F/G i `flatExport.baseline.test.js` (skippar utan snapshot).
+
+**Cross-source-nyckel (v2.16.0):** kolumnen `normalized_name` (= `comparisonService.
+normalizeMetaName` på det råa per-källa-namnet, återanvänd — ej reimplementerad) finns
+på `posts_monthly`, `estimated_unique_clicks_monthly`, `ga_listens_monthly`,
+`ga_site_visits_monthly`, `account_reach_monthly`, `dim_group_members` och `dim_accounts`.
+`account_name` (rånamnet) behålls för spårbarhet. Meta-suffix ("…, Sveriges Radio") strippas
+så posts "P4 Göteborg, Sveriges Radio" och GA "P4 Göteborg" delar nyckel; exakt suffix-matchning
+→ ingen över-merge ("Sporten …" / "Radiosporten" förblir distinkta). Ny flik `dim_account_key`
+= en UNIK rad per `normalized_name` (+ `is_p4`) → Power BI relaterar dataflikar 1-till-många
+utan dubblettnyckel. (Snapshot: cross-source-matchning posts↔ga_listens 16 → 36.)

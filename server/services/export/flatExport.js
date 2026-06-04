@@ -19,6 +19,7 @@ import {
 } from '../hiddenAccounts.js';
 import { getEstimatedUniqueClicks } from '../estimatedUniqueClicks.js';
 import { getAccountGroups } from '../accountGroupService.js';
+import { normalizeMetaName } from '../comparisonService.js';
 import { avgPerDay } from '../metrics/dailyAverages.js';
 import { daysInMonth } from '../../utils/dateHelpers.js';
 import { P4_REGIONS } from '../../../shared/p4Regions.js';
@@ -48,7 +49,8 @@ function postsMonthly(db) {
     ORDER BY account_name, platform, month
   `).all();
   return rows.map(r => ({
-    account_name: r.account_name, platform: r.platform,
+    account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
+    platform: r.platform,
     month: r.month, month_date: monthDate(r.month),
     post_count: r.post_count, views: r.views, reach: r.reach,
     link_clicks: r.link_clicks, interactions: r.interactions,
@@ -60,7 +62,8 @@ function postsMonthly(db) {
 function estimatedUniqueClicksMonthly() {
   // Per månad endast (exakt) — kringgår öppen fråga #2 (ingen flermånadssummering).
   return getEstimatedUniqueClicks().map(r => ({
-    account_name: r.account_name, month: r.month, month_date: monthDate(r.month),
+    account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
+    month: r.month, month_date: monthDate(r.month),
     n_posts: r.post_count,
     overlap_factor_f: r.overlap_factor,        // null vid suppressed-utan-räckvidd
     estimate_lower: r.estimated_unique_lower,  // null vid suppressed
@@ -75,7 +78,8 @@ function gaListensMonthly(db) {
     WHERE 1=1 ${hiddenGAFilter()} ORDER BY account_name, month
   `).all();
   return rows.map(r => ({
-    account_name: r.account_name, month: r.month, month_date: monthDate(r.month),
+    account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
+    month: r.month, month_date: monthDate(r.month),
     listens: r.listens,
     avg_daily_listens: avgPerDay(r.listens, daysInMonth(r.month), 1),
   }));
@@ -87,7 +91,8 @@ function gaSiteVisitsMonthly(db) {
     WHERE 1=1 ${hiddenSiteVisitsFilter()} ORDER BY account_name, month
   `).all();
   return rows.map(r => ({
-    account_name: r.account_name, month: r.month, month_date: monthDate(r.month),
+    account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
+    month: r.month, month_date: monthDate(r.month),
     visits: r.visits,
     avg_daily_visits: avgPerDay(r.visits, daysInMonth(r.month), 1),
   }));
@@ -103,7 +108,8 @@ function accountReachMonthly(db) {
     WHERE 1=1 ${hiddenIGReachFilter()} ORDER BY account_name, month
   `).all().map(r => ({ ...r, platform: 'instagram' }));
   return [...fb, ...ig].map(r => ({
-    account_name: r.account_name, platform: r.platform,
+    account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
+    platform: r.platform,
     month: r.month, month_date: monthDate(r.month), account_reach: r.reach,
   }));
 }
@@ -151,6 +157,9 @@ function groupMonthly(groups, accountRows, keyOf, sumFields, avgSpec) {
 
 // ---- Dimensions -------------------------------------------------------------
 
+// Raw-account detail dimension: one row per raw account_name × platform, with the
+// normalized join key alongside. NOT unique on normalized_name (the same account
+// appears under different raw names per source) — relate cross-source on dim_account_key.
 function dimAccounts(postsRows, reachRows) {
   const seen = new Set();
   const out = [];
@@ -158,10 +167,29 @@ function dimAccounts(postsRows, reachRows) {
     const k = `${r.account_name}::${r.platform}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ account_name: r.account_name, platform: r.platform, is_p4: isP4(r.account_name) });
+    out.push({
+      account_name: r.account_name, normalized_name: r.normalized_name,
+      platform: r.platform, is_p4: isP4(r.account_name),
+    });
   }
   return out.sort((a, b) =>
     a.account_name.localeCompare(b.account_name, 'sv') || a.platform.localeCompare(b.platform));
+}
+
+// Canonical join-key dimension: one row per UNIQUE normalized_name across every source.
+// This is the dimension Power BI relates the data sheets to (1-to-many on normalized_name).
+function dimAccountKey(rowArrays) {
+  const seen = new Set();
+  const out = [];
+  for (const rows of rowArrays) {
+    for (const r of rows) {
+      const n = r.normalized_name;
+      if (!n || seen.has(n)) continue;
+      seen.add(n);
+      out.push({ normalized_name: n, is_p4: isP4(n) });
+    }
+  }
+  return out.sort((a, b) => a.normalized_name.localeCompare(b.normalized_name, 'sv'));
 }
 
 function dimGroups(allGroups) {
@@ -172,7 +200,8 @@ function dimGroupMembers(allGroups) {
   const out = [];
   for (const g of allGroups) {
     for (const memberKey of g.members) {
-      out.push({ group_id: g.id, account_name: memberKey.split('::')[0] });
+      const account_name = memberKey.split('::')[0];
+      out.push({ group_id: g.id, account_name, normalized_name: normalizeMetaName(account_name) });
     }
   }
   return out;
@@ -208,6 +237,15 @@ const README_LINES = [
   ['quality = ok / uncertain (mycket trogen publik, faktor > 5) / suppressed (för'],
   ['lite underlag — estimatkolumnerna är tomma).'],
   [''],
+  ['Koppla ihop källor per konto: använd kolumnen normalized_name (samma konto har'],
+  ['olika rånamn i olika källor — Meta skriver "P4 Göteborg, Sveriges Radio", GA'],
+  ['skriver "P4 Göteborg"). normalized_name är det gemensamma, rensade namnet och'],
+  ['fungerar som join-nyckel mellan posts-, GA- och räckviddsflikarna. account_name'],
+  ['är rånamnet per källa (kvar för spårbarhet). Relatera dina dataflikar till'],
+  ['fliken dim_account_key (en unik rad per normalized_name) i Power BI — den ger'],
+  ['en ren 1-till-många utan dubblettnyckel. dim_accounts listar råkontona per'],
+  ['plattform (med normalized_name bredvid) om du behöver den detaljnivån.'],
+  [''],
   ['Dolda konton är exkluderade, precis som i appens vyer. En månad som saknas för'],
   ['ett konto betyder att det inte fanns någon publicering då — ingen rad skapas'],
   ['(ingen nolla). Hantera luckor med en egen datumtabell i Power BI.'],
@@ -215,7 +253,7 @@ const README_LINES = [
   ['Flikar: posts_monthly, estimated_unique_clicks_monthly, ga_listens_monthly,'],
   ['ga_site_visits_monthly, account_reach_monthly, posts_groups_monthly,'],
   ['ga_listens_groups_monthly, ga_site_visits_groups_monthly, dim_accounts,'],
-  ['dim_groups, dim_group_members.'],
+  ['dim_account_key, dim_groups, dim_group_members.'],
 ];
 
 // ---- Workbook builder -------------------------------------------------------
@@ -267,17 +305,17 @@ export function buildFlatWorkbook() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(README_LINES), '_LÄS_MIG');
 
   addObjectSheet(wb, 'posts_monthly',
-    ['account_name', 'platform', 'month', 'month_date', 'post_count', 'views', 'reach',
-      'link_clicks', 'interactions', 'avg_daily_link_clicks', 'posts_per_day'], posts);
+    ['account_name', 'normalized_name', 'platform', 'month', 'month_date', 'post_count',
+      'views', 'reach', 'link_clicks', 'interactions', 'avg_daily_link_clicks', 'posts_per_day'], posts);
   addObjectSheet(wb, 'estimated_unique_clicks_monthly',
-    ['account_name', 'month', 'month_date', 'n_posts', 'overlap_factor_f',
+    ['account_name', 'normalized_name', 'month', 'month_date', 'n_posts', 'overlap_factor_f',
       'estimate_lower', 'estimate_upper', 'quality'], estimates);
   addObjectSheet(wb, 'ga_listens_monthly',
-    ['account_name', 'month', 'month_date', 'listens', 'avg_daily_listens'], listens);
+    ['account_name', 'normalized_name', 'month', 'month_date', 'listens', 'avg_daily_listens'], listens);
   addObjectSheet(wb, 'ga_site_visits_monthly',
-    ['account_name', 'month', 'month_date', 'visits', 'avg_daily_visits'], visits);
+    ['account_name', 'normalized_name', 'month', 'month_date', 'visits', 'avg_daily_visits'], visits);
   addObjectSheet(wb, 'account_reach_monthly',
-    ['account_name', 'platform', 'month', 'month_date', 'account_reach'], reach);
+    ['account_name', 'normalized_name', 'platform', 'month', 'month_date', 'account_reach'], reach);
 
   addObjectSheet(wb, 'posts_groups_monthly',
     ['group_id', 'group_name', 'month', 'month_date', 'member_count', 'post_count',
@@ -290,11 +328,13 @@ export function buildFlatWorkbook() {
       'avg_daily_visits'], visitsGroupRows);
 
   addObjectSheet(wb, 'dim_accounts',
-    ['account_name', 'platform', 'is_p4'], dimAccounts(posts, reach));
+    ['account_name', 'normalized_name', 'platform', 'is_p4'], dimAccounts(posts, reach));
+  addObjectSheet(wb, 'dim_account_key',
+    ['normalized_name', 'is_p4'], dimAccountKey([posts, listens, visits, reach]));
   addObjectSheet(wb, 'dim_groups',
     ['group_id', 'group_name', 'source'], dimGroups(allGroups));
   addObjectSheet(wb, 'dim_group_members',
-    ['group_id', 'account_name'], dimGroupMembers(allGroups));
+    ['group_id', 'account_name', 'normalized_name'], dimGroupMembers(allGroups));
 
   return wb;
 }

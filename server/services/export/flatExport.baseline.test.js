@@ -63,3 +63,17 @@ test('posts_monthly P4 Göteborg feb 2026 == Fixture A', opts, () => {
   assert.equal(row.avg_daily_link_clicks, a.avg_daily_link_clicks); // 3898.5
   assert.equal(row.posts_per_day, a.posts_per_day);                 // 7.89
 });
+
+test('normalized_name unifies Meta + GA P4 Göteborg across sources', opts, () => {
+  const meta = find('posts_monthly', r => r.account_name === 'P4 Göteborg, Sveriges Radio');
+  const ga = find('ga_listens_monthly', r => r.account_name === 'P4 Göteborg');
+  assert.equal(meta.normalized_name, 'P4 Göteborg');
+  assert.equal(ga.normalized_name, 'P4 Göteborg');
+  assert.equal(meta.normalized_name, ga.normalized_name);
+});
+
+test('dim_account_key has unique normalized_name on real data', opts, () => {
+  const keys = sheet('dim_account_key').map(r => r.normalized_name);
+  assert.equal(keys.length, new Set(keys).size, 'duplicate normalized_name keys');
+  assert.ok(keys.includes('P4 Göteborg'));
+});

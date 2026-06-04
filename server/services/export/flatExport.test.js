@@ -37,6 +37,10 @@ posts('P4 Göteborg', 'facebook', '2026-02', 6);
 posts('Tiny', 'facebook', '2026-02', 3);
 // Hidden account — must be excluded everywhere.
 posts('Hidden Co', 'facebook', '2026-02', 6);
+// Cross-source naming: Meta suffix vs clean GA name → same normalized_name.
+posts('P4 Kalmar, Sveriges Radio', 'facebook', '2026-02', 6);
+// Over-merge guard: a different account that merely contains "P4 Kalmar".
+posts('Sporten P4 Kalmar', 'facebook', '2026-02', 6);
 
 db.prepare("INSERT INTO account_reach (account_name, month, reach) VALUES ('Acme','2026-01',100)").run();
 db.prepare("INSERT INTO account_reach (account_name, month, reach) VALUES ('Acme','2026-02',100)").run();
@@ -44,6 +48,7 @@ db.prepare("INSERT INTO account_reach (account_name, month, reach) VALUES ('P4 G
 db.prepare("INSERT INTO account_reach (account_name, month, reach) VALUES ('Tiny','2026-02',100)").run();
 db.prepare("INSERT INTO ig_account_reach (account_name, month, reach) VALUES ('InstaCo','2026-02',500)").run();
 db.prepare("INSERT INTO ga_listens (account_name, month, listens) VALUES ('Prog','2026-02',2800)").run();
+db.prepare("INSERT INTO ga_listens (account_name, month, listens) VALUES ('P4 Kalmar','2026-02',5000)").run();
 db.prepare("INSERT INTO ga_site_visits (account_name, month, visits) VALUES ('Site','2026-02',5600)").run();
 
 // Hide 'Hidden Co' (facebook).
@@ -65,13 +70,42 @@ const DATA_TABS = [
   'posts_monthly', 'estimated_unique_clicks_monthly', 'ga_listens_monthly',
   'ga_site_visits_monthly', 'account_reach_monthly', 'posts_groups_monthly',
   'ga_listens_groups_monthly', 'ga_site_visits_groups_monthly',
-  'dim_accounts', 'dim_groups', 'dim_group_members',
+  'dim_accounts', 'dim_account_key', 'dim_groups', 'dim_group_members',
 ];
 
-test('(a) all 11 tabs + _LÄS_MIG present, README first', () => {
+test('(a) all 12 tabs + _LÄS_MIG present, README first', () => {
   assert.equal(wb.SheetNames[0], '_LÄS_MIG');
   for (const t of DATA_TABS) assert.ok(wb.SheetNames.includes(t), `missing tab ${t}`);
-  assert.equal(wb.SheetNames.length, 12);
+  assert.equal(wb.SheetNames.length, 13);
+});
+
+test('normalized_name present on data + dim tabs', () => {
+  for (const t of ['posts_monthly', 'estimated_unique_clicks_monthly', 'ga_listens_monthly',
+    'ga_site_visits_monthly', 'account_reach_monthly', 'dim_group_members',
+    'dim_accounts', 'dim_account_key']) {
+    assert.ok('normalized_name' in sheet(t)[0], `${t} missing normalized_name`);
+  }
+});
+
+test('cross-source join: Meta suffix and clean GA name share normalized_name', () => {
+  const meta = sheet('posts_monthly').find(r => r.account_name === 'P4 Kalmar, Sveriges Radio');
+  const ga = sheet('ga_listens_monthly').find(r => r.account_name === 'P4 Kalmar');
+  assert.equal(meta.normalized_name, 'P4 Kalmar');
+  assert.equal(ga.normalized_name, 'P4 Kalmar');
+  assert.equal(meta.normalized_name, ga.normalized_name);
+});
+
+test('no over-merge: "Sporten P4 Kalmar" stays distinct from "P4 Kalmar"', () => {
+  const sporten = sheet('posts_monthly').find(r => r.account_name === 'Sporten P4 Kalmar');
+  assert.equal(sporten.normalized_name, 'Sporten P4 Kalmar');
+  assert.notEqual(sporten.normalized_name, 'P4 Kalmar');
+});
+
+test('dim_account_key has a unique normalized_name (no duplicate keys)', () => {
+  const keys = sheet('dim_account_key').map(r => r.normalized_name);
+  assert.equal(keys.length, new Set(keys).size);
+  // 'P4 Kalmar' appears once despite Meta+GA sources
+  assert.equal(keys.filter(k => k === 'P4 Kalmar').length, 1);
 });
 
 test('(b) metric cells are numbers, not strings', () => {

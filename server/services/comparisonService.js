@@ -20,7 +20,7 @@ const MANUAL_NAME_MAP = {
  * "P4 Västerbotten Sveriges Radio" → "P4 Västerbotten" (not "P4 Väst")
  * "P4 Väst, Sveriges Radio" → "P4 Väst" (correct)
  */
-function normalizeMetaName(metaName) {
+export function normalizeMetaName(metaName) {
   if (!metaName) return '';
 
   if (MANUAL_NAME_MAP[metaName]) {
