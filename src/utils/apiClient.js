@@ -271,9 +271,10 @@ export const api = {
    * @param {string[]|null} months - Array of 'YYYY-MM' strings, or null for all
    * @returns {Promise<{months: Array, totalPosts: number, accountCount: number, platform: string, group: string}>}
    */
-  getPlatformTrends: (platform, group = 'all', months = null) => {
+  getPlatformTrends: (platform, group = 'all', months = null, barometerWindow = null) => {
     const params = new URLSearchParams({ platform, group });
     if (months && months.length > 0) params.set('months', months.join(','));
+    if (barometerWindow) params.set('barometerWindow', String(barometerWindow));
     return fetchWithRetry(`/api/platform-trends?${params}`).then(handleResponse);
   },
 

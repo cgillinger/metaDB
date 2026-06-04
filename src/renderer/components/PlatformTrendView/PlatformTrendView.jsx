@@ -39,44 +39,9 @@ const fmtPct = (delta) => {
   return `${pct > 0 ? '+' : '−'}${Math.abs(pct)}%`;
 };
 
-/**
- * Compares the latest `window` months against the preceding `window` months
- * using avg_views. Returns null when there is insufficient data.
- */
-function calcBarometer(months, window) {
-  if (months.length < window * 2) return null;
-  const recent = months.slice(-window);
-  const previous = months.slice(-window * 2, -window);
-  const recentAvg = recent.reduce((s, m) => s + (m.avg_views ?? 0), 0) / window;
-  const prevAvg = previous.reduce((s, m) => s + (m.avg_views ?? 0), 0) / window;
-  if (prevAvg === 0) return null;
-  const delta = (recentAvg - prevAvg) / prevAvg;
-  const status = delta > 0.10 ? 'rising' : delta < -0.10 ? 'falling' : 'stable';
-  return { delta, status, recentAvg, prevAvg };
-}
-
-/**
- * Compares the latest month against the same calendar month one year earlier
- * using avg_views. Returns null when last year's matching month is missing.
- */
-function calcYearOverYear(months) {
-  if (months.length < 2) return null;
-  const current = months[months.length - 1];
-  const [year, mon] = current.month.split('-');
-  const lastYearMonth = `${parseInt(year, 10) - 1}-${mon}`;
-  const previous = months.find(m => m.month === lastYearMonth);
-  if (!previous || previous.avg_views === 0) return null;
-  const delta = (current.avg_views - previous.avg_views) / previous.avg_views;
-  const status = delta > 0.10 ? 'rising' : delta < -0.10 ? 'falling' : 'stable';
-  return {
-    delta,
-    status,
-    currentMonth: current.month,
-    previousMonth: lastYearMonth,
-    currentValue: current.avg_views,
-    previousValue: previous.avg_views,
-  };
-}
+// Barometer math (calcBarometer / calcYearOverYear) now lives server-side in
+// server/services/trend/barometer.js and is delivered via the platform-trends API
+// (data.barometer / data.yoy). The view only formats and renders the result.
 
 /** "2026-04" → "apr 2026" (Swedish, lowercase month). */
 const yoyMonthLabel = (monthKey) => {
@@ -194,7 +159,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
         const monthsArray = periodParams.months
           ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
           : null;
-        const result = await api.getPlatformTrends(platform, group, monthsArray);
+        const result = await api.getPlatformTrends(platform, group, monthsArray, baroWindow);
         setData(result);
       } catch (err) {
         console.error('Fel vid hämtning av plattformstrend:', err);
@@ -204,12 +169,13 @@ const PlatformTrendView = ({ periodParams = {} }) => {
       }
     };
     fetchData();
-  }, [platform, group, periodParams]);
+  }, [platform, group, periodParams, baroWindow]);
 
   const months = data?.months || [];
 
-  const baro = useMemo(() => calcBarometer(months, baroWindow), [months, baroWindow]);
-  const yoy = useMemo(() => calcYearOverYear(months), [months]);
+  // Barometrar beräknas server-side (trend/barometer.js); vyn renderar färdiga fält.
+  const baro = data?.barometer ?? null;
+  const yoy = data?.yoy ?? null;
 
   // Per-card values: latest month value + delta vs the preceding month.
   const cardData = useMemo(() => {

@@ -97,17 +97,20 @@ router.get('/', (req, res) => {
       ? Math.max(...rows.map(r => r.account_count))
       : 0;
 
+    // Rolling-trend window is user-selectable in PlatformTrendView (4 or 6 months);
+    // honour it server-side, default 4. Fixture B uses the default → unchanged.
+    const barometerWindow = Number.parseInt(req.query.barometerWindow, 10) || DEFAULT_BAROMETER_WINDOW;
+
     res.json({
       months: rows,
       totalPosts,
       accountCount: maxAccounts,
       platform,
       group,
-      // Server-side barometrar (Fas 1, additivt). PlatformTrendView räknar fortfarande
-      // sina egna värden klientsidigt — dessa fält finns för att Fas 2 ska kunna byta
-      // till dem. Samma rena funktioner som klienten använder (trend/barometer.js).
-      barometer: calcBarometer(rows, DEFAULT_BAROMETER_WINDOW),
-      barometerWindow: DEFAULT_BAROMETER_WINDOW,
+      // Server-side barometrar (single source of truth: trend/barometer.js). The view
+      // renders these fields directly instead of recomputing client-side.
+      barometer: calcBarometer(rows, barometerWindow),
+      barometerWindow,
       yoy: calcYearOverYear(rows),
     });
   } catch (err) {
