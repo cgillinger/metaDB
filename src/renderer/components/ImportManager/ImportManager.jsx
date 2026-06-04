@@ -565,6 +565,16 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
         </CardHeader>
 
         <CardContent>
+          <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+            <span className="font-medium text-foreground">Exportera för analys</span> laddar
+            ner <span className="font-medium text-foreground">ALL data</span> som en Excel-fil
+            (.xlsx) för t.ex. Power BI — hela historiken, alla konton och grupper, en flik per
+            datakälla med färdigberäknade värden (snitt/dag, gruppsummeringar, uppskattade unika
+            klickare). Exporten{' '}
+            <span className="font-medium text-foreground">påverkas inte av periodvalet</span> i
+            vyerna; tidsfiltrering gör du i analysverktyget. Fliken <code>_LÄS_MIG</code> i filen
+            förklarar modellen.
+          </p>
           {deleteConfirm !== null && (
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
