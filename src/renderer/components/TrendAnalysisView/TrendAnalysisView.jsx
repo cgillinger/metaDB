@@ -135,19 +135,32 @@ const calculateNiceYAxis = (maxValue) => {
 const createSmoothPath = (points) => {
   if (points.length < 2) return '';
   if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  // Clamp Bézier control points to the baseline (the lowest point on screen = largest
+  // y, since value 0 maps to the chart bottom). A cubic segment stays inside the convex
+  // hull of its 4 points, so when every anchor AND control point has y <= yFloor the
+  // rendered curve can never dip below the baseline — no sub-zero undershoot between a
+  // zero point and the next spike. Values can't be negative, so this only removes a
+  // misleading visual artefact; data is untouched.
+  const yFloor = Math.max(...points.map(p => p.y));
+  const clampY = (y) => Math.min(y, yFloor);
   let path = `M ${points[0].x} ${points[0].y}`;
   for (let i = 1; i < points.length; i++) {
     const current = points[i], previous = points[i - 1];
+    let c1x, c1y, c2x, c2y;
     if (i === 1) {
       const next = points[i + 1] || current;
-      path += ` C ${previous.x + (current.x - previous.x) * 0.3} ${previous.y + (current.y - previous.y) * 0.3}, ${current.x - (next.x - previous.x) * 0.1} ${current.y - (next.y - previous.y) * 0.1}, ${current.x} ${current.y}`;
+      c1x = previous.x + (current.x - previous.x) * 0.3; c1y = previous.y + (current.y - previous.y) * 0.3;
+      c2x = current.x - (next.x - previous.x) * 0.1;     c2y = current.y - (next.y - previous.y) * 0.1;
     } else if (i === points.length - 1) {
       const beforePrev = points[i - 2] || previous;
-      path += ` C ${previous.x + (current.x - beforePrev.x) * 0.1} ${previous.y + (current.y - beforePrev.y) * 0.1}, ${current.x - (current.x - previous.x) * 0.3} ${current.y - (current.y - previous.y) * 0.3}, ${current.x} ${current.y}`;
+      c1x = previous.x + (current.x - beforePrev.x) * 0.1; c1y = previous.y + (current.y - beforePrev.y) * 0.1;
+      c2x = current.x - (current.x - previous.x) * 0.3;    c2y = current.y - (current.y - previous.y) * 0.3;
     } else {
       const next = points[i + 1], beforePrev = points[i - 2] || previous;
-      path += ` C ${previous.x + (current.x - beforePrev.x) * 0.1} ${previous.y + (current.y - beforePrev.y) * 0.1}, ${current.x - (next.x - previous.x) * 0.1} ${current.y - (next.y - previous.y) * 0.1}, ${current.x} ${current.y}`;
+      c1x = previous.x + (current.x - beforePrev.x) * 0.1; c1y = previous.y + (current.y - beforePrev.y) * 0.1;
+      c2x = current.x - (next.x - previous.x) * 0.1;       c2y = current.y - (next.y - previous.y) * 0.1;
     }
+    path += ` C ${c1x} ${clampY(c1y)}, ${c2x} ${clampY(c2y)}, ${current.x} ${current.y}`;
   }
   return path;
 };
