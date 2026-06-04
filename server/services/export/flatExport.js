@@ -36,6 +36,11 @@ function isP4(accountName) {
   return !!accountName && P4_REGIONS.some(r => accountName.startsWith(`P4 ${r}`));
 }
 
+// Export guard: skip rows with no identifiable account (empty account_name). After the
+// permalink backfill these are only the unattributable reel/p/photo.php URLs — excluded
+// so Power BI never sees blank-account rows.
+const NONEMPTY_NAME = "trim(COALESCE(account_name, '')) <> ''";
+
 // ---- Account-grain tabs -----------------------------------------------------
 
 function postsMonthly(db) {
@@ -44,7 +49,7 @@ function postsMonthly(db) {
       COUNT(*) AS post_count, SUM(views) AS views, SUM(reach) AS reach,
       SUM(link_clicks) AS link_clicks, SUM(interactions) AS interactions
     FROM posts
-    WHERE publish_time IS NOT NULL ${hiddenPostsFilter()}
+    WHERE publish_time IS NOT NULL AND ${NONEMPTY_NAME} ${hiddenPostsFilter()}
     GROUP BY account_name, platform, month
     ORDER BY account_name, platform, month
   `).all();
@@ -61,7 +66,7 @@ function postsMonthly(db) {
 
 function estimatedUniqueClicksMonthly() {
   // Per månad endast (exakt) — kringgår öppen fråga #2 (ingen flermånadssummering).
-  return getEstimatedUniqueClicks().map(r => ({
+  return getEstimatedUniqueClicks().filter(r => r.account_name && r.account_name.trim() !== '').map(r => ({
     account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
     month: r.month, month_date: monthDate(r.month),
     n_posts: r.post_count,
@@ -75,7 +80,7 @@ function estimatedUniqueClicksMonthly() {
 function gaListensMonthly(db) {
   const rows = db.prepare(`
     SELECT account_name, month, listens FROM ga_listens
-    WHERE 1=1 ${hiddenGAFilter()} ORDER BY account_name, month
+    WHERE ${NONEMPTY_NAME} ${hiddenGAFilter()} ORDER BY account_name, month
   `).all();
   return rows.map(r => ({
     account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
@@ -88,7 +93,7 @@ function gaListensMonthly(db) {
 function gaSiteVisitsMonthly(db) {
   const rows = db.prepare(`
     SELECT account_name, month, visits FROM ga_site_visits
-    WHERE 1=1 ${hiddenSiteVisitsFilter()} ORDER BY account_name, month
+    WHERE ${NONEMPTY_NAME} ${hiddenSiteVisitsFilter()} ORDER BY account_name, month
   `).all();
   return rows.map(r => ({
     account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
@@ -101,11 +106,11 @@ function gaSiteVisitsMonthly(db) {
 function accountReachMonthly(db) {
   const fb = db.prepare(`
     SELECT account_name, month, reach FROM account_reach
-    WHERE 1=1 ${hiddenReachFilter()} ORDER BY account_name, month
+    WHERE ${NONEMPTY_NAME} ${hiddenReachFilter()} ORDER BY account_name, month
   `).all().map(r => ({ ...r, platform: 'facebook' }));
   const ig = db.prepare(`
     SELECT account_name, month, reach FROM ig_account_reach
-    WHERE 1=1 ${hiddenIGReachFilter()} ORDER BY account_name, month
+    WHERE ${NONEMPTY_NAME} ${hiddenIGReachFilter()} ORDER BY account_name, month
   `).all().map(r => ({ ...r, platform: 'instagram' }));
   return [...fb, ...ig].map(r => ({
     account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
@@ -249,6 +254,10 @@ const README_LINES = [
   ['Dolda konton är exkluderade, precis som i appens vyer. En månad som saknas för'],
   ['ett konto betyder att det inte fanns någon publicering då — ingen rad skapas'],
   ['(ingen nolla). Hantera luckor med en egen datumtabell i Power BI.'],
+  [''],
+  ['Rader utan identifierbart konto är exkluderade (enstaka inlägg som Meta exporterat'],
+  ['utan sidnamn och vars konto inte gick att härleda ur länken) — så att du slipper'],
+  ['blanka kontorader.'],
   [''],
   ['Flikar: posts_monthly, estimated_unique_clicks_monthly, ga_listens_monthly,'],
   ['ga_site_visits_monthly, account_reach_monthly, posts_groups_monthly,'],

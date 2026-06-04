@@ -41,6 +41,8 @@ posts('Hidden Co', 'facebook', '2026-02', 6);
 posts('P4 Kalmar, Sveriges Radio', 'facebook', '2026-02', 6);
 // Over-merge guard: a different account that merely contains "P4 Kalmar".
 posts('Sporten P4 Kalmar', 'facebook', '2026-02', 6);
+// Nameless rows (Meta exported without a Sidnamn, unattributable) — export-guarded out.
+posts('', 'facebook', '2026-02', 4);
 
 db.prepare("INSERT INTO account_reach (account_name, month, reach) VALUES ('Acme','2026-01',100)").run();
 db.prepare("INSERT INTO account_reach (account_name, month, reach) VALUES ('Acme','2026-02',100)").run();
@@ -106,6 +108,18 @@ test('dim_account_key has a unique normalized_name (no duplicate keys)', () => {
   assert.equal(keys.length, new Set(keys).size);
   // 'P4 Kalmar' appears once despite Meta+GA sources
   assert.equal(keys.filter(k => k === 'P4 Kalmar').length, 1);
+});
+
+test('DEL C: rows with empty account_name are excluded from data tabs', () => {
+  for (const t of ['posts_monthly', 'estimated_unique_clicks_monthly',
+    'ga_listens_monthly', 'ga_site_visits_monthly', 'account_reach_monthly']) {
+    for (const r of sheet(t)) {
+      assert.ok(r.account_name && String(r.account_name).trim() !== '',
+        `${t} leaked an empty account_name row`);
+    }
+  }
+  // dim tabs likewise carry no blank account
+  for (const r of sheet('dim_accounts')) assert.ok(r.account_name);
 });
 
 test('(b) metric cells are numbers, not strings', () => {
