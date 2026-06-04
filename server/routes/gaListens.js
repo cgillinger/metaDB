@@ -18,6 +18,7 @@ import {
 import { hiddenGAFilter } from '../services/hiddenAccounts.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { daysInMonth } from '../utils/dateHelpers.js';
+import { avgPerDay } from '../services/metrics/dailyAverages.js';
 
 const router = Router();
 
@@ -122,7 +123,7 @@ router.get('/summary', (req, res) => {
 
   for (const row of rows) {
     const totalDays = totalDaysPerAccount[row.account_name] || 30;
-    row.avg_daily_listens = Math.round((row.total_listens / totalDays) * 10) / 10;
+    row.avg_daily_listens = avgPerDay(row.total_listens, totalDays, 1);
   }
 
   // Grand total avg daily across the unique months in the result

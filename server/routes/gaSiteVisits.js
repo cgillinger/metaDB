@@ -18,6 +18,7 @@ import {
 import { hiddenSiteVisitsFilter } from '../services/hiddenAccounts.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { daysInMonth } from '../utils/dateHelpers.js';
+import { avgPerDay } from '../services/metrics/dailyAverages.js';
 
 const router = Router();
 
@@ -122,7 +123,7 @@ router.get('/summary', (req, res) => {
 
   for (const row of rows) {
     const totalDays = totalDaysPerAccount[row.account_name] || 30;
-    row.avg_daily_visits = Math.round((row.total_visits / totalDays) * 10) / 10;
+    row.avg_daily_visits = avgPerDay(row.total_visits, totalDays, 1);
   }
 
   // Grand total avg daily across the unique months in the result

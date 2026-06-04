@@ -3,6 +3,8 @@ import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
 import { hiddenPostsFilter, hiddenReachFilter, hiddenIGReachFilter } from '../services/hiddenAccounts.js';
 import { getEstimatedUniqueClicksByAccount } from '../services/estimatedUniqueClicks.js';
+import { accountDailyAverages, avgPerDay } from '../services/metrics/dailyAverages.js';
+import { resolveMonthList } from '../services/period/resolve.js';
 import { periodDays } from '../utils/dateHelpers.js';
 
 const router = Router();
@@ -115,20 +117,9 @@ router.get('/', (req, res) => {
   // Only show reach columns matching the user's selected months.
   let reachData = [];
 
-  let reachMonths = [];
-  if (req.query.months) {
-    reachMonths = req.query.months.split(',').map(m => m.trim());
-  } else if (req.query.dateFrom && req.query.dateTo) {
-    const start = req.query.dateFrom.slice(0, 7);
-    const end = req.query.dateTo.slice(0, 7);
-    let current = start;
-    while (current <= end) {
-      reachMonths.push(current);
-      const [y, m] = current.split('-').map(Number);
-      const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
-      current = next;
-    }
-  }
+  // Månadslista för månadsbaserade källor (account_reach/ig_account_reach) — en
+  // sanningskälla i period/resolve. Byte-identisk med tidigare inline-logik.
+  const reachMonths = resolveMonthList(req.query);
 
   if (reachMonths.length > 0) {
     const placeholders = reachMonths.map(() => '?').join(',');
@@ -262,14 +253,14 @@ router.get('/', (req, res) => {
     }
   }
 
-  // Compute avg_daily_link_clicks for each account and totals
+  // Compute avg_daily_link_clicks + posts_per_day per account and totals.
+  // Single source of truth for the snitt/dag-math is metrics/dailyAverages.js.
   const days = periodDays(req.query);
   if (days && days > 0) {
     for (const row of accounts) {
-      row.avg_daily_link_clicks = Math.round(((row.link_clicks || 0) / days) * 10) / 10;
-      row.posts_per_day = Math.round(((row.post_count || 0) / days) * 100) / 100;
+      Object.assign(row, accountDailyAverages(row, days));
     }
-    totals.avg_daily_link_clicks = Math.round(((totals.link_clicks || 0) / days) * 10) / 10;
+    totals.avg_daily_link_clicks = avgPerDay(totals.link_clicks, days, 1);
   } else {
     for (const row of accounts) {
       row.posts_per_day = 0;

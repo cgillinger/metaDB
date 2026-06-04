@@ -3,6 +3,7 @@ import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
 import { hiddenPostsFilter, hiddenReachFilter, hiddenIGReachFilter } from '../services/hiddenAccounts.js';
 import { getEstimatedUniqueClicks } from '../services/estimatedUniqueClicks.js';
+import { resolveMonthAxis } from '../services/period/resolve.js';
 
 const router = Router();
 
@@ -36,23 +37,10 @@ const METRIC_SQL_MAP = {
  * Returns null when no period filter is set — callers should then fall back
  * to the months that actually have data.
  */
+// Delegerar till period/resolve (en sanningskälla). Byte-identisk med tidigare
+// inline-logik: months trimmas/sorteras, dateFrom/dateTo → inkluderande månadsspann.
 function buildMonthSpan(query) {
-  if (query.months) {
-    return query.months.split(',').map(m => m.trim()).filter(Boolean).sort();
-  }
-  if (query.dateFrom && query.dateTo) {
-    const start = query.dateFrom.slice(0, 7);
-    const end = query.dateTo.slice(0, 7);
-    const months = [];
-    let current = start;
-    while (current <= end) {
-      months.push(current);
-      const [y, m] = current.split('-').map(Number);
-      current = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
-    }
-    return months;
-  }
-  return null;
+  return resolveMonthAxis(query);
 }
 
 // Parse composite keys "name::platform" into {name, platform} pairs.

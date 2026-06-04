@@ -2,6 +2,10 @@ import { Router } from 'express';
 import { getDb } from '../db/connection.js';
 import { hiddenPostsFilter } from '../services/hiddenAccounts.js';
 import { P4_REGIONS } from '../../shared/p4Regions.js';
+import { calcBarometer, calcYearOverYear } from '../services/trend/barometer.js';
+
+// Default rolling-trend window — mirrors PlatformTrendView's baroWindow default.
+const DEFAULT_BAROMETER_WINDOW = 4;
 
 const router = Router();
 
@@ -99,6 +103,12 @@ router.get('/', (req, res) => {
       accountCount: maxAccounts,
       platform,
       group,
+      // Server-side barometrar (Fas 1, additivt). PlatformTrendView räknar fortfarande
+      // sina egna värden klientsidigt — dessa fält finns för att Fas 2 ska kunna byta
+      // till dem. Samma rena funktioner som klienten använder (trend/barometer.js).
+      barometer: calcBarometer(rows, DEFAULT_BAROMETER_WINDOW),
+      barometerWindow: DEFAULT_BAROMETER_WINDOW,
+      yoy: calcYearOverYear(rows),
     });
   } catch (err) {
     console.error('Platform trends error:', err);
