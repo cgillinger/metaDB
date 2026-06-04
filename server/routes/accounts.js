@@ -3,9 +3,17 @@ import { getDb } from '../db/connection.js';
 import { buildPeriodConditions } from '../utils/periodFilter.js';
 import { hiddenPostsFilter, hiddenReachFilter, hiddenIGReachFilter } from '../services/hiddenAccounts.js';
 import { getEstimatedUniqueClicksByAccount } from '../services/estimatedUniqueClicks.js';
-import { accountDailyAverages, avgPerDay } from '../services/metrics/dailyAverages.js';
+import { accountDailyAverages, avgPerDay, groupAvgPerDay } from '../services/metrics/dailyAverages.js';
 import { resolveMonthList } from '../services/period/resolve.js';
+import { getAccountGroups } from '../services/accountGroupService.js';
 import { periodDays } from '../utils/dateHelpers.js';
+
+// Raw post fields that may be summed across members of a posts group (SBS numerator).
+// Mirror of AccountView's GROUP_SUMMABLE — the client no longer sums these itself.
+const GROUP_SUMMABLE = [
+  'views', 'likes', 'comments', 'shares', 'saves', 'follows',
+  'total_clicks', 'link_clicks', 'other_clicks', 'interactions', 'engagement', 'post_count',
+];
 
 const router = Router();
 
@@ -267,7 +275,31 @@ router.get('/', (req, res) => {
     }
   }
 
-  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, igReachByAccount, igReachMonths: igReachMonthsAvailable, estimatedClicksByAccount, totalPeriodDays: days || 0 });
+  // Server-side posts-group aggregates (SBS). Group rows stay DISPLAY-ONLY: they are
+  // returned in a separate map keyed by group id, never injected into `accounts`, so
+  // they never enter totals/pagination/export. Summing the same per-account rows the
+  // client would, then avg_daily_link_clicks via metrics/dailyAverages (single source
+  // of truth). Replaces the client-side SBS in AccountView.jsx:597-631.
+  const accountMap = {};
+  for (const a of accounts) accountMap[`${a.account_name}::${a.platform}`] = a;
+  const groupAggregates = {};
+  for (const group of getAccountGroups('posts')) {
+    const memberRows = group.members.map(k => accountMap[k]).filter(Boolean);
+    const agg = {
+      groupId: group.id,
+      memberCount: group.members.length,
+      matchedCount: memberRows.length,
+    };
+    for (const field of GROUP_SUMMABLE) {
+      agg[field] = memberRows.reduce((sum, a) => sum + (a[field] || 0), 0);
+    }
+    if (days && days > 0) {
+      agg.avg_daily_link_clicks = groupAvgPerDay(memberRows, 'link_clicks', days, 1);
+    }
+    groupAggregates[group.id] = agg;
+  }
+
+  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, igReachByAccount, igReachMonths: igReachMonthsAvailable, estimatedClicksByAccount, groupAggregates, totalPeriodDays: days || 0 });
 });
 
 export default router;

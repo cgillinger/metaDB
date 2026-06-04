@@ -90,11 +90,8 @@ const PAGE_SIZE_OPTIONS = [
 // Fields that cannot be meaningfully summed across accounts in a group
 const GROUP_NON_SUMMABLE = new Set(['reach', 'average_reach', 'account_reach', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks']);
 
-// Fields that CAN be summed
-const GROUP_SUMMABLE = new Set([
-  'views', 'likes', 'comments', 'shares', 'saves', 'follows',
-  'total_clicks', 'link_clicks', 'other_clicks', 'interactions', 'engagement', 'post_count',
-]);
+// Posts-group SBS sums + avg_daily_link_clicks are computed server-side
+// (groupAggregates from /api/accounts); the client no longer sums these fields.
 
 const AccountView = ({
   selectedFields,
@@ -119,6 +116,7 @@ const AccountView = ({
   const [igReachByAccount, setIgReachByAccount] = useState({});
   const [igReachMonths, setIgReachMonths] = useState([]);
   const [estimatedClicksByAccount, setEstimatedClicksByAccount] = useState({});
+  const [groupAggregates, setGroupAggregates] = useState({});
   const [showReachOnlyAccounts, setShowReachOnlyAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showDeleteColumn, setShowDeleteColumn] = useState(false);
@@ -197,6 +195,7 @@ const AccountView = ({
         setIgReachByAccount(data.igReachByAccount || {});
         setIgReachMonths(data.igReachMonths || []);
         setEstimatedClicksByAccount(data.estimatedClicksByAccount || {});
+        setGroupAggregates(data.groupAggregates || {});
       } catch (error) {
         console.error('Fel vid hämtning av kontodata:', error);
       } finally {
@@ -593,42 +592,31 @@ const AccountView = ({
     return result;
   }, [accountGroups, gaPivot]);
 
-  // Synthetic group rows for posts mode
+  // Synthetic group rows for posts mode. Aggregation (SBS sums + avg_daily_link_clicks)
+  // is computed server-side in /api/accounts (groupAggregates); this view only renders
+  // the finished values. Group rows remain display-only (_isGroup), excluded from
+  // totals/pagination/export.
   const accountDataWithGroups = useMemo(() => {
     const postGroups = accountGroups.filter(g => g.source === 'posts');
     if (postGroups.length === 0) return accountData;
 
-    const accountMap = {};
-    for (const a of accountData) {
-      accountMap[`${a.account_name}::${a.platform}`] = a;
-    }
-
     const syntheticRows = postGroups.map(group => {
-      const memberRows = group.members.map(k => accountMap[k]).filter(Boolean);
-      const matchedCount = memberRows.length;
-      const row = {
+      const agg = groupAggregates[group.id] || {};
+      return {
+        ...agg, // summed fields + avg_daily_link_clicks from the server
         account_name: group.name,
         platform: 'group',
         _isGroup: true,
         groupId: group.id,
         memberCount: group.members.length,
-        matchedCount,
+        matchedCount: agg.matchedCount ?? 0,
         is_collab: false,
+        reach: null,
       };
-      // Sum summable fields
-      for (const field of GROUP_SUMMABLE) {
-        row[field] = memberRows.reduce((sum, a) => sum + (a[field] || 0), 0);
-      }
-      // Map average_reach → reach for display purposes
-      row.reach = null;
-      if (totalPeriodDays > 0) {
-        row.avg_daily_link_clicks = Math.round(((row.link_clicks || 0) / totalPeriodDays) * 10) / 10;
-      }
-      return row;
     });
 
     return [...syntheticRows, ...accountData];
-  }, [accountData, accountGroups, totalPeriodDays]);
+  }, [accountData, accountGroups, groupAggregates]);
 
   const filteredGaSummaryWithGroups = useMemo(() => {
     if (showGroups) return gaSummaryWithGroups;
