@@ -456,28 +456,22 @@ const AccountView = ({
     const gsvGroups = accountGroups.filter(g => g.source === 'ga_site_visits');
     if (gsvGroups.length === 0) return gsvSummary;
 
-    const progMap = {};
-    for (const p of gsvSummary.programmes) progMap[p.account_name] = p;
-
+    // Aggregation (SBS sum + avg_daily_visits) is computed server-side in
+    // /api/ga-site-visits/summary (groupAggregates); render the finished values.
+    const aggMap = gsvSummary.groupAggregates || {};
     const syntheticRows = [...gsvGroups]
       .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'))
       .map(group => {
-        const memberNames = group.members.map(k => k.split('::')[0]);
-        const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
-        const totalVisits = memberRows.reduce((sum, p) => sum + p.total_visits, 0);
-        const maxMonthCount = memberRows.length > 0 ? Math.max(...memberRows.map(p => p.month_count)) : 0;
-        const avgDaily = gsvSummary.totalPeriodDays > 0
-          ? Math.round((totalVisits / gsvSummary.totalPeriodDays) * 10) / 10
-          : 0;
+        const agg = aggMap[group.id] || {};
         return {
           account_name: group.name,
-          total_visits: totalVisits,
-          month_count: maxMonthCount,
-          avg_daily_visits: avgDaily,
+          total_visits: agg.total_visits ?? 0,
+          month_count: agg.month_count ?? 0,
+          avg_daily_visits: agg.avg_daily_visits ?? 0,
           _isGroup: true,
           groupId: group.id,
-          memberCount: memberNames.length,
-          matchedCount: memberRows.length,
+          memberCount: group.members.length,
+          matchedCount: agg.matchedCount ?? 0,
         };
       });
 
@@ -527,28 +521,22 @@ const AccountView = ({
     const gaGroups = accountGroups.filter(g => g.source === 'ga_listens');
     if (gaGroups.length === 0) return gaSummary;
 
-    const progMap = {};
-    for (const p of gaSummary.programmes) progMap[p.account_name] = p;
-
+    // Aggregation (SBS sum + avg_daily_listens) is computed server-side in
+    // /api/ga-listens/summary (groupAggregates); render the finished values.
+    const aggMap = gaSummary.groupAggregates || {};
     const syntheticRows = [...gaGroups]
       .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'sv'))
       .map(group => {
-        const memberNames = group.members.map(k => k.split('::')[0]);
-        const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
-        const totalListens = memberRows.reduce((sum, p) => sum + p.total_listens, 0);
-        const maxMonthCount = memberRows.length > 0 ? Math.max(...memberRows.map(p => p.month_count)) : 0;
-        const avgDaily = gaSummary.totalPeriodDays > 0
-          ? Math.round((totalListens / gaSummary.totalPeriodDays) * 10) / 10
-          : 0;
+        const agg = aggMap[group.id] || {};
         return {
           account_name: group.name,
-          total_listens: totalListens,
-          month_count: maxMonthCount,
-          avg_daily_listens: avgDaily,
+          total_listens: agg.total_listens ?? 0,
+          month_count: agg.month_count ?? 0,
+          avg_daily_listens: agg.avg_daily_listens ?? 0,
           _isGroup: true,
           groupId: group.id,
-          memberCount: memberNames.length,
-          matchedCount: memberRows.length,
+          memberCount: group.members.length,
+          matchedCount: agg.matchedCount ?? 0,
         };
       });
 

@@ -19,6 +19,7 @@ import { hiddenSiteVisitsFilter } from '../services/hiddenAccounts.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { daysInMonth } from '../utils/dateHelpers.js';
 import { avgPerDay } from '../services/metrics/dailyAverages.js';
+import { getAccountGroups } from '../services/accountGroupService.js';
 
 const router = Router();
 
@@ -129,15 +130,35 @@ router.get('/summary', (req, res) => {
   // Grand total avg daily across the unique months in the result
   const uniqueMonths = [...new Set(monthRows.map(r => r.month))];
   const totalPeriodDays = uniqueMonths.reduce((sum, m) => sum + daysInMonth(m), 0);
-  const grandAvgDaily = totalPeriodDays > 0
-    ? Math.round(((totalRow?.grand_total || 0) / totalPeriodDays) * 10) / 10
-    : 0;
+  const grandAvgDaily = avgPerDay(totalRow?.grand_total || 0, totalPeriodDays, 1);
+
+  // Server-side group aggregates (SBS). Display-only: separate map keyed by group id,
+  // never injected into `programmes`. avg_daily_visits uses the period-wide
+  // totalPeriodDays divisor (matches AccountView.jsx:455-491).
+  const progMap = {};
+  for (const r of rows) progMap[r.account_name] = r;
+  const groupAggregates = {};
+  for (const group of getAccountGroups('ga_site_visits')) {
+    const memberNames = group.members.map(k => k.split('::')[0]);
+    const memberRows = memberNames.map(n => progMap[n]).filter(Boolean);
+    const total_visits = memberRows.reduce((s, p) => s + (p.total_visits || 0), 0);
+    const month_count = memberRows.length > 0 ? Math.max(...memberRows.map(p => p.month_count)) : 0;
+    groupAggregates[group.id] = {
+      groupId: group.id,
+      memberCount: memberNames.length,
+      matchedCount: memberRows.length,
+      total_visits,
+      month_count,
+      avg_daily_visits: avgPerDay(total_visits, totalPeriodDays, 1),
+    };
+  }
 
   res.json({
     programmes: rows,
     grandTotal: totalRow?.grand_total || 0,
     grandAvgDaily,
     totalPeriodDays,
+    groupAggregates,
   });
 });
 
