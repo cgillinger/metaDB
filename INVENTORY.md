@@ -162,3 +162,22 @@ exakt.
 - **Lågprio (guardrail-ankare):** F≈4.49 ligger nära varningströskeln F>5. Fixture D2
   ankrar nu en fixture i varje display-gren (ok/uncertain/suppressed) så att en framtida
   ändring inte tyst bryter guardrail-renderingen.
+
+---
+
+## Öppna frågor (beslut tas senare — rör inte i Fas 1)
+
+**#1 — AccountView-estimatkolumnen.** LÖST, se driftfynd #1.
+
+**#2 — `getEstimatedUniqueClicksByAccount` summerar `account_reach` över månader.**
+`account_reach` är *unik* räckvidd per månad och är **icke-summerbar över tid**, på samma
+sätt som cross-account ("Alla P4") räckvidd inte får summeras (jfr CLAUDE.md "Räckvidd =
+alltid AVG, aldrig SUM"). Samma person nådd i flera månader dubbelräknas i nämnaren när
+funktionen aggregerar en flermånaders-/custom-period → **nämnaren blåses upp → F
+understryks → estimatet överskattas**. **Enmånadsperiod är exakt och oförändrad** (en
+enda månads `account_reach`, ingen summering) — och det är den enda väg baslinjen
+ankrar. Konsekvensen gäller endast vid flermånaders-/custom-period i AccountView-tabellen.
+- Beslut senare: antingen (a) begränsa estimat-kolumnen till **månadsupplösning** (visa
+  bara när exakt en månad är vald), eller (b) visa vid flermånad **med dokumenterad bias**
+  (overestimate-flagga). 
+- **Rör inte detta i Fas 1.** Loggat för spårbarhet; ingen kodändring nu.
