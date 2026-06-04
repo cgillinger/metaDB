@@ -1,0 +1,226 @@
+{
+  "meta": {},
+  "fixtures": {
+    "A_snitt_per_dag_feb2026": {
+      "endpoint": "/api/accounts?months=2026-02",
+      "totalPeriodDays": 28,
+      "accounts": {
+        "P4 Göteborg, Sveriges Radio": {
+          "account_name": "P4 Göteborg, Sveriges Radio",
+          "platform": "facebook",
+          "post_count": 221,
+          "link_clicks": 109157,
+          "posts_per_day": 7.89,
+          "avg_daily_link_clicks": 3898.5
+        },
+        "P4 Stockholm Sveriges Radio": {
+          "account_name": "P4 Stockholm Sveriges Radio",
+          "platform": "facebook",
+          "post_count": 204,
+          "link_clicks": 52743,
+          "posts_per_day": 7.29,
+          "avg_daily_link_clicks": 1883.7
+        }
+      }
+    },
+    "D_estimated_unique_clicks_gbg_feb2026": {
+      "endpoint": "/api/trends?metric=estimated_unique_clicks&accountKeys=P4+G%C3%B6teborg%2C+Sveriges+Radio%3A%3Afacebook&granularity=month&months=2026-02",
+      "note": "SERVICE path (services/estimatedUniqueClicks.js) — anchor, must NOT change.",
+      "months": [
+        "2026-02"
+      ],
+      "data": [
+        {
+          "value": 24312,
+          "lower": 16208,
+          "quality": "ok"
+        }
+      ]
+    },
+    "D2_accountview_inline_divergence": {
+      "endpoint": "/api/accounts?months=2026-02",
+      "note": "DIVERGENT inline path (accounts.js:172-206). Currently suppresses all rows.",
+      "estimatedClicksByAccount_gbg": {
+        "upper": null,
+        "lower": null,
+        "quality": "suppressed"
+      },
+      "nonSuppressedCount": 0,
+      "totalAccountsWithEstimate": 64
+    },
+    "E_group_sbs_alla_p4_feb2026": {
+      "endpoint": "/api/accounts?months=2026-02 + /api/account-groups?source=posts",
+      "note": "SBS invariant: sum raw link_clicks across members, then divide by days.",
+      "group": {
+        "groupId": 9,
+        "name": "Alla P4",
+        "memberCount": 25,
+        "matchedCount": 25,
+        "sum_link_clicks": 1518417,
+        "sum_post_count": 4260,
+        "totalPeriodDays": 28,
+        "avg_daily_link_clicks": 54229.2
+      }
+    },
+    "B_platform_yoy_p4_fb": {
+      "endpoint": "/api/platform-trends?platform=facebook&group=p4",
+      "monthsCount": 31,
+      "lastMonth": "2026-06",
+      "yoy": {
+        "delta": -0.3502541557906306,
+        "status": "falling",
+        "currentMonth": "2026-06",
+        "previousMonth": "2025-06",
+        "currentValue": 37836,
+        "previousValue": 58232
+      },
+      "barometer_window4": {
+        "delta": -0.006598062595790258,
+        "status": "stable",
+        "recentAvg": 41968.5,
+        "prevAvg": 42247.25
+      }
+    },
+    "C_trend_series_zero_fill": {
+      "endpoint": "/api/trends?metric=views&accountKeys=P4+DANS%3A%3Afacebook&granularity=month&months=2024-01%2C2024-02%2C2024-03%2C2024-04%2C2024-05%2C2024-06%2C2024-07%2C2024-08%2C2024-09%2C2024-10%2C2024-11%2C2024-12%2C2025-01%2C2025-02%2C2025-03%2C2025-04%2C2025-05%2C2025-06%2C2025-07%2C2025-08%2C2025-09%2C2025-10%2C2025-11%2C2025-12%2C2026-01%2C2026-02%2C2026-03%2C2026-04%2C2026-05",
+      "account": "P4 DANS",
+      "metric": "views",
+      "monthsCount": 29,
+      "emptyMonth": "2025-11",
+      "emptyMonthIndex": 22,
+      "emptyMonthValue": 0,
+      "neighbours": {
+        "before": {
+          "month": "2025-10",
+          "value": 986992
+        },
+        "at": {
+          "month": "2025-11",
+          "value": 0
+        },
+        "after": {
+          "month": "2025-12",
+          "value": 236593
+        }
+      },
+      "fullSeries": [
+        {
+          "month": "2024-01",
+          "value": 483205
+        },
+        {
+          "month": "2024-02",
+          "value": 655314
+        },
+        {
+          "month": "2024-03",
+          "value": 715992
+        },
+        {
+          "month": "2024-04",
+          "value": 206659
+        },
+        {
+          "month": "2024-05",
+          "value": 391543
+        },
+        {
+          "month": "2024-06",
+          "value": 81302
+        },
+        {
+          "month": "2024-07",
+          "value": 1307104
+        },
+        {
+          "month": "2024-08",
+          "value": 1212800
+        },
+        {
+          "month": "2024-09",
+          "value": 804553
+        },
+        {
+          "month": "2024-10",
+          "value": 695430
+        },
+        {
+          "month": "2024-11",
+          "value": 344541
+        },
+        {
+          "month": "2024-12",
+          "value": 495148
+        },
+        {
+          "month": "2025-01",
+          "value": 291593
+        },
+        {
+          "month": "2025-02",
+          "value": 689762
+        },
+        {
+          "month": "2025-03",
+          "value": 558213
+        },
+        {
+          "month": "2025-04",
+          "value": 692563
+        },
+        {
+          "month": "2025-05",
+          "value": 295525
+        },
+        {
+          "month": "2025-06",
+          "value": 420535
+        },
+        {
+          "month": "2025-07",
+          "value": 2296617
+        },
+        {
+          "month": "2025-08",
+          "value": 478697
+        },
+        {
+          "month": "2025-09",
+          "value": 1074179
+        },
+        {
+          "month": "2025-10",
+          "value": 986992
+        },
+        {
+          "month": "2025-11",
+          "value": 0
+        },
+        {
+          "month": "2025-12",
+          "value": 236593
+        },
+        {
+          "month": "2026-01",
+          "value": 610878
+        },
+        {
+          "month": "2026-02",
+          "value": 314530
+        },
+        {
+          "month": "2026-03",
+          "value": 901255
+        },
+        {
+          "month": "2026-04",
+          "value": 300932
+        },
+        {
+          "month": "2026-05",
+          "value": 240348
+        }
+      ]
+    }
+  }
+}

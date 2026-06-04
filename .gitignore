@@ -11,3 +11,6 @@ data/analytics.db-shm
 _old_facebook/
 _old_instagram/
 old_csv/
+
+# baseline production DB snapshot (do not commit)
+.baseline-prod/
