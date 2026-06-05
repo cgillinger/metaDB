@@ -23,6 +23,31 @@ export const YOY_MONTH_AXIS = Array.from({ length: 12 }, (_, i) =>
   String(i + 1).padStart(2, '0')
 );
 
+/** 'YYYY-MM' key for the current calendar month. */
+export function currentMonthKey(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Drop the in-progress current calendar month (and any future months) from a
+ * value map. The current month is never complete, so in YoY it renders as a
+ * misleading crash toward zero — made worse by timezone spillover, where a few
+ * late posts from the previous month (exported in US/Pacific time) land in the
+ * current month after conversion. Excluding it makes the latest line end at the
+ * last completed month, and it self-heals once the month is over.
+ * @param {Object<string, number|null>} dataMap
+ * @param {Date} [now]
+ * @returns {Object<string, number|null>}
+ */
+export function stripCurrentMonth(dataMap, now = new Date()) {
+  const cutoff = currentMonthKey(now);
+  const out = {};
+  for (const [m, v] of Object.entries(dataMap || {})) {
+    if (m < cutoff) out[m] = v;
+  }
+  return out;
+}
+
 /**
  * Derive the candidate calendar years from a value map.
  * @param {Object<string, number|null>} dataMap - { 'YYYY-MM': value }
