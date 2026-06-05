@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   YOY_MONTH_AXIS,
+  currentMonthKey,
+  stripCurrentMonth,
   deriveYears,
   yearLabel,
   defaultSelectedYears,
@@ -14,6 +16,28 @@ test('YOY_MONTH_AXIS is the 12 zero-padded months', () => {
   assert.deepEqual(YOY_MONTH_AXIS, [
     '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12',
   ]);
+});
+
+test('currentMonthKey: zero-padded YYYY-MM', () => {
+  assert.equal(currentMonthKey(new Date('2026-06-05T00:00:00')), '2026-06');
+  assert.equal(currentMonthKey(new Date('2026-01-31T23:00:00')), '2026-01');
+});
+
+test('stripCurrentMonth: drops the in-progress month and anything later', () => {
+  const dataMap = {
+    '2026-04': 100,
+    '2026-05': 200,
+    '2026-06': 7,   // current month — timezone spillover noise
+    '2026-07': 3,   // future (shouldn't normally exist)
+  };
+  const out = stripCurrentMonth(dataMap, new Date('2026-06-05T00:00:00'));
+  assert.deepEqual(out, { '2026-04': 100, '2026-05': 200 });
+});
+
+test('stripCurrentMonth: keeps everything when latest data is in the past', () => {
+  const dataMap = { '2025-08': 10, '2025-09': 20 };
+  const out = stripCurrentMonth(dataMap, new Date('2026-06-05T00:00:00'));
+  assert.deepEqual(out, { '2025-08': 10, '2025-09': 20 });
 });
 
 test('deriveYears: empty map yields no years', () => {

@@ -15,12 +15,14 @@ import {
   LineChart,
   AlertCircle,
   Users,
+  Check,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
 import { daysInMonth } from '@/utils/dateHelpers';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 import {
   YOY_MONTH_AXIS,
+  stripCurrentMonth,
   deriveYears,
   defaultSelectedYears,
   buildYoYLines,
@@ -816,9 +818,17 @@ const TrendAnalysisView = ({
     return () => { cancelled = true; };
   }, [isYoY, yoyKey, yoyUnsupported, gaListensMode, gaSiteVisitsMode, selectedMetric, gaMetric, gsvMetric, platform, accountListWithGroups, gaAccountListWithGroups, gsvAccountListWithGroups]);
 
-  const yoyYearInfos = useMemo(
-    () => (isYoY && yoyDataMap ? deriveYears(yoyDataMap) : []),
+  // Exclude the in-progress current month: it's never complete and (with Meta's
+  // US/Pacific CSV timestamps) is dominated by spillover from the previous month,
+  // which otherwise renders as a misleading crash toward zero at the line's end.
+  const yoyEffectiveDataMap = useMemo(
+    () => (isYoY && yoyDataMap ? stripCurrentMonth(yoyDataMap) : yoyDataMap),
     [isYoY, yoyDataMap]
+  );
+
+  const yoyYearInfos = useMemo(
+    () => (isYoY && yoyEffectiveDataMap ? deriveYears(yoyEffectiveDataMap) : []),
+    [isYoY, yoyEffectiveDataMap]
   );
 
   // Reset the year selection to a sensible default whenever the candidate set changes.
@@ -828,8 +838,8 @@ const TrendAnalysisView = ({
   }, [isYoY, yoyYearInfos]);
 
   const yoyChartLines = useMemo(
-    () => (isYoY && yoyDataMap ? buildYoYLines(yoyDataMap, yoyYearInfos, new Set(selectedYears), CHART_COLORS) : []),
-    [isYoY, yoyDataMap, yoyYearInfos, selectedYears]
+    () => (isYoY && yoyEffectiveDataMap ? buildYoYLines(yoyEffectiveDataMap, yoyYearInfos, new Set(selectedYears), CHART_COLORS) : []),
+    [isYoY, yoyEffectiveDataMap, yoyYearInfos, selectedYears]
   );
 
   const yoyYAxisConfig = useMemo(() => {
@@ -1178,10 +1188,10 @@ const TrendAnalysisView = ({
             </div>
           )}
 
-          {/* Year picker (YoY only) */}
+          {/* Year picker (YoY only) — interactive toggles; replaces the legend in YoY */}
           {isYoY && yoyYearInfos.length >= 2 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground mr-1">Årtal:</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground mr-1">Visa år:</span>
               {yoyYearInfos.map(yi => {
                 const active = selectedYears.includes(yi.year);
                 const colorIdx = yoyColorIndex(yi.year);
@@ -1189,11 +1199,15 @@ const TrendAnalysisView = ({
                   <button
                     key={yi.year}
                     onClick={() => toggleYear(yi.year)}
-                    className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                    title="Klicka för att visa eller dölja året"
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
                       active ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
                     }`}
                     style={active && colorIdx >= 0 ? { backgroundColor: CHART_COLORS[colorIdx % CHART_COLORS.length] } : undefined}
                   >
+                    {active
+                      ? <Check className="w-3 h-3 shrink-0" />
+                      : <span className="w-3 h-3 rounded-full border border-current opacity-50 shrink-0" />}
                     {yearLabel(yi)}
                   </button>
                 );
@@ -1210,7 +1224,8 @@ const TrendAnalysisView = ({
 
           {showChart ? (
             <div className="space-y-4">
-              {/* Legend */}
+              {/* Legend — hidden in YoY, where the interactive year picker above doubles as the legend */}
+              {!isYoY && (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
                 {displayChartLines.map(line => (
                   <div key={line.key} className={`flex items-center gap-2 px-1 py-0.5 rounded ${line._isGroup ? 'bg-blue-50' : ''}`}>
@@ -1239,6 +1254,7 @@ const TrendAnalysisView = ({
                   </div>
                 ))}
               </div>
+              )}
 
               {/* Line chart */}
               <div className="relative">
