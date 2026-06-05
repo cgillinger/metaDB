@@ -19,6 +19,16 @@ import {
 import { api } from '@/utils/apiClient';
 import { daysInMonth } from '@/utils/dateHelpers';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
+import {
+  YOY_MONTH_AXIS,
+  deriveYears,
+  defaultSelectedYears,
+  buildYoYLines,
+  yearLabel,
+} from './yearOverYear';
+
+// Metrics whose data shape (value/lower/quality bands) isn't supported in YoY mode.
+const YOY_UNSUPPORTED_METRICS = new Set(['estimated_unique_clicks']);
 
 // P4 Lokalt regional channel names — explicit Set for O(1) membership lookup.
 const P4_CHANNELS = new Set([
@@ -189,6 +199,14 @@ const TrendAnalysisView = ({
   const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Year-over-year (YoY) state. In YoY mode the x-axis collapses to Jan–Dec and
+  // each calendar year becomes its own line. Works on one account at a time and
+  // ignores the global period filter — it always uses the full history.
+  const [viewMode, setViewMode] = useState('linear'); // 'linear' | 'yoy'
+  const [yoyDataMap, setYoyDataMap] = useState(null);  // { 'YYYY-MM': value } full history, single series
+  const [yoyLoading, setYoyLoading] = useState(false);
+  const [selectedYears, setSelectedYears] = useState([]); // number[] of selected calendar years
+
   // GA Listens state — populated only when gaListensMode is true
   const [gaRawData, setGaRawData] = useState([]);       // flat rows from API
   const [gaAccountList, setGaAccountList] = useState([]); // sorted account objects
@@ -207,7 +225,15 @@ const TrendAnalysisView = ({
   useEffect(() => {
     setSelectedAccounts([]);
     setTrendData(null);
+    setViewMode('linear');
+    setYoyDataMap(null);
   }, [gaListensMode, gaSiteVisitsMode]);
+
+  const isYoY = viewMode === 'yoy';
+  // YoY works one series at a time → the single selected account/group key, or null.
+  const yoyKey = selectedAccounts.length === 1 ? selectedAccounts[0] : null;
+  // YoY can't render the estimated-clicks band shape.
+  const yoyUnsupported = isYoY && !gaListensMode && !gaSiteVisitsMode && YOY_UNSUPPORTED_METRICS.has(selectedMetric);
 
   // Detect platforms from account list
   const { hasFacebook, hasInstagram } = useMemo(() => {
@@ -721,10 +747,119 @@ const TrendAnalysisView = ({
     return calculateNiceYAxis(Math.max(...allValues));
   }, [gsvChartLines]);
 
+  // --- Year-over-year (YoY) -------------------------------------------------
+  // Fetch the FULL history for the single selected series (ignores periodParams),
+  // collapsed into a { 'YYYY-MM': value } map. Months absent from the map render
+  // as gaps; interior zeros from the backend stay on the baseline.
+  useEffect(() => {
+    if (!isYoY || !yoyKey || yoyUnsupported) {
+      setYoyDataMap(null);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      setYoyLoading(true);
+      try {
+        const dataMap = {};
+        if (gaListensMode) {
+          const result = await api.getGAListens(null);
+          const entry = gaAccountListWithGroups.find(a => a.key === yoyKey);
+          const names = entry?._isGroup
+            ? new Set(entry.memberKeys.map(k => k.split('::')[0]))
+            : new Set([parseAccountKey(yoyKey).name]);
+          for (const r of (result.data || [])) {
+            if (names.has(r.account_name)) dataMap[r.month] = (dataMap[r.month] || 0) + r.listens;
+          }
+          if (gaMetric === 'avg_daily_listens') {
+            for (const m of Object.keys(dataMap)) dataMap[m] = Math.round((dataMap[m] / daysInMonth(m)) * 10) / 10;
+          }
+        } else if (gaSiteVisitsMode) {
+          const result = await api.getGASiteVisits(null);
+          const entry = gsvAccountListWithGroups.find(a => a.key === yoyKey);
+          const names = entry?._isGroup
+            ? new Set(entry.memberKeys.map(k => k.split('::')[0]))
+            : new Set([parseAccountKey(yoyKey).name]);
+          for (const r of (result.data || [])) {
+            if (names.has(r.account_name)) dataMap[r.month] = (dataMap[r.month] || 0) + r.visits;
+          }
+          if (gsvMetric === 'avg_daily_visits') {
+            for (const m of Object.keys(dataMap)) dataMap[m] = Math.round((dataMap[m] / daysInMonth(m)) * 10) / 10;
+          }
+        } else {
+          const entry = accountListWithGroups.find(a => a.key === yoyKey);
+          const memberKeys = entry?._isGroup ? entry.memberKeys : [yoyKey];
+          const uniqueKeys = [...new Set(memberKeys)];
+          if (uniqueKeys.length === 0) { if (!cancelled) setYoyDataMap({}); return; }
+          const backendMetric = selectedMetric === 'avg_daily_link_clicks' ? 'link_clicks' : selectedMetric;
+          const params = { metric: backendMetric, accountKeys: uniqueKeys.join('||'), granularity: 'month' };
+          if (platform) params.platform = platform;
+          const data = await api.getTrends(params);
+          const fetchedMonths = data.months || [];
+          for (let i = 0; i < fetchedMonths.length; i++) {
+            let sum = 0;
+            for (const s of (data.series || [])) sum += (s.data[i] || 0);
+            dataMap[fetchedMonths[i]] = sum;
+          }
+          if (selectedMetric === 'avg_daily_link_clicks') {
+            for (const m of Object.keys(dataMap)) dataMap[m] = Math.round((dataMap[m] / daysInMonth(m)) * 10) / 10;
+          }
+        }
+        if (!cancelled) setYoyDataMap(dataMap);
+      } catch (err) {
+        console.error('Fel vid hämtning av år-över-år-data:', err);
+        if (!cancelled) setYoyDataMap(null);
+      } finally {
+        if (!cancelled) setYoyLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [isYoY, yoyKey, yoyUnsupported, gaListensMode, gaSiteVisitsMode, selectedMetric, gaMetric, gsvMetric, platform, accountListWithGroups, gaAccountListWithGroups, gsvAccountListWithGroups]);
+
+  const yoyYearInfos = useMemo(
+    () => (isYoY && yoyDataMap ? deriveYears(yoyDataMap) : []),
+    [isYoY, yoyDataMap]
+  );
+
+  // Reset the year selection to a sensible default whenever the candidate set changes.
+  useEffect(() => {
+    if (!isYoY) return;
+    setSelectedYears(defaultSelectedYears(yoyYearInfos));
+  }, [isYoY, yoyYearInfos]);
+
+  const yoyChartLines = useMemo(
+    () => (isYoY && yoyDataMap ? buildYoYLines(yoyDataMap, yoyYearInfos, new Set(selectedYears), CHART_COLORS) : []),
+    [isYoY, yoyDataMap, yoyYearInfos, selectedYears]
+  );
+
+  const yoyYAxisConfig = useMemo(() => {
+    const allValues = yoyChartLines.flatMap(line =>
+      line.points.map(p => p.value).filter(v => v !== null && v !== undefined)
+    );
+    if (allValues.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
+    return calculateNiceYAxis(Math.max(...allValues));
+  }, [yoyChartLines]);
+
+  // Name of the account/group being analysed in YoY (legend shows years, not the account).
+  const yoyAccountName = useMemo(() => {
+    if (!isYoY || !yoyKey) return null;
+    const list = gaSiteVisitsMode ? gsvAccountListWithGroups : gaListensMode ? gaAccountListWithGroups : accountListWithGroups;
+    const e = list.find(a => a.key === yoyKey);
+    return e ? e.account_name : parseAccountKey(yoyKey).name;
+  }, [isYoY, yoyKey, gaListensMode, gaSiteVisitsMode, gaAccountListWithGroups, gsvAccountListWithGroups, accountListWithGroups]);
+
+  // Color index for a year's selection pill — matches buildYoYLines (chronological order among selected).
+  const yoyColorIndex = (year) =>
+    yoyYearInfos.filter(y => selectedYears.includes(y.year)).map(y => y.year).indexOf(year);
+
+  const toggleYear = (year) => {
+    setSelectedYears(prev => prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]);
+  };
+
   // Transparent switchers so the SVG chart render logic below needs no branching.
-  const displayMonths = gaSiteVisitsMode ? gsvMonths : gaListensMode ? gaMonths : months;
-  const displayChartLines = gaSiteVisitsMode ? gsvChartLines : gaListensMode ? gaChartLines : chartLines;
-  const displayYAxisConfig = gaSiteVisitsMode ? gsvYAxisConfig : gaListensMode ? gaYAxisConfig : yAxisConfig;
+  const displayMonths = isYoY ? YOY_MONTH_AXIS : gaSiteVisitsMode ? gsvMonths : gaListensMode ? gaMonths : months;
+  const displayChartLines = isYoY ? yoyChartLines : gaSiteVisitsMode ? gsvChartLines : gaListensMode ? gaChartLines : chartLines;
+  const displayYAxisConfig = isYoY ? yoyYAxisConfig : gaSiteVisitsMode ? gsvYAxisConfig : gaListensMode ? gaYAxisConfig : yAxisConfig;
 
   // Filter account list based on selected metric (account_reach = FB only, ig_account_reach = IG only)
   // Groups are always kept in the list regardless of metric filter
@@ -768,9 +903,22 @@ const TrendAnalysisView = ({
     : gaListensMode ? gaAccountListWithGroups : filteredAccountList;
 
   const handleAccountToggle = (key) => {
+    // YoY shows one series at a time → selecting an account replaces the selection.
+    if (isYoY) {
+      setSelectedAccounts(current => (current.length === 1 && current[0] === key) ? current : [key]);
+      return;
+    }
     setSelectedAccounts(current =>
       current.includes(key) ? current.filter(k => k !== key) : [...current, key]
     );
+  };
+
+  const handleViewModeChange = (mode) => {
+    // Entering YoY: keep at most one selected account (one series at a time).
+    if (mode === 'yoy' && selectedAccounts.length > 1) {
+      setSelectedAccounts(selectedAccounts.slice(0, 1));
+    }
+    setViewMode(mode);
   };
 
   const handleToggleAllAccounts = () => {
@@ -790,11 +938,13 @@ const TrendAnalysisView = ({
     setHoveredDataPoint(point);
   };
 
-  const showChart = gaSiteVisitsMode
-    ? (gsvChartLines.length > 0 && gsvMonths.length > 0)
-    : gaListensMode
-      ? (gaChartLines.length > 0 && gaMonths.length > 0)
-      : (chartLines.length > 0 && months.length > 0);
+  const showChart = isYoY
+    ? (!!yoyKey && !yoyUnsupported && yoyYearInfos.length >= 2 && yoyChartLines.length > 0)
+    : gaSiteVisitsMode
+      ? (gsvChartLines.length > 0 && gsvMonths.length > 0)
+      : gaListensMode
+        ? (gaChartLines.length > 0 && gaMonths.length > 0)
+        : (chartLines.length > 0 && months.length > 0);
 
   if (activeAccountList.length === 0) {
     return (
@@ -812,8 +962,27 @@ const TrendAnalysisView = ({
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
           <CardTitle className="flex items-center gap-2"><LineChart className="h-5 w-5" />Trendanalys över tid</CardTitle>
+          {/* View mode: linear timeline vs year-over-year overlay */}
+          <div className="inline-flex rounded-md border overflow-hidden">
+            {[
+              { value: 'linear', label: 'Linjärt' },
+              { value: 'yoy', label: 'År över år' },
+            ].map((opt, i) => (
+              <button
+                key={opt.value}
+                onClick={() => handleViewModeChange(opt.value)}
+                className={`px-3 py-1.5 text-sm transition-colors ${i > 0 ? 'border-l' : ''} ${
+                  viewMode === opt.value
+                    ? 'bg-blue-50 text-blue-800 font-medium'
+                    : 'bg-white text-muted-foreground hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid md:grid-cols-2 gap-6">
@@ -821,11 +990,14 @@ const TrendAnalysisView = ({
             <div>
               <div className="flex items-center justify-between mb-3">
                 <Label className="text-base font-medium">
-                  {(gaListensMode || gaSiteVisitsMode) ? 'Välj program' : 'Välj konton'} ({selectedAccounts.length} valda)
+                  {(gaListensMode || gaSiteVisitsMode) ? 'Välj program' : 'Välj konton'}
+                  {isYoY ? '' : ` (${selectedAccounts.length} valda)`}
                 </Label>
-                <Button variant="outline" size="sm" onClick={handleToggleAllAccounts}>
-                  {allAccountsSelected ? 'Avmarkera alla' : 'Välj alla'}
-                </Button>
+                {!isYoY && (
+                  <Button variant="outline" size="sm" onClick={handleToggleAllAccounts}>
+                    {allAccountsSelected ? 'Avmarkera alla' : 'Välj alla'}
+                  </Button>
+                )}
               </div>
               <div className="max-h-48 overflow-y-auto border rounded-md p-3 space-y-2 bg-gray-50">
                 {activeAccountList.map((account, idx) => {
@@ -886,6 +1058,12 @@ const TrendAnalysisView = ({
                 <Users className="w-3.5 h-3.5" />
                 Skapa kontogrupp
               </button>
+              {isYoY && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  År över år visar ett {(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konto'} i taget.
+                  Periodvalet ignoreras – hela historiken används.
+                </p>
+              )}
             </div>
 
             {/* Metric selector */}
@@ -990,8 +1168,36 @@ const TrendAnalysisView = ({
                   : gaListensMode
                     ? (gaMetric === 'avg_daily_listens' ? 'Lyssningar snitt/dag (GA)' : 'Lyssningar (GA)')
                     : availableMetrics[selectedMetric]}
+                {isYoY && yoyAccountName ? ` — ${yoyAccountName}` : ''}
               </h3>
-              <p className="text-sm text-primary/70 mt-1">Utveckling över tid för valda {(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konton'}</p>
+              <p className="text-sm text-primary/70 mt-1">
+                {isYoY
+                  ? 'År över år – varje kalenderår är en egen linje'
+                  : `Utveckling över tid för valda ${(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konton'}`}
+              </p>
+            </div>
+          )}
+
+          {/* Year picker (YoY only) */}
+          {isYoY && yoyYearInfos.length >= 2 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground mr-1">Årtal:</span>
+              {yoyYearInfos.map(yi => {
+                const active = selectedYears.includes(yi.year);
+                const colorIdx = yoyColorIndex(yi.year);
+                return (
+                  <button
+                    key={yi.year}
+                    onClick={() => toggleYear(yi.year)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                      active ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                    style={active && colorIdx >= 0 ? { backgroundColor: CHART_COLORS[colorIdx % CHART_COLORS.length] } : undefined}
+                  >
+                    {yearLabel(yi)}
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -1027,7 +1233,7 @@ const TrendAnalysisView = ({
                             : line.memberCount})
                         </span>
                       )}
-                      {!line._isGroup && <PlatformBadge platform={line.platform === 'ga_listens' || line.platform === 'ga_site_visits' ? 'google_analytics' : line.platform} />}
+                      {!line._isGroup && !line._isYoYYear && <PlatformBadge platform={line.platform === 'ga_listens' || line.platform === 'ga_site_visits' ? 'google_analytics' : line.platform} />}
                       {line.is_collab ? <CollabBadge compact /> : null}
                     </span>
                   </div>
@@ -1056,13 +1262,15 @@ const TrendAnalysisView = ({
                   })}
 
                   {displayMonths.map((monthKey, index) => {
-                    const [year, month] = monthKey.split('-').map(Number);
+                    // YoY axis keys are bare month numbers ('01'..'12'); linear keys are 'YYYY-MM'.
+                    const month = isYoY ? Number(monthKey) : Number(monthKey.split('-')[1]);
+                    const year = isYoY ? null : Number(monthKey.split('-')[0]);
                     const xPos = 70 + (index / Math.max(1, displayMonths.length - 1)) * 860;
                     return (
                       <g key={monthKey}>
                         <line x1={xPos} y1="70" x2={xPos} y2="450" stroke="#d1d5db" strokeWidth="1" />
                         <text x={xPos} y="475" textAnchor="middle" fontSize="14" fill="#6b7280">{getMonthName(month)}</text>
-                        <text x={xPos} y="490" textAnchor="middle" fontSize="12" fill="#9ca3af">{year}</text>
+                        {!isYoY && <text x={xPos} y="490" textAnchor="middle" fontSize="12" fill="#9ca3af">{year}</text>}
                       </g>
                     );
                   })}
@@ -1070,12 +1278,15 @@ const TrendAnalysisView = ({
                   {displayChartLines.map(line => {
                     if (line.points.length < 1) return null;
                     const isEstimated = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'estimated_unique_clicks';
+                    // Render null values as gaps (line breaks) in both the estimated-clicks
+                    // metric and YoY mode, so missing months don't crash to the baseline.
+                    const allowGaps = isEstimated || isYoY;
                     const yRange = displayYAxisConfig.max - displayYAxisConfig.min;
                     const toY = (val) => yRange > 0 ? 450 - ((val - displayYAxisConfig.min) / yRange) * 380 : 450;
 
                     const pathPoints = line.points.map((point, index) => {
                       const x = 70 + (index / Math.max(1, displayMonths.length - 1)) * 860;
-                      if (isEstimated && point.value === null) {
+                      if (allowGaps && point.value === null) {
                         return { x, y: null, yLower: null, point };
                       }
                       return {
@@ -1086,7 +1297,7 @@ const TrendAnalysisView = ({
                       };
                     });
 
-                    const visiblePoints = isEstimated ? pathPoints.filter(p => p.y !== null) : pathPoints;
+                    const visiblePoints = allowGaps ? pathPoints.filter(p => p.y !== null) : pathPoints;
 
                     const bandPath = isEstimated && visiblePoints.length > 1
                       ? (() => {
@@ -1167,7 +1378,7 @@ const TrendAnalysisView = ({
                     return (
                       <g>
                         <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} fill="rgba(0,0,0,0.85)" rx="6" />
-                        <text x={tooltipX + 12} y={tooltipY + 20} fill="white" fontSize="13" fontWeight="bold">{hoveredDataPoint.account_name}</text>
+                        <text x={tooltipX + 12} y={tooltipY + 20} fill="white" fontSize="13" fontWeight="bold">{isYoY ? yoyAccountName : hoveredDataPoint.account_name}</text>
                         <text x={tooltipX + 12} y={tooltipY + 38} fill="white" fontSize="12">{getMonthName(month)} {year}</text>
                         <text x={tooltipX + 12} y={tooltipY + 55} fill="white" fontSize="11">{tooltipMetric}</text>
                         <text x={tooltipX + 12} y={tooltipY + 73} fill="white" fontSize={isEstimatedTooltip ? '13' : '14'} fontWeight="bold">{tooltipValueText}</text>
@@ -1180,18 +1391,37 @@ const TrendAnalysisView = ({
           ) : (
             <div className="text-center py-12 text-muted-foreground">
               <LineChart className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium mb-2">
-                {gaSiteVisitsMode
-                  ? 'Välj program för att visa besökstrender'
-                  : gaListensMode
-                    ? 'Välj program för att visa lyssnartrender'
-                    : 'Välj konton och datapunkt för att visa trend'}
-              </p>
-              <p className="text-sm">
-                {selectedAccounts.length === 0
-                  ? `Markera minst ett ${(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konto'} i listan ovan`
-                  : loading ? 'Laddar trenddata...' : 'Valda konton är redo'}
-              </p>
+              {isYoY ? (
+                <>
+                  <p className="text-lg font-medium mb-2">År över år</p>
+                  <p className="text-sm">
+                    {yoyUnsupported
+                      ? 'År över år stöds inte för uppskattade unika klick.'
+                      : !yoyKey
+                        ? `Välj ett ${(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konto'} i listan ovan.`
+                        : yoyLoading
+                          ? 'Laddar...'
+                          : yoyYearInfos.length < 2
+                            ? 'Behöver minst två år med data för det här värdet.'
+                            : 'Välj minst ett årtal.'}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-medium mb-2">
+                    {gaSiteVisitsMode
+                      ? 'Välj program för att visa besökstrender'
+                      : gaListensMode
+                        ? 'Välj program för att visa lyssnartrender'
+                        : 'Välj konton och datapunkt för att visa trend'}
+                  </p>
+                  <p className="text-sm">
+                    {selectedAccounts.length === 0
+                      ? `Markera minst ett ${(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konto'} i listan ovan`
+                      : loading ? 'Laddar trenddata...' : 'Valda konton är redo'}
+                  </p>
+                </>
+              )}
             </div>
           )}
         </CardContent>
