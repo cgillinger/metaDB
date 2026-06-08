@@ -85,6 +85,60 @@ export const IG_COLUMN_MAPPINGS_EN = {
   "Saves": "saves"
 };
 
+// TikTok Video CSV (per inlägg) — svenska rubriker
+// Note: TikTok exporterar inte konto-id/sidnamn i CSV:n — handle extraheras ur Videolänk-URL.
+export const TIKTOK_VIDEO_COLUMN_MAPPINGS = {
+  "Videotitel": "description",
+  "Videolänk": "permalink",
+  "Publiceringstid": "publish_time",
+  "Videovisningar": "views",
+  "Gilla-markeringar": "likes",
+  "Kommentarer": "comments",
+  "Delningar": "shares",
+  "Lägg till i Favoriter": "saves"
+};
+
+// TikTok Video CSV (per inlägg) — engelska rubriker (TikTok exporterar i UI-språket)
+export const TIKTOK_VIDEO_COLUMN_MAPPINGS_EN = {
+  "Video title": "description",
+  "Video link": "permalink",
+  "Post time": "publish_time",
+  "Video views": "views",
+  "Likes": "likes",
+  "Comments": "comments",
+  "Shares": "shares",
+  "Add to favorites": "saves"
+};
+
+// TikTok Översikt CSV (per dag, kontonivå) — svenska rubriker
+// Konto saknas i filen — måste anges av användaren vid uppladdning.
+// Affärsfält (product_*, website_clicks, phone_clicks, collected_leads, app_download_clicks)
+// är medvetet uteslutna — de är alltid 0 i Sveriges Radios export och tillför inget värde.
+export const TIKTOK_OVERVIEW_COLUMN_MAPPINGS = {
+  "Datum": "date",
+  "Videovisningar": "video_views",
+  "Målgrupp som nåtts": "reach",
+  "Profilvisningar": "profile_views",
+  "Gilla-markeringar": "likes",
+  "Delningar": "shares",
+  "Kommentarer": "comments",
+  "Nya följare": "new_followers",
+  "Tappade följare": "lost_followers"
+};
+
+// TikTok Översikt CSV — engelska rubriker
+export const TIKTOK_OVERVIEW_COLUMN_MAPPINGS_EN = {
+  "Date": "date",
+  "Video views": "video_views",
+  "Reached audience": "reach",
+  "Profile views": "profile_views",
+  "Likes": "likes",
+  "Shares": "shares",
+  "Comments": "comments",
+  "New followers": "new_followers",
+  "Lost followers": "lost_followers"
+};
+
 // Display names for UI (Swedish)
 export const DISPLAY_NAMES = {
   'post_id': 'Publicerings-ID',
@@ -115,21 +169,40 @@ export const DISPLAY_NAMES = {
 // Info tooltips explaining what engagement means per platform
 export const ENGAGEMENT_INFO = {
   facebook: 'Engagemang enligt Meta: reaktioner, kommentarer, delningar och klick',
-  instagram: 'Engagemang: gilla, kommentarer, delningar, sparade och följare'
+  instagram: 'Engagemang: gilla, kommentarer, delningar, sparade och följare',
+  tiktok: 'TikTok-engagemang per inlägg: gilla + kommentarer + delningar + favoriter'
 };
 
 export const INTERACTIONS_INFO = {
   facebook: 'Interaktioner: reaktioner + kommentarer + delningar',
-  instagram: 'Interaktioner: gilla-markeringar + kommentarer + delningar'
+  instagram: 'Interaktioner: gilla-markeringar + kommentarer + delningar',
+  tiktok: 'Interaktioner: gilla + kommentarer + delningar'
 };
 
+// TikTok Översikt daily engagement (skild från per-inlägg-engagemang ovan)
+export const TIKTOK_DAILY_ENGAGEMENT_INFO =
+  'TikTok dagsengagemang: gilla + kommentarer + delningar + nya följare. ' +
+  'Skiljer sig från engagemang per inlägg (räknar in nya följare, ej favoriter).';
+
 /**
- * Detect platform from CSV headers
- * Returns 'facebook', 'instagram', or null
+ * Detect platform from CSV headers.
+ * Returns 'facebook' | 'instagram' | 'tiktok' (Video-CSV) | null.
+ * TikTok Översikt-CSV detekteras separat via isTikTokOverviewCSV() — den
+ * lagras i en egen tabell och delar inte posts-pipeline.
  */
 export function detectPlatform(headers) {
   if (!headers || !Array.isArray(headers)) return null;
   const headerSet = new Set(headers.map(h => normalizeText(h)));
+
+  // TikTok Video-CSV: kombinationen Videotitel + Videolänk + Videovisningar är unik
+  // (Meta använder andra rubriker, ingen kollision).
+  if (
+    (headerSet.has(normalizeText('Videotitel')) || headerSet.has(normalizeText('Video title'))) &&
+    (headerSet.has(normalizeText('Videolänk')) || headerSet.has(normalizeText('Video link'))) &&
+    (headerSet.has(normalizeText('Videovisningar')) || headerSet.has(normalizeText('Video views')))
+  ) {
+    return 'tiktok';
+  }
 
   // Swedish Facebook
   if (headerSet.has(normalizeText('Sid-id')) || headerSet.has(normalizeText('Sidnamn'))) {
@@ -151,12 +224,53 @@ export function detectPlatform(headers) {
 }
 
 /**
+ * Detect TikTok Översikt-CSV (per dag, kontonivå).
+ * Unik signatur: Datum + Målgrupp som nåtts + Profilvisningar (eller engelska motsvarigheter).
+ * Skild från detectPlatform() eftersom Översikt-data lagras i egen tabell.
+ */
+export function isTikTokOverviewCSV(headers) {
+  if (!headers || !Array.isArray(headers)) return false;
+  const headerSet = new Set(headers.map(h => normalizeText(h)));
+  const hasDate = headerSet.has(normalizeText('Datum')) || headerSet.has(normalizeText('Date'));
+  const hasReach = headerSet.has(normalizeText('Målgrupp som nåtts')) || headerSet.has(normalizeText('Reached audience'));
+  const hasProfileViews = headerSet.has(normalizeText('Profilvisningar')) || headerSet.has(normalizeText('Profile views'));
+  // Måste vara TikTok-specifikt — Datum ensamt räcker inte (förekommer i andra filer).
+  // Kombinationen Datum + räckvidd + profilvisningar är unik för TikTok-översikten.
+  return hasDate && hasReach && hasProfileViews;
+}
+
+/**
  * Get column mappings for a detected platform
  */
 export function getMappingsForPlatform(platform) {
   if (platform === 'facebook') return { ...FB_COLUMN_MAPPINGS, ...FB_COLUMN_MAPPINGS_EN };
   if (platform === 'instagram') return { ...IG_COLUMN_MAPPINGS, ...IG_COLUMN_MAPPINGS_EN };
-  return { ...FB_COLUMN_MAPPINGS, ...FB_COLUMN_MAPPINGS_EN, ...IG_COLUMN_MAPPINGS, ...IG_COLUMN_MAPPINGS_EN };
+  if (platform === 'tiktok') return { ...TIKTOK_VIDEO_COLUMN_MAPPINGS, ...TIKTOK_VIDEO_COLUMN_MAPPINGS_EN };
+  return {
+    ...FB_COLUMN_MAPPINGS, ...FB_COLUMN_MAPPINGS_EN,
+    ...IG_COLUMN_MAPPINGS, ...IG_COLUMN_MAPPINGS_EN,
+    ...TIKTOK_VIDEO_COLUMN_MAPPINGS, ...TIKTOK_VIDEO_COLUMN_MAPPINGS_EN,
+  };
+}
+
+/**
+ * Get TikTok Översikt column mappings (separate from getMappingsForPlatform
+ * since Översikt is stored in its own table).
+ */
+export function getTikTokOverviewMappings() {
+  return { ...TIKTOK_OVERVIEW_COLUMN_MAPPINGS, ...TIKTOK_OVERVIEW_COLUMN_MAPPINGS_EN };
+}
+
+/**
+ * Extract TikTok handle from a video URL.
+ * Pattern: https://www.tiktok.com/@<handle>/video/<post_id>
+ * Returns { handle, post_id } or null if URL doesn't match.
+ */
+export function parseTikTokVideoUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const m = url.match(/tiktok\.com\/@([\w.-]+)\/video\/(\d+)/i);
+  if (!m) return null;
+  return { handle: m[1], post_id: m[2] };
 }
 
 /**

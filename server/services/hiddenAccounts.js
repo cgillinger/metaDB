@@ -82,3 +82,14 @@ export function hiddenIGReachFilter(alias) {
   const prefix = alias ? `${alias}.` : '';
   return `AND ${prefix}account_name NOT IN (SELECT account_name FROM hidden_accounts WHERE platform = 'instagram')`;
 }
+
+/**
+ * Filter for TikTok Översikt-tabellen (tiktok_account_daily).
+ * Använder account_username (handle) som identifierare — hidden_accounts.account_name
+ * lagrar handlen för platform = 'tiktok_overview'.
+ * @param {string} [alias]
+ */
+export function hiddenTikTokOverviewFilter(alias) {
+  const prefix = alias ? `${alias}.` : '';
+  return `AND ${prefix}account_username NOT IN (SELECT account_name FROM hidden_accounts WHERE platform = 'tiktok_overview')`;
+}

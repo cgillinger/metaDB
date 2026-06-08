@@ -90,6 +90,56 @@ export const IG_COLUMN_MAPPINGS_EN = {
   "Saves": "saves"
 };
 
+// TikTok Video CSV (per inlägg) — svenska rubriker
+export const TIKTOK_VIDEO_COLUMN_MAPPINGS = {
+  "Videotitel": "description",
+  "Videolänk": "permalink",
+  "Publiceringstid": "publish_time",
+  "Videovisningar": "views",
+  "Gilla-markeringar": "likes",
+  "Kommentarer": "comments",
+  "Delningar": "shares",
+  "Lägg till i Favoriter": "saves"
+};
+
+// TikTok Video CSV (per inlägg) — engelska rubriker
+export const TIKTOK_VIDEO_COLUMN_MAPPINGS_EN = {
+  "Video title": "description",
+  "Video link": "permalink",
+  "Post time": "publish_time",
+  "Video views": "views",
+  "Likes": "likes",
+  "Comments": "comments",
+  "Shares": "shares",
+  "Add to favorites": "saves"
+};
+
+// TikTok Översikt CSV (per dag, kontonivå) — svenska rubriker
+export const TIKTOK_OVERVIEW_COLUMN_MAPPINGS = {
+  "Datum": "date",
+  "Videovisningar": "video_views",
+  "Målgrupp som nåtts": "reach",
+  "Profilvisningar": "profile_views",
+  "Gilla-markeringar": "likes",
+  "Delningar": "shares",
+  "Kommentarer": "comments",
+  "Nya följare": "new_followers",
+  "Tappade följare": "lost_followers"
+};
+
+// TikTok Översikt CSV — engelska rubriker
+export const TIKTOK_OVERVIEW_COLUMN_MAPPINGS_EN = {
+  "Date": "date",
+  "Video views": "video_views",
+  "Reached audience": "reach",
+  "Profile views": "profile_views",
+  "Likes": "likes",
+  "Shares": "shares",
+  "Comments": "comments",
+  "New followers": "new_followers",
+  "Lost followers": "lost_followers"
+};
+
 // Display names for UI (Swedish)
 export const DISPLAY_NAMES = {
   'post_id': 'Publicerings-ID',
@@ -117,26 +167,46 @@ export const DISPLAY_NAMES = {
   'posts_per_day': 'Publiceringar per dag',
   'estimated_unique_clicks': 'Uppsk. unika klickare',
   'avg_daily_link_clicks': 'Länkklick snitt/dag',
+  'video_views': 'Videovisningar',
+  'profile_views': 'Profilvisningar',
+  'new_followers': 'Nya följare',
+  'lost_followers': 'Tappade följare',
+  'net_follower_growth': 'Nettotillväxt följare',
 };
 
 // Info tooltips explaining what engagement means per platform
 export const ENGAGEMENT_INFO = {
   facebook: 'Engagemang enligt Meta: reaktioner, kommentarer, delningar och klick',
-  instagram: 'Engagemang: gilla, kommentarer, delningar, sparade och följare'
+  instagram: 'Engagemang: gilla, kommentarer, delningar, sparade och följare',
+  tiktok: 'TikTok-engagemang per inlägg: gilla + kommentarer + delningar + favoriter'
 };
 
 export const INTERACTIONS_INFO = {
   facebook: 'Interaktioner: reaktioner + kommentarer + delningar',
-  instagram: 'Interaktioner: gilla-markeringar + kommentarer + delningar'
+  instagram: 'Interaktioner: gilla-markeringar + kommentarer + delningar',
+  tiktok: 'Interaktioner: gilla + kommentarer + delningar'
 };
 
+export const TIKTOK_DAILY_ENGAGEMENT_INFO =
+  'TikTok dagsengagemang: gilla + kommentarer + delningar + nya följare. ' +
+  'Skiljer sig från engagemang per inlägg (räknar in nya följare, ej favoriter).';
+
 /**
- * Detect platform from CSV headers
- * Returns 'facebook', 'instagram', or null
+ * Detect platform from CSV headers.
+ * Returns 'facebook' | 'instagram' | 'tiktok' (Video-CSV) | null.
  */
 export function detectPlatform(headers) {
   if (!headers || !Array.isArray(headers)) return null;
   const headerSet = new Set(headers.map(h => normalizeText(h)));
+
+  // TikTok Video-CSV
+  if (
+    (headerSet.has(normalizeText('Videotitel')) || headerSet.has(normalizeText('Video title'))) &&
+    (headerSet.has(normalizeText('Videolänk')) || headerSet.has(normalizeText('Video link'))) &&
+    (headerSet.has(normalizeText('Videovisningar')) || headerSet.has(normalizeText('Video views')))
+  ) {
+    return 'tiktok';
+  }
 
   // Swedish Facebook
   if (headerSet.has(normalizeText('Sid-id')) || headerSet.has(normalizeText('Sidnamn'))) {
@@ -158,12 +228,41 @@ export function detectPlatform(headers) {
 }
 
 /**
+ * Detect TikTok Översikt-CSV (per dag, kontonivå).
+ * Lagras i egen tabell, ej via posts-pipeline.
+ */
+export function isTikTokOverviewCSV(headers) {
+  if (!headers || !Array.isArray(headers)) return false;
+  const headerSet = new Set(headers.map(h => normalizeText(h)));
+  const hasDate = headerSet.has(normalizeText('Datum')) || headerSet.has(normalizeText('Date'));
+  const hasReach = headerSet.has(normalizeText('Målgrupp som nåtts')) || headerSet.has(normalizeText('Reached audience'));
+  const hasProfileViews = headerSet.has(normalizeText('Profilvisningar')) || headerSet.has(normalizeText('Profile views'));
+  return hasDate && hasReach && hasProfileViews;
+}
+
+/**
  * Get column mappings for a detected platform
  */
 export function getMappingsForPlatform(platform) {
   if (platform === 'facebook') return { ...FB_COLUMN_MAPPINGS, ...FB_COLUMN_MAPPINGS_EN };
   if (platform === 'instagram') return { ...IG_COLUMN_MAPPINGS, ...IG_COLUMN_MAPPINGS_EN };
-  return { ...FB_COLUMN_MAPPINGS, ...FB_COLUMN_MAPPINGS_EN, ...IG_COLUMN_MAPPINGS, ...IG_COLUMN_MAPPINGS_EN };
+  if (platform === 'tiktok') return { ...TIKTOK_VIDEO_COLUMN_MAPPINGS, ...TIKTOK_VIDEO_COLUMN_MAPPINGS_EN };
+  return {
+    ...FB_COLUMN_MAPPINGS, ...FB_COLUMN_MAPPINGS_EN,
+    ...IG_COLUMN_MAPPINGS, ...IG_COLUMN_MAPPINGS_EN,
+    ...TIKTOK_VIDEO_COLUMN_MAPPINGS, ...TIKTOK_VIDEO_COLUMN_MAPPINGS_EN,
+  };
+}
+
+/**
+ * Extract TikTok handle from a video URL.
+ * Pattern: https://www.tiktok.com/@<handle>/video/<post_id>
+ */
+export function parseTikTokVideoUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const m = url.match(/tiktok\.com\/@([\w.-]+)\/video\/(\d+)/i);
+  if (!m) return null;
+  return { handle: m[1], post_id: m[2] };
 }
 
 /**
@@ -235,6 +334,10 @@ export function getValue(dataObject, targetField) {
       // FB engagement = interactions + clicks
       const totalClicks = safeParseValue(dataObject.total_clicks) || 0;
       return likes + comments + shares + totalClicks;
+    } else if (platform === 'tiktok') {
+      // TikTok per-inlägg engagement = likes + comments + shares + saves
+      const saves = safeParseValue(dataObject.saves) || 0;
+      return likes + comments + shares + saves;
     } else {
       // IG engagement = likes + comments + shares + saves + follows
       const saves = safeParseValue(dataObject.saves) || 0;
