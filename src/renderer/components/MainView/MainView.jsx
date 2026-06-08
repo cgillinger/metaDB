@@ -134,6 +134,11 @@ const EngagementLegend = ({ activePlatform }) => (
         <span className="font-medium text-foreground">Instagram:</span> gilla + kommentarer + delningar + sparade + följare
       </p>
     )}
+    {activePlatform === 'tiktok' && (
+      <p className="text-muted-foreground">
+        <span className="font-medium text-foreground">TikTok:</span> gilla + kommentarer + delningar + favoriter (per inlägg)
+      </p>
+    )}
   </div>
 );
 

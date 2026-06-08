@@ -9,6 +9,8 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import InfoTooltip from '../ui/InfoTooltip';
+import PlatformBadge from '../ui/PlatformBadge';
+import ProfileIcon from '../ui/ProfileIcon';
 import { Activity, RefreshCw } from 'lucide-react';
 import { api } from '@/utils/apiClient';
 import { TIKTOK_DAILY_ENGAGEMENT_INFO } from '@/utils/columnConfig';
@@ -43,7 +45,6 @@ const TikTokOverviewSummary = ({ periodParams = {} }) => {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
   }, [periodParams.months, periodParams.dateFrom, periodParams.dateTo]);
 
   if (loading) {
@@ -89,7 +90,6 @@ const TikTokOverviewSummary = ({ periodParams = {} }) => {
       month_count: a.months.length,
       video_views: sum('video_views'),
       avg_daily_reach: totalDays > 0 ? Math.round(weightedReach / totalDays) : 0,
-      peak_daily_reach: Math.max(...a.months.map(m => m.peak_daily_reach || 0)),
       profile_views: sum('profile_views'),
       new_followers: sum('new_followers'),
       lost_followers: sum('lost_followers'),
@@ -120,20 +120,19 @@ const TikTokOverviewSummary = ({ periodParams = {} }) => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Konto</TableHead>
-                <TableHead className="text-right">Dagar</TableHead>
-                <TableHead className="text-right">Visningar (sum)</TableHead>
+                <TableHead className="w-[280px]">Konto</TableHead>
+                <TableHead className="text-right">Visningar</TableHead>
                 <TableHead className="text-right">
-                  Räckvidd / dag (snitt)
-                  <InfoTooltip text="Räckvidd är icke-summerbar — visas som genomsnitt per dag över valda månader." />
+                  Räckvidd&nbsp;/&nbsp;dag
+                  <InfoTooltip text="Genomsnittlig dagsräckvidd över valda månader. Räckvidd är icke-summerbar (samma person kan nås flera dagar)." />
                 </TableHead>
-                <TableHead className="text-right">Topp dagsräckvidd</TableHead>
-                <TableHead className="text-right">Profilvisningar (sum)</TableHead>
-                <TableHead className="text-right">Nya följare</TableHead>
-                <TableHead className="text-right">Tappade följare</TableHead>
-                <TableHead className="text-right">Netto-tillväxt</TableHead>
+                <TableHead className="text-right">Profilvisningar</TableHead>
                 <TableHead className="text-right">
-                  Dagsengagemang (sum)
+                  Följartillväxt
+                  <InfoTooltip text="Netto över perioden (nya − tappade). Underlag visas i grönt/rött." />
+                </TableHead>
+                <TableHead className="text-right">
+                  Dagsengagemang
                   <InfoTooltip text={TIKTOK_DAILY_ENGAGEMENT_INFO} />
                 </TableHead>
               </TableRow>
@@ -142,32 +141,50 @@ const TikTokOverviewSummary = ({ periodParams = {} }) => {
               {rows.map(r => (
                 <TableRow key={r.account_username}>
                   <TableCell className="font-medium">
-                    {r.account_name || r.account_username}
-                    {r.account_name && r.account_name !== r.account_username && (
-                      <span className="text-xs text-muted-foreground ml-1">@{r.account_username}</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <ProfileIcon accountName={r.account_name || r.account_username} size="sm" />
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{r.account_name || r.account_username}</span>
+                          <PlatformBadge platform="tiktok_overview" />
+                        </div>
+                        {r.account_name && r.account_name !== r.account_username && (
+                          <span className="text-xs text-muted-foreground">@{r.account_username}</span>
+                        )}
+                      </div>
+                    </div>
                   </TableCell>
-                  <TableCell className="text-right">{r.day_count}</TableCell>
-                  <TableCell className="text-right">{fmt(r.video_views)}</TableCell>
-                  <TableCell className="text-right">{fmt(r.avg_daily_reach)}</TableCell>
-                  <TableCell className="text-right">{fmt(r.peak_daily_reach)}</TableCell>
-                  <TableCell className="text-right">{fmt(r.profile_views)}</TableCell>
-                  <TableCell className="text-right text-green-700">{fmt(r.new_followers)}</TableCell>
-                  <TableCell className="text-right text-red-700">{fmt(r.lost_followers)}</TableCell>
-                  <TableCell className={`text-right font-medium ${r.net_follower_growth >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                    {r.net_follower_growth > 0 ? '+' : ''}{fmt(r.net_follower_growth)}
+                  <TableCell className="text-right tabular-nums">{fmt(r.video_views)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmt(r.avg_daily_reach)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmt(r.profile_views)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    <div className={`font-medium ${r.net_follower_growth >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                      {r.net_follower_growth > 0 ? '+' : ''}{fmt(r.net_follower_growth)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <span className="text-green-700">↑{fmt(r.new_followers)}</span>
+                      {' / '}
+                      <span className="text-red-700">↓{fmt(r.lost_followers)}</span>
+                    </div>
                   </TableCell>
-                  <TableCell className="text-right">{fmt(r.daily_engagement_sum)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmt(r.daily_engagement_sum)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
-        <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          <strong>Data från TikTok Översikt-export</strong> (per dag, kontonivå) —
-          skild från Video-CSV:n (per inlägg) som visas i tabellen "Per konto".
-          Räckvidd är icke-summerbar invariant och visas som genomsnitt per dag.
-        </p>
+        <div className="text-xs text-muted-foreground mt-3 space-y-1.5 leading-relaxed">
+          <p>
+            <strong>Källa: TikTok Översikt-export</strong> (en rad per dag).
+            "Visningar" här = TikTok-sidans samlade <em>dagsvisningar</em> summerat över
+            perioden — inkluderar visningar på äldre videor som tittas på under perioden.
+          </p>
+          <p>
+            Tabellen "Per konto" nedanför visar i stället visningar på videor som
+            <strong> publicerades i perioden</strong>, oavsett när visningen skedde.
+            Båda är korrekta men mäter olika saker — det är förväntat att talen skiljer sig.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
