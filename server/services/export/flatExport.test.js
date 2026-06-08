@@ -72,13 +72,14 @@ const DATA_TABS = [
   'posts_monthly', 'estimated_unique_clicks_monthly', 'ga_listens_monthly',
   'ga_site_visits_monthly', 'account_reach_monthly', 'posts_groups_monthly',
   'ga_listens_groups_monthly', 'ga_site_visits_groups_monthly',
+  'tiktok_posts_monthly', 'tiktok_overview_monthly', 'tiktok_overview_daily',
   'dim_accounts', 'dim_account_key', 'dim_groups', 'dim_group_members',
 ];
 
-test('(a) all 12 tabs + _LÄS_MIG present, README first', () => {
+test('(a) all 15 data tabs + _LÄS_MIG present, README first', () => {
   assert.equal(wb.SheetNames[0], '_LÄS_MIG');
   for (const t of DATA_TABS) assert.ok(wb.SheetNames.includes(t), `missing tab ${t}`);
-  assert.equal(wb.SheetNames.length, 13);
+  assert.equal(wb.SheetNames.length, 16);
 });
 
 test('normalized_name present on data + dim tabs', () => {

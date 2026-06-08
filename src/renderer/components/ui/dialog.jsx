@@ -32,6 +32,8 @@ const Dialog = ({ open, onOpenChange, children }) => {
 const DialogContent = React.forwardRef(({ className, children, ...props }, ref) => (
   <div
     ref={ref}
+    role="dialog"
+    aria-modal="true"
     className={cn(
       "bg-background rounded-lg shadow-lg w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto",
       className

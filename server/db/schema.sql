@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 CREATE TABLE IF NOT EXISTS imports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   filename TEXT NOT NULL,
-  platform TEXT NOT NULL CHECK(platform IN ('facebook', 'instagram')),
+  platform TEXT NOT NULL CHECK(platform IN ('facebook', 'instagram', 'tiktok')),
   month TEXT NOT NULL,
   imported_at TEXT DEFAULT (datetime('now')),
   row_count INTEGER DEFAULT 0,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS posts (
   publish_time TEXT,
   post_type TEXT,
   permalink TEXT,
-  platform TEXT NOT NULL CHECK(platform IN ('facebook', 'instagram')),
+  platform TEXT NOT NULL CHECK(platform IN ('facebook', 'instagram', 'tiktok')),
   views INTEGER DEFAULT 0,
   reach INTEGER DEFAULT 0,
   likes INTEGER DEFAULT 0,

@@ -27,9 +27,11 @@ const handleResponse = async (res) => {
 export const api = {
   // Imports
   getImports: () => fetchWithRetry('/api/imports').then(handleResponse),
-  uploadCSV: (file) => {
+  uploadCSV: (file, opts = {}) => {
     const formData = new FormData();
     formData.append('file', file);
+    // tiktokAccountName: display-namn för TikTok Video-import (CSV:n saknar Sidnamn)
+    if (opts.tiktokAccountName) formData.append('tiktokAccountName', opts.tiktokAccountName);
     return fetch('/api/imports', { method: 'POST', body: formData }).then(handleResponse);
   },
   deleteImport: (id) =>
@@ -282,6 +284,49 @@ export const api = {
   deleteAccountPosts: (accountName, platform, periodParams) => {
     const params = new URLSearchParams({ accountName, platform, ...periodParams });
     return fetch(`/api/posts/by-account?${params}`, { method: 'DELETE' }).then(handleResponse);
+  },
+
+  // TikTok Översikt (per dag, kontonivå)
+
+  /**
+   * Ladda upp en TikTok Översikt-CSV. accountUsername är handle (t.ex. "p3dingata"),
+   * accountName är display-namn (t.ex. "P3 Din Gata"). Båda krävs för att data ska
+   * kunna kopplas korrekt — handlen finns inte i filen.
+   */
+  uploadTikTokOverviewCSV: (file, accountUsername, accountName) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('accountUsername', accountUsername);
+    if (accountName) formData.append('accountName', accountName);
+    return fetch('/api/tiktok-overview', { method: 'POST', body: formData }).then(handleResponse);
+  },
+
+  getTikTokOverviewMonths: () =>
+    fetchWithRetry('/api/tiktok-overview/months').then(handleResponse),
+
+  /** Distinkta TikTok-konton med Översikt-data (handle + display-namn). */
+  getTikTokOverviewAccounts: () =>
+    fetchWithRetry('/api/tiktok-overview/accounts').then(handleResponse),
+
+  getTikTokOverviewSummary: (months) => {
+    const params = months && months.length > 0
+      ? '?' + new URLSearchParams({ months: months.join(',') })
+      : '';
+    return fetchWithRetry(`/api/tiktok-overview/summary${params}`).then(handleResponse);
+  },
+
+  getTikTokOverviewDaily: (account, months) => {
+    const params = new URLSearchParams({ account });
+    if (months && months.length > 0) params.set('months', months.join(','));
+    return fetchWithRetry(`/api/tiktok-overview/daily?${params}`).then(handleResponse);
+  },
+
+  deleteTikTokOverviewMonth: (month) =>
+    fetch(`/api/tiktok-overview/${month}`, { method: 'DELETE' }).then(handleResponse),
+
+  deleteTikTokOverviewByAccount: (account, month) => {
+    const params = new URLSearchParams({ account, month });
+    return fetch(`/api/tiktok-overview/by-account?${params}`, { method: 'DELETE' }).then(handleResponse);
   },
 };
 

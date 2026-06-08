@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import PlatformBadge from '../ui/PlatformBadge';
 import InfoTooltip from '../ui/InfoTooltip';
 import CollabBadge from '../ui/CollabBadge';
+import DescriptionCell from '../ui/DescriptionCell';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet } from 'lucide-react';
@@ -359,7 +360,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
                         {post.is_collab ? <CollabBadge compact /> : null}
                       </div>
                       <div className="text-sm leading-relaxed">
-                        {post.description || '-'}
+                        <DescriptionCell description={post.description} lines={3} />
                       </div>
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                         <span>{formatDateHuman(post.publish_time)}</span>

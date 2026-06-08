@@ -22,6 +22,7 @@ import hiddenAccountsRouter from './routes/hiddenAccounts.js';
 import comparisonRouter from './routes/comparison.js';
 import platformTrendsRouter from './routes/platformTrends.js';
 import exportRouter from './routes/export.js';
+import tiktokOverviewRouter from './routes/tiktokOverview.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -93,6 +94,7 @@ app.use('/api/account-groups', accountGroupsRouter);
 app.use('/api/comparison', comparisonRouter);
 app.use('/api/platform-trends', platformTrendsRouter);
 app.use('/api/export', exportRouter);
+app.use('/api/tiktok-overview', tiktokOverviewRouter);
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {

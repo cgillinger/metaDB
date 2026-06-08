@@ -59,10 +59,27 @@ function runMigrations(db) {
     if (isNaN(version) || version <= currentVersion) continue;
 
     const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
-    db.transaction(() => {
-      db.exec(sql);
-      db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(version);
-    })();
+    // Foreign-key enforcement must be toggled OUTSIDE a transaction — PRAGMA
+    // foreign_keys is a no-op within one. Migrations that rebuild an
+    // FK-referenced table via the table-swap pattern (DROP + recreate) would
+    // otherwise fire ON DELETE CASCADE and silently wipe child rows. Disable
+    // enforcement around the migration, then re-enable and verify integrity.
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.exec(sql);
+        db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(version);
+      })();
+      const violations = db.pragma('foreign_key_check');
+      if (violations.length > 0) {
+        throw new Error(
+          `Migration ${file} left ${violations.length} foreign key violation(s): ` +
+          JSON.stringify(violations)
+        );
+      }
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
 
     console.log(`Applied migration ${file}`);
   }
