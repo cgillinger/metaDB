@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -15,6 +15,29 @@ import {
 import Papa from 'papaparse';
 import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
+import { parseTikTokVideoUrl } from '@/utils/columnConfig';
+
+// Svenska månadsord — används för att strippa månadsprefix från TikTok-filnamn
+// (t.ex. "AprilP3_Din_GataVideo.csv" → "P3 Din Gata").
+const SV_MONTH_PREFIXES = [
+  'Januari', 'Februari', 'Mars', 'April', 'Maj', 'Juni',
+  'Juli', 'Augusti', 'September', 'Oktober', 'November', 'December',
+];
+
+/**
+ * Härled ett föreslaget display-namn ur ett TikTok-filnamn.
+ * Mönster: "<Månad><Konto>Video.csv" eller "<Månad><Konto>_versikt.csv"
+ * (versikt = "översikt" med stripat ö i URL-encoded filnamn).
+ */
+function suggestTikTokAccountName(filename) {
+  if (!filename) return '';
+  let s = filename.replace(/\.csv$/i, '');
+  for (const m of SV_MONTH_PREFIXES) {
+    if (s.startsWith(m)) { s = s.slice(m.length); break; }
+  }
+  s = s.replace(/Video$/i, '').replace(/_versikt$/i, '').replace(/_/g, ' ').trim();
+  return s;
+}
 
 const FILE_STATUS = {
   PENDING: 'pending',
@@ -29,6 +52,37 @@ export function FileUploader({ onImportComplete, onCancel }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [batchResult, setBatchResult] = useState(null);
   const fileInputRef = useRef(null);
+  // Karta över TikTok-handles vi redan känner till — handle → display-namn.
+  // Hämtas vid mount och uppdateras efter varje lyckad import. Används för att
+  // (a) auto-föreslå konto för Översikt-filer, (b) auto-fylla display-namn för
+  // Video-filer vars handle vi sett tidigare.
+  const [tiktokAccounts, setTiktokAccounts] = useState({}); // handle → display_name
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // Posts-baserade TikTok-konton (Video-import skapar dessa)
+        const accountsRes = await api.getAccounts({ fields: 'post_count', platform: 'tiktok' }).catch(() => ({ accounts: [] }));
+        // Översikt-baserade TikTok-konton
+        const overviewRes = await api.getTikTokOverviewAccounts().catch(() => ({ accounts: [] }));
+        if (cancelled) return;
+        const map = {};
+        for (const a of accountsRes.accounts || []) {
+          if (a.account_username) map[a.account_username] = a.account_name || a.account_username;
+        }
+        for (const a of overviewRes.accounts || []) {
+          if (a.account_username && !map[a.account_username]) {
+            map[a.account_username] = a.account_name || a.account_username;
+          }
+        }
+        setTiktokAccounts(map);
+      } catch (e) {
+        // Tyst — användaren kan ändå skriva in nytt konto manuellt.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const addFiles = useCallback(async (newFiles) => {
     const csvFiles = Array.from(newFiles).filter(
@@ -52,13 +106,28 @@ export function FileUploader({ onImportComplete, onCancel }) {
         reader.readAsText(file.slice(0, 4096));
       });
 
+      // TikTok Video-CSV: Videotitel + Videolänk + Videovisningar (eller engelska motsvarigheter).
+      // Unik kombo, ingen kollision med Meta-exporter.
+      const previewSet = new Set(preview.map(h => (h || '').trim()));
+      const isTikTokVideo =
+        (previewSet.has('Videotitel') || previewSet.has('Video title')) &&
+        (previewSet.has('Videolänk') || previewSet.has('Video link')) &&
+        (previewSet.has('Videovisningar') || previewSet.has('Video views'));
+
+      // TikTok Översikt-CSV: Datum + Målgrupp som nåtts + Profilvisningar.
+      const isTikTokOverview = !isTikTokVideo &&
+        (previewSet.has('Datum') || previewSet.has('Date')) &&
+        (previewSet.has('Målgrupp som nåtts') || previewSet.has('Reached audience')) &&
+        (previewSet.has('Profilvisningar') || previewSet.has('Profile views'));
+
       // Reach export: identified by the combination of Page, Page ID and Reach headers
-      const isReach = preview.includes('Page') &&
+      const isReach = !isTikTokVideo && !isTikTokOverview &&
+                      preview.includes('Page') &&
                       preview.includes('Page ID') &&
                       preview.includes('Reach');
 
       // GA listens export: must have Programnamn and at least one listening column
-      const isGaListens = !isReach &&
+      const isGaListens = !isReach && !isTikTokVideo && !isTikTokOverview &&
         preview.includes('Programnamn') &&
         preview.some(h => {
           const lower = h.toLowerCase();
@@ -68,12 +137,12 @@ export function FileUploader({ onImportComplete, onCancel }) {
         });
 
       // GA site visits export: must have Programnamn and a "besök" column
-      const isGaSiteVisits = !isReach && !isGaListens &&
+      const isGaSiteVisits = !isReach && !isGaListens && !isTikTokVideo && !isTikTokOverview &&
         preview.includes('Programnamn') &&
         preview.some(h => h.toLowerCase().includes('besök'));
 
       // IG reach export: ig_username + ig_name + Reach + Period_start
-      const isIGReach = !isReach && !isGaListens && !isGaSiteVisits &&
+      const isIGReach = !isReach && !isGaListens && !isGaSiteVisits && !isTikTokVideo && !isTikTokOverview &&
         preview.includes('ig_username') &&
         preview.includes('ig_name') &&
         preview.includes('Reach') &&
@@ -104,6 +173,37 @@ export function FileUploader({ onImportComplete, onCancel }) {
       else if (isGaListens) fileType = 'ga_listens';
       else if (isGaSiteVisits) fileType = 'ga_site_visits';
       else if (isIGReach) fileType = 'ig_reach';
+      else if (isTikTokVideo) fileType = 'tiktok_video';
+      else if (isTikTokOverview) fileType = 'tiktok_overview';
+
+      // TikTok: extrahera handle ur Videolänk (Video) eller från filnamnsförslag (Översikt).
+      // Display-namn fylls i från känt handle-mapping eller filnamn.
+      let tiktokHandle = '';
+      let tiktokAccountName = '';
+      if (isTikTokVideo) {
+        const link = firstRow['Videolänk'] || firstRow['Video link'];
+        const parsed = link ? parseTikTokVideoUrl(String(link)) : null;
+        if (parsed) tiktokHandle = parsed.handle;
+        if (tiktokHandle && tiktokAccounts[tiktokHandle]) {
+          tiktokAccountName = tiktokAccounts[tiktokHandle];
+        } else {
+          tiktokAccountName = suggestTikTokAccountName(file.name);
+        }
+      } else if (isTikTokOverview) {
+        // Försök matcha filnamns-förslaget mot ett känt display-namn → fyll i handle
+        const suggested = suggestTikTokAccountName(file.name);
+        if (suggested) {
+          const match = Object.entries(tiktokAccounts).find(
+            ([, name]) => name.toLowerCase() === suggested.toLowerCase()
+          );
+          if (match) {
+            tiktokHandle = match[0];
+            tiktokAccountName = match[1];
+          } else {
+            tiktokAccountName = suggested; // visas som förslag; handle måste väljas
+          }
+        }
+      }
 
       fileEntries.push({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
@@ -116,6 +216,8 @@ export function FileUploader({ onImportComplete, onCancel }) {
         reachHasPeriodStart: isReach ? reachHasPeriodStart : false,
         gaListensMonth: isGaListens ? autoMonth : '',
         gaSiteVisitsMonth: isGaSiteVisits ? autoMonth : '',
+        tiktokHandle,
+        tiktokAccountName,
       });
     }
 
@@ -206,6 +308,19 @@ export function FileUploader({ onImportComplete, onCancel }) {
           result = await api.uploadGASiteVisitsCSV(entry.file, entry.gaSiteVisitsMonth);
         } else if (entry.fileType === 'ig_reach') {
           result = await api.uploadIGReachCSV(entry.file);
+        } else if (entry.fileType === 'tiktok_video') {
+          // Video-CSV: handle finns redan i URL:n; vi skickar bara display-namnet så att
+          // server-importen kan fylla account_name korrekt.
+          result = await api.uploadCSV(entry.file, { tiktokAccountName: entry.tiktokAccountName });
+        } else if (entry.fileType === 'tiktok_overview') {
+          if (!entry.tiktokHandle) {
+            throw new Error('Välj TikTok-konto innan du laddar upp Översikt-filen.');
+          }
+          result = await api.uploadTikTokOverviewCSV(
+            entry.file,
+            entry.tiktokHandle,
+            entry.tiktokAccountName || entry.tiktokHandle,
+          );
         } else {
           result = await api.uploadCSV(entry.file);
         }
@@ -218,6 +333,20 @@ export function FileUploader({ onImportComplete, onCancel }) {
             platform: result.import?.platform,
           } : f
         ));
+        // När ett nytt TikTok-konto kommer in via Video- eller Översikt-import,
+        // uppdatera handle→namn-mappen så att ev. parade Översikt-filer i samma
+        // batch får upp kontot i dropdownen.
+        if (entry.fileType === 'tiktok_video' && entry.tiktokHandle) {
+          setTiktokAccounts(prev => ({
+            ...prev,
+            [entry.tiktokHandle]: entry.tiktokAccountName || prev[entry.tiktokHandle] || entry.tiktokHandle,
+          }));
+        } else if (entry.fileType === 'tiktok_overview' && result.account_username) {
+          setTiktokAccounts(prev => ({
+            ...prev,
+            [result.account_username]: result.account_name || prev[result.account_username] || result.account_username,
+          }));
+        }
       } catch (err) {
         failed++;
         setFiles(prev => prev.map(f =>
@@ -239,6 +368,10 @@ export function FileUploader({ onImportComplete, onCancel }) {
 
   const pendingCount = files.filter(f => f.status === FILE_STATUS.PENDING).length;
   const failedCount = files.filter(f => f.status === FILE_STATUS.ERROR).length;
+  // Översikt-CSV utan valt konto kan inte laddas upp — blockera knappen.
+  const missingTikTokAccount = files.some(f =>
+    f.status === FILE_STATUS.PENDING && f.fileType === 'tiktok_overview' && !f.tiktokHandle
+  );
 
   return (
     <div className="space-y-4">
@@ -366,6 +499,16 @@ export function FileUploader({ onImportComplete, onCancel }) {
                             Kontoräckvidd IG (API)
                           </span>
                         )}
+                        {entry.fileType === 'tiktok_video' && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-black text-white">
+                            TikTok video
+                          </span>
+                        )}
+                        {entry.fileType === 'tiktok_overview' && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-black text-white">
+                            TikTok översikt
+                          </span>
+                        )}
                       </p>
                       {entry.result && (
                         <p className="text-xs text-green-600">
@@ -483,6 +626,65 @@ export function FileUploader({ onImportComplete, onCancel }) {
                           />
                         </div>
                       )}
+                      {entry.fileType === 'tiktok_video' && entry.status === FILE_STATUS.PENDING && (
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Konto:</span>
+                          <span className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">@{entry.tiktokHandle || '?'}</span>
+                          <span className="text-xs text-muted-foreground">→</span>
+                          <input
+                            type="text"
+                            value={entry.tiktokAccountName}
+                            placeholder="Visningsnamn (t.ex. P3 Din Gata)"
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setFiles(prev => prev.map(f =>
+                                f.id === entry.id ? { ...f, tiktokAccountName: e.target.value } : f
+                              ));
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="border border-input rounded px-2 py-0.5 text-xs flex-1 min-w-[160px]"
+                          />
+                          {tiktokAccounts[entry.tiktokHandle] && (
+                            <span className="text-xs text-green-700">✓ känt konto</span>
+                          )}
+                        </div>
+                      )}
+                      {entry.fileType === 'tiktok_overview' && entry.status === FILE_STATUS.PENDING && (
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Tillhör konto:</span>
+                          <select
+                            value={entry.tiktokHandle}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              const handle = e.target.value;
+                              const name = tiktokAccounts[handle] || '';
+                              setFiles(prev => prev.map(f =>
+                                f.id === entry.id ? { ...f, tiktokHandle: handle, tiktokAccountName: name || f.tiktokAccountName } : f
+                              ));
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`border rounded px-2 py-0.5 text-xs ${entry.tiktokHandle ? 'border-input' : 'border-red-400 bg-red-50'}`}
+                            required
+                          >
+                            <option value="">— välj konto —</option>
+                            {Object.entries(tiktokAccounts).map(([handle, name]) => (
+                              <option key={handle} value={handle}>
+                                {name} (@{handle})
+                              </option>
+                            ))}
+                          </select>
+                          {!entry.tiktokHandle && Object.keys(tiktokAccounts).length === 0 && (
+                            <span className="text-xs text-amber-700">
+                              Inga TikTok-konton ännu — ladda upp en Video-CSV först.
+                            </span>
+                          )}
+                          {entry.tiktokHandle && (
+                            <span className="text-xs text-muted-foreground">
+                              → {entry.tiktokAccountName}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {entry.error && (
                         <p className="text-xs text-red-600">{entry.error}</p>
                       )}
@@ -512,8 +714,9 @@ export function FileUploader({ onImportComplete, onCancel }) {
             )}
             <Button
               onClick={handleProcessFiles}
-              disabled={pendingCount === 0 || isProcessing}
+              disabled={pendingCount === 0 || isProcessing || missingTikTokAccount}
               className="min-w-[120px]"
+              title={missingTikTokAccount ? 'Välj konto för alla TikTok-Översikt-filer först.' : undefined}
             >
               {isProcessing ? (
                 <>

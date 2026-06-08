@@ -29,7 +29,14 @@ import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
 
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'account_reach', 'estimated_unique_clicks'];
-const IG_ONLY_FIELDS = ['saves', 'follows', 'ig_account_reach'];
+const IG_ONLY_FIELDS = ['follows', 'ig_account_reach'];
+// TikTok-poster har varken räckvidd per inlägg, totala klick eller länkklick i CSV-export.
+// Räckvidd finns istället på dagsnivå i Översikt-CSV (separat tabell).
+const TIKTOK_UNAVAILABLE_FIELDS = [
+  'reach', 'average_reach', 'account_reach', 'ig_account_reach',
+  'total_clicks', 'link_clicks', 'other_clicks',
+  'estimated_unique_clicks', 'follows',
+];
 
 const FIELD_CATEGORIES = [
   {
@@ -106,6 +113,7 @@ function filterFieldsByPlatform(fields, activePlatform) {
   for (const [key, label] of Object.entries(fields)) {
     if (activePlatform === 'instagram' && FB_ONLY_FIELDS.includes(key)) continue;
     if (activePlatform === 'facebook' && IG_ONLY_FIELDS.includes(key)) continue;
+    if (activePlatform === 'tiktok' && TIKTOK_UNAVAILABLE_FIELDS.includes(key)) continue;
     filtered[key] = label;
   }
   return filtered;
@@ -168,6 +176,7 @@ const ValueSelector = ({ availableFields, selectedFields, onSelectionChange }) =
 const PLATFORM_TITLE = {
   facebook: 'Facebook Statistik',
   instagram: 'Instagram Statistik',
+  tiktok: 'TikTok Statistik',
   mixed: 'Meta Statistik',
   null: 'Meta Statistik'
 };
@@ -184,6 +193,7 @@ const MainView = ({ onShowUploader }) => {
   // True when at least one month of GA listening data is available
   const [hasGAListens, setHasGAListens] = useState(false);
   const [hasGASiteVisits, setHasGASiteVisits] = useState(false);
+  const [hasTikTokOverview, setHasTikTokOverview] = useState(false);
   // Account groups — persists across view switches
   const [accountGroups, setAccountGroups] = useState([]);
 
@@ -197,17 +207,19 @@ const MainView = ({ onShowUploader }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult] = await Promise.all([
+        const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult, ttOverviewMonthsResult] = await Promise.all([
           api.getStats(),
           api.getImports(),
           api.getCoverage().catch(() => ({ months: [] })),
           api.getGAListensMonths().catch(() => ({ months: [] })),
           api.getGASiteVisitsMonths().catch(() => ({ months: [] })),
+          api.getTikTokOverviewMonths().catch(() => ({ months: [] })),
         ]);
         setStats(statsData);
         setImports(importsData);
         setHasGAListens((gaMonthsResult.months || []).length > 0);
         setHasGASiteVisits((gsvMonthsResult.months || []).length > 0);
+        setHasTikTokOverview((ttOverviewMonthsResult.months || []).length > 0);
 
         const months = coverageResult.months || [];
         setCoverageData(months);
@@ -252,17 +264,21 @@ const MainView = ({ onShowUploader }) => {
     const platforms = new Set(imports.map(i => i.platform));
     const hasFacebook = platforms.has('facebook');
     const hasInstagram = platforms.has('instagram');
-    const hasMixed = hasFacebook && hasInstagram;
+    const hasTikTok = platforms.has('tiktok');
+    const platformCount = [hasFacebook, hasInstagram, hasTikTok].filter(Boolean).length;
+    const hasMixed = platformCount >= 2;
 
     let detected = null;
     if (hasMixed) detected = 'mixed';
     else if (hasFacebook) detected = 'facebook';
     else if (hasInstagram) detected = 'instagram';
+    else if (hasTikTok) detected = 'tiktok';
 
     const fbPosts = imports.filter(i => i.platform === 'facebook').reduce((s, i) => s + i.row_count, 0);
     const igPosts = imports.filter(i => i.platform === 'instagram').reduce((s, i) => s + i.row_count, 0);
+    const ttPosts = imports.filter(i => i.platform === 'tiktok').reduce((s, i) => s + i.row_count, 0);
 
-    return { detected, hasMixed, fbPosts, igPosts };
+    return { detected, hasMixed, hasFacebook, hasInstagram, hasTikTok, fbPosts, igPosts, ttPosts };
   }, [imports]);
 
   const activePlatform = platformInfo.hasMixed
@@ -301,18 +317,20 @@ const MainView = ({ onShowUploader }) => {
 
   const handleImportsChanged = async () => {
     try {
-      const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult] = await Promise.all([
+      const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult, ttOverviewMonthsResult] = await Promise.all([
         api.getStats(),
         api.getImports(),
         api.getCoverage().catch(() => ({ months: [] })),
         api.getGAListensMonths().catch(() => ({ months: [] })),
         api.getGASiteVisitsMonths().catch(() => ({ months: [] })),
+        api.getTikTokOverviewMonths().catch(() => ({ months: [] })),
       ]);
       setStats(statsData);
       setImports(importsData);
       setCoverageData(coverageResult.months || []);
       setHasGAListens((gaMonthsResult.months || []).length > 0);
       setHasGASiteVisits((gsvMonthsResult.months || []).length > 0);
+      setHasTikTokOverview((ttOverviewMonthsResult.months || []).length > 0);
     } catch (error) {
       console.error('Fel vid uppdatering:', error);
     }
@@ -339,6 +357,12 @@ const MainView = ({ onShowUploader }) => {
       return coverageData
         .filter(m => (m.ig_count ?? 0) > 0 || m.has_ig_reach)
         .map(m => ({ ...m, post_count: m.ig_count ?? 0 }));
+    }
+    if (platformFilter === 'tiktok') {
+      // TikTok-månader: poster (Video-CSV) eller Översikt-data
+      return coverageData
+        .filter(m => (m.tt_count ?? 0) > 0 || m.has_tiktok_overview)
+        .map(m => ({ ...m, post_count: m.tt_count ?? 0 }));
     }
     if (platformFilter === 'ga_listens') {
       // Display the number of programmes with listening data for the month
@@ -426,38 +450,56 @@ const MainView = ({ onShowUploader }) => {
         </div>
       </div>
 
-      {(platformInfo.hasMixed || hasGAListens || hasGASiteVisits) && (
-        <div className="flex items-center gap-2">
+      {(platformInfo.hasMixed || hasGAListens || hasGASiteVisits || platformInfo.hasTikTok || hasTikTokOverview) && (
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm text-gray-500 mr-1">Plattform:</span>
-          {platformInfo.hasMixed && [
-            { value: 'all', label: `Alla (${platformInfo.fbPosts + platformInfo.igPosts})` },
-            { value: 'facebook', label: `Facebook (${platformInfo.fbPosts})` },
-            { value: 'instagram', label: `Instagram (${platformInfo.igPosts})` },
-          ].map(({ value, label }) => (
+          {platformInfo.hasMixed && (
             <button
-              key={value}
-              onClick={() => setPlatformFilter(value)}
-              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
-                platformFilter === value
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-primary/60'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-          {!platformInfo.hasMixed && (platformInfo.fbPosts + platformInfo.igPosts) > 0 && (hasGAListens || hasGASiteVisits) && (
-            <button
+              key="all"
               onClick={() => setPlatformFilter('all')}
               className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
-                platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits'
+                platformFilter === 'all'
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-primary/60'
               }`}
             >
-              {platformInfo.fbPosts > 0
-                ? `Facebook (${platformInfo.fbPosts})`
-                : `Instagram (${platformInfo.igPosts})`}
+              Alla ({platformInfo.fbPosts + platformInfo.igPosts + platformInfo.ttPosts})
+            </button>
+          )}
+          {platformInfo.hasFacebook && platformInfo.hasMixed && (
+            <button
+              onClick={() => setPlatformFilter('facebook')}
+              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                platformFilter === 'facebook'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-white text-gray-700 border-gray-300 hover:border-primary/60'
+              }`}
+            >
+              Facebook ({platformInfo.fbPosts})
+            </button>
+          )}
+          {platformInfo.hasInstagram && platformInfo.hasMixed && (
+            <button
+              onClick={() => setPlatformFilter('instagram')}
+              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                platformFilter === 'instagram'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-white text-gray-700 border-gray-300 hover:border-primary/60'
+              }`}
+            >
+              Instagram ({platformInfo.igPosts})
+            </button>
+          )}
+          {(platformInfo.hasTikTok || hasTikTokOverview) && (
+            <button
+              onClick={() => setPlatformFilter('tiktok')}
+              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                platformFilter === 'tiktok'
+                  ? 'bg-black text-white border-black'
+                  : 'bg-white text-gray-700 border-gray-300 hover:border-black/60'
+              }`}
+            >
+              TikTok{platformInfo.hasTikTok ? ` (${platformInfo.ttPosts})` : ''}
             </button>
           )}
           {/* Unified Google Analytics button — shown when either GA source has data */}
