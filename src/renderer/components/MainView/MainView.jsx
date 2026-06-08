@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import AccountView from '../AccountView';
 import ScatterExplorerView from '../AccountView/ScatterExplorerView';
+import TikTokOverviewSummary from '../AccountView/TikTokOverviewSummary';
 import PostView from '../PostView';
 import PostTypeView from '../PostTypeView';
 import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
@@ -29,8 +30,9 @@ import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
 
 const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'account_reach', 'estimated_unique_clicks'];
-const IG_ONLY_FIELDS = ['follows', 'ig_account_reach'];
+const IG_ONLY_FIELDS = ['saves', 'follows', 'ig_account_reach'];
 // TikTok-poster har varken räckvidd per inlägg, totala klick eller länkklick i CSV-export.
+// 'saves' är däremot tillgängligt i TikTok-export (Lägg till i Favoriter) — INTE i denna lista.
 // Räckvidd finns istället på dagsnivå i Översikt-CSV (separat tabell).
 const TIKTOK_UNAVAILABLE_FIELDS = [
   'reach', 'average_reach', 'account_reach', 'ig_account_reach',
@@ -599,6 +601,11 @@ const MainView = ({ onShowUploader }) => {
 
         <TabsContent value="account">
           <PeriodSummary />
+          {platformFilter === 'tiktok' && hasTikTokOverview && (
+            <div className="mb-4">
+              <TikTokOverviewSummary periodParams={periodParams} />
+            </div>
+          )}
           <AccountView
             selectedFields={selectedFields}
             platform={apiPlatform}

@@ -15,7 +15,7 @@
 import { getDb } from '../../db/connection.js';
 import {
   hiddenPostsFilter, hiddenReachFilter, hiddenGAFilter,
-  hiddenSiteVisitsFilter, hiddenIGReachFilter,
+  hiddenSiteVisitsFilter, hiddenIGReachFilter, hiddenTikTokOverviewFilter,
 } from '../hiddenAccounts.js';
 import { getEstimatedUniqueClicks } from '../estimatedUniqueClicks.js';
 import { getAccountGroups } from '../accountGroupService.js';
@@ -103,6 +103,96 @@ function gaSiteVisitsMonthly(db) {
   }));
 }
 
+function tiktokPostsMonthly(db) {
+  // TikTok-poster (Video-CSV) aggregat per konto+månad. Räckvidd och länkklick
+  // finns inte i TikTok-export → utesluts från denna flik (jfr platform-skillnader).
+  const rows = db.prepare(`
+    SELECT account_username, account_name, strftime('%Y-%m', publish_time) AS month,
+      COUNT(*) AS post_count, SUM(views) AS views,
+      SUM(likes) AS likes, SUM(comments) AS comments, SUM(shares) AS shares,
+      SUM(saves) AS saves, SUM(interactions) AS interactions, SUM(engagement) AS engagement
+    FROM posts
+    WHERE platform = 'tiktok' AND publish_time IS NOT NULL AND ${NONEMPTY_NAME} ${hiddenPostsFilter()}
+    GROUP BY account_username, account_name, month
+    ORDER BY account_username, month
+  `).all();
+  return rows.map(r => ({
+    account_username: r.account_username,
+    account_name: r.account_name,
+    normalized_name: normalizeMetaName(r.account_name),
+    month: r.month, month_date: monthDate(r.month),
+    post_count: r.post_count, views: r.views,
+    likes: r.likes, comments: r.comments, shares: r.shares, saves: r.saves,
+    interactions: r.interactions, engagement: r.engagement,
+    posts_per_day: avgPerDay(r.post_count, daysInMonth(r.month), 2),
+  }));
+}
+
+function tiktokOverviewMonthly(db) {
+  // TikTok Översikt-data månadsaggregerat per konto. Räckvidd som AVG av dagar
+  // (icke-summerbar), övriga fält SUM. Engagement (dagsformel): summa över dagarna.
+  const rows = db.prepare(`
+    SELECT account_username, account_name, month,
+      SUM(video_views) AS video_views,
+      CAST(ROUND(AVG(reach)) AS INTEGER) AS avg_daily_reach,
+      MAX(reach) AS peak_daily_reach,
+      SUM(profile_views) AS profile_views,
+      SUM(likes) AS likes, SUM(shares) AS shares, SUM(comments) AS comments,
+      SUM(new_followers) AS new_followers,
+      SUM(lost_followers) AS lost_followers,
+      COUNT(*) AS day_count
+    FROM tiktok_account_daily
+    WHERE 1=1 ${hiddenTikTokOverviewFilter()}
+    GROUP BY account_username, account_name, month
+    ORDER BY account_username, month
+  `).all();
+  return rows.map(r => ({
+    account_username: r.account_username,
+    account_name: r.account_name,
+    normalized_name: normalizeMetaName(r.account_name || r.account_username),
+    month: r.month, month_date: monthDate(r.month),
+    day_count: r.day_count,
+    video_views: r.video_views,
+    avg_daily_reach: r.avg_daily_reach,
+    peak_daily_reach: r.peak_daily_reach,
+    profile_views: r.profile_views,
+    likes: r.likes, shares: r.shares, comments: r.comments,
+    new_followers: r.new_followers,
+    lost_followers: r.lost_followers,
+    net_follower_growth: (r.new_followers || 0) - (r.lost_followers || 0),
+    daily_interactions_sum: (r.likes || 0) + (r.comments || 0) + (r.shares || 0),
+    daily_engagement_sum:
+      (r.likes || 0) + (r.comments || 0) + (r.shares || 0) + (r.new_followers || 0),
+  }));
+}
+
+function tiktokOverviewDaily(db) {
+  // Raw dagsdata — för Power BI-användare som vill bygga egna serier.
+  const rows = db.prepare(`
+    SELECT account_username, account_name, date, month,
+      video_views, reach, profile_views, likes, shares, comments,
+      new_followers, lost_followers
+    FROM tiktok_account_daily
+    WHERE 1=1 ${hiddenTikTokOverviewFilter()}
+    ORDER BY account_username, date
+  `).all();
+  return rows.map(r => ({
+    account_username: r.account_username,
+    account_name: r.account_name,
+    normalized_name: normalizeMetaName(r.account_name || r.account_username),
+    date: r.date,
+    date_value: new Date(r.date + 'T00:00:00'),
+    month: r.month, month_date: monthDate(r.month),
+    video_views: r.video_views,
+    daily_reach: r.reach,
+    profile_views: r.profile_views,
+    likes: r.likes, shares: r.shares, comments: r.comments,
+    new_followers: r.new_followers,
+    lost_followers: r.lost_followers,
+    net_follower_growth: (r.new_followers || 0) - (r.lost_followers || 0),
+  }));
+}
+
 function accountReachMonthly(db) {
   const fb = db.prepare(`
     SELECT account_name, month, reach FROM account_reach
@@ -165,7 +255,7 @@ function groupMonthly(groups, accountRows, keyOf, sumFields, avgSpec) {
 // Raw-account detail dimension: one row per raw account_name × platform, with the
 // normalized join key alongside. NOT unique on normalized_name (the same account
 // appears under different raw names per source) — relate cross-source on dim_account_key.
-function dimAccounts(postsRows, reachRows) {
+function dimAccounts(postsRows, reachRows, tiktokPostsRows, tiktokOverviewRows) {
   const seen = new Set();
   const out = [];
   for (const r of [...postsRows, ...reachRows]) {
@@ -175,6 +265,31 @@ function dimAccounts(postsRows, reachRows) {
     out.push({
       account_name: r.account_name, normalized_name: r.normalized_name,
       platform: r.platform, is_p4: isP4(r.account_name),
+    });
+  }
+  // TikTok-poster: använd account_username (handle) som kanonisk identitet,
+  // account_name som display.
+  for (const r of (tiktokPostsRows || [])) {
+    const k = `${r.account_username}::tiktok`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({
+      account_name: r.account_name || r.account_username,
+      normalized_name: r.normalized_name,
+      platform: 'tiktok', is_p4: isP4(r.account_name || ''),
+    });
+  }
+  // TikTok Översikt: konton som kanske inte finns i posts (om bara Översikt-CSV
+  // importerats). Lägg in dem som separat platform-värde 'tiktok_overview' så
+  // Power BI kan särskilja datakällor även på dim-nivå.
+  for (const r of (tiktokOverviewRows || [])) {
+    const k = `${r.account_username}::tiktok_overview`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({
+      account_name: r.account_name || r.account_username,
+      normalized_name: r.normalized_name,
+      platform: 'tiktok_overview', is_p4: isP4(r.account_name || ''),
     });
   }
   return out.sort((a, b) =>
@@ -261,8 +376,19 @@ const README_LINES = [
   [''],
   ['Flikar: posts_monthly, estimated_unique_clicks_monthly, ga_listens_monthly,'],
   ['ga_site_visits_monthly, account_reach_monthly, posts_groups_monthly,'],
-  ['ga_listens_groups_monthly, ga_site_visits_groups_monthly, dim_accounts,'],
-  ['dim_account_key, dim_groups, dim_group_members.'],
+  ['ga_listens_groups_monthly, ga_site_visits_groups_monthly, tiktok_posts_monthly,'],
+  ['tiktok_overview_monthly, tiktok_overview_daily, dim_accounts, dim_account_key,'],
+  ['dim_groups, dim_group_members.'],
+  [''],
+  ['TikTok-flikar:'],
+  ['  • tiktok_posts_monthly — Video-CSV-data aggregerat per konto×månad. Räckvidd'],
+  ['    finns INTE per inlägg (TikTok exporterar inte det), så ingen reach-kolumn.'],
+  ['  • tiktok_overview_monthly — Översikt-data per konto×månad (profilvisningar,'],
+  ['    nya/tappade följare, dagsräckvidd som AVG). day_count = antal dagar med data.'],
+  ['  • tiktok_overview_daily — råa dagsrader för egen aggregering i Power BI.'],
+  ['Kanonisk TikTok-identitet är account_username (handle, t.ex. "p3dingata").'],
+  ['account_name är display-namnet ("P3 Din Gata"). normalized_name fungerar som'],
+  ['cross-source-nyckel även för TikTok.'],
 ];
 
 // ---- Workbook builder -------------------------------------------------------
@@ -288,6 +414,9 @@ export function buildFlatWorkbook() {
   const listens = gaListensMonthly(db);
   const visits = gaSiteVisitsMonthly(db);
   const reach = accountReachMonthly(db);
+  const tiktokPosts = tiktokPostsMonthly(db);
+  const tiktokOverview = tiktokOverviewMonthly(db);
+  const tiktokDaily = tiktokOverviewDaily(db);
 
   const postsGroups = getAccountGroups('posts');
   const listensGroups = getAccountGroups('ga_listens');
@@ -326,6 +455,25 @@ export function buildFlatWorkbook() {
   addObjectSheet(wb, 'account_reach_monthly',
     ['account_name', 'normalized_name', 'platform', 'month', 'month_date', 'account_reach'], reach);
 
+  // TikTok-flikar — separata från posts_monthly/account_reach eftersom TikTok-data
+  // har egna fält (saves istället för reach per inlägg; dagsräckvidd istället för
+  // månadsräckvidd) och egen "Översikt"-tabell med profilbesök + följartillväxt.
+  addObjectSheet(wb, 'tiktok_posts_monthly',
+    ['account_username', 'account_name', 'normalized_name', 'month', 'month_date',
+      'post_count', 'views', 'likes', 'comments', 'shares', 'saves',
+      'interactions', 'engagement', 'posts_per_day'], tiktokPosts);
+  addObjectSheet(wb, 'tiktok_overview_monthly',
+    ['account_username', 'account_name', 'normalized_name', 'month', 'month_date',
+      'day_count', 'video_views', 'avg_daily_reach', 'peak_daily_reach',
+      'profile_views', 'likes', 'shares', 'comments',
+      'new_followers', 'lost_followers', 'net_follower_growth',
+      'daily_interactions_sum', 'daily_engagement_sum'], tiktokOverview);
+  addObjectSheet(wb, 'tiktok_overview_daily',
+    ['account_username', 'account_name', 'normalized_name', 'date', 'date_value',
+      'month', 'month_date', 'video_views', 'daily_reach', 'profile_views',
+      'likes', 'shares', 'comments', 'new_followers', 'lost_followers',
+      'net_follower_growth'], tiktokDaily);
+
   addObjectSheet(wb, 'posts_groups_monthly',
     ['group_id', 'group_name', 'month', 'month_date', 'member_count', 'post_count',
       'views', 'link_clicks', 'interactions', 'avg_daily_link_clicks'], postsGroupRows);
@@ -337,9 +485,11 @@ export function buildFlatWorkbook() {
       'avg_daily_visits'], visitsGroupRows);
 
   addObjectSheet(wb, 'dim_accounts',
-    ['account_name', 'normalized_name', 'platform', 'is_p4'], dimAccounts(posts, reach));
+    ['account_name', 'normalized_name', 'platform', 'is_p4'],
+    dimAccounts(posts, reach, tiktokPosts, tiktokOverview));
   addObjectSheet(wb, 'dim_account_key',
-    ['normalized_name', 'is_p4'], dimAccountKey([posts, listens, visits, reach]));
+    ['normalized_name', 'is_p4'],
+    dimAccountKey([posts, listens, visits, reach, tiktokPosts, tiktokOverview]));
   addObjectSheet(wb, 'dim_groups',
     ['group_id', 'group_name', 'source'], dimGroups(allGroups));
   addObjectSheet(wb, 'dim_group_members',
