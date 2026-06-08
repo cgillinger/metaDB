@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import AccountView from '../AccountView';
 import ScatterExplorerView from '../AccountView/ScatterExplorerView';
-import TikTokOverviewSummary from '../AccountView/TikTokOverviewSummary';
+import TikTokOverviewKontoView from '../AccountView/TikTokOverviewKontoView';
 import PostView from '../PostView';
 import PostTypeView from '../PostTypeView';
 import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
@@ -56,6 +56,33 @@ const FIELD_CATEGORIES = [
   {
     label: 'Publicering',
     fields: ['post_count', 'posts_per_day'],
+  },
+];
+
+// TikTok Översikt-läge (Per konto): separat fält-set + kategoriindelning.
+// Mätvärdena kommer från tiktok_account_daily (sidvisningar per dag), inte posts.
+const TIKTOK_OVERVIEW_AVAILABLE_FIELDS = {
+  video_views: 'Sidvisningar (sum)',
+  avg_daily_reach: 'Räckvidd / dag (snitt)',
+  profile_views: 'Profilvisningar (sum)',
+  new_followers: 'Nya följare',
+  lost_followers: 'Tappade följare',
+  net_follower_growth: 'Nettotillväxt',
+  daily_engagement_sum: 'Dagsengagemang (sum)',
+};
+
+const TIKTOK_OVERVIEW_FIELD_CATEGORIES = [
+  {
+    label: 'Räckvidd & visningar',
+    fields: ['video_views', 'avg_daily_reach', 'profile_views'],
+  },
+  {
+    label: 'Följare',
+    fields: ['new_followers', 'lost_followers', 'net_follower_growth'],
+  },
+  {
+    label: 'Engagemang',
+    fields: ['daily_engagement_sum'],
   },
 ];
 
@@ -142,9 +169,9 @@ const EngagementLegend = ({ activePlatform }) => (
   </div>
 );
 
-const ValueSelector = ({ availableFields, selectedFields, onSelectionChange, activePlatform }) => (
+const ValueSelector = ({ availableFields, selectedFields, onSelectionChange, activePlatform, categories = FIELD_CATEGORIES }) => (
   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 p-4">
-    {FIELD_CATEGORIES.map(category => {
+    {categories.map(category => {
       const visibleFields = category.fields.filter(f => f in availableFields);
       if (visibleFields.length === 0) return null;
       return (
@@ -201,6 +228,9 @@ const MainView = ({ onShowUploader }) => {
   const [hasGAListens, setHasGAListens] = useState(false);
   const [hasGASiteVisits, setHasGASiteVisits] = useState(false);
   const [hasTikTokOverview, setHasTikTokOverview] = useState(false);
+  // Per konto-läge för TikTok: 'overview' (Översikt-CSV per dag) eller 'video'
+  // (Video-CSV/posts per inlägg). Default 'overview' när Översikt-data finns.
+  const [tiktokKontoMode, setTiktokKontoMode] = useState('overview');
   // Account groups — persists across view switches
   const [accountGroups, setAccountGroups] = useState([]);
 
@@ -295,7 +325,13 @@ const MainView = ({ onShowUploader }) => {
   // The platform filter value to pass to API (undefined = no filter)
   const apiPlatform = platformFilter !== 'all' ? platformFilter : undefined;
 
+  // Är vi i Per konto + TikTok Översikt-läge? Då används en helt egen field-uppsättning.
+  const isTikTokOverviewMode =
+    activeView === 'account' && platformFilter === 'tiktok' && hasTikTokOverview && tiktokKontoMode === 'overview';
+
   const getAvailableFields = () => {
+    if (isTikTokOverviewMode) return TIKTOK_OVERVIEW_AVAILABLE_FIELDS;
+
     let fields;
     if (activeView === 'account') fields = ACCOUNT_VIEW_AVAILABLE_FIELDS;
     else if (activeView === 'trend_analysis') fields = TREND_ANALYSIS_AVAILABLE_FIELDS;
@@ -312,6 +348,17 @@ const MainView = ({ onShowUploader }) => {
   };
 
   useEffect(() => {
+    if (isTikTokOverviewMode) {
+      // Seedar standardval när användaren går in i Översikt-läget och inget Översikt-
+      // fält är valt sedan tidigare. Annars filtrerar bort fält som inte hör hit.
+      setSelectedFields(prev => {
+        const overviewKeys = Object.keys(TIKTOK_OVERVIEW_AVAILABLE_FIELDS);
+        const kept = prev.filter(f => overviewKeys.includes(f));
+        if (kept.length > 0) return kept;
+        return ['video_views', 'avg_daily_reach', 'profile_views', 'net_follower_growth'];
+      });
+      return;
+    }
     const availableFields = Object.keys(getAvailableFields());
     setSelectedFields(prev => {
       const filtered = prev.filter(field => availableFields.includes(field));
@@ -320,7 +367,7 @@ const MainView = ({ onShowUploader }) => {
       }
       return filtered;
     });
-  }, [activeView, activePlatform, periodMode]);
+  }, [activeView, activePlatform, periodMode, isTikTokOverviewMode]);
 
   const handleImportsChanged = async () => {
     try {
@@ -551,11 +598,14 @@ const MainView = ({ onShowUploader }) => {
               selectedFields={selectedFields}
               onSelectionChange={setSelectedFields}
               activePlatform={activePlatform}
+              categories={isTikTokOverviewMode ? TIKTOK_OVERVIEW_FIELD_CATEGORIES : FIELD_CATEGORIES}
             />
             {selectedFields.includes('engagement') && (
               <EngagementLegend activePlatform={activePlatform} />
             )}
-            {activeView === 'account' && (
+            {/* Scatter (räckvidd per inlägg) bygger på posts-data — bara meningsfullt
+                i Video-CSV-läget, inte i Översikt-läget (där det inte finns inlägg). */}
+            {activeView === 'account' && !isTikTokOverviewMode && (
               <div className="mt-4 border-t pt-4 px-4">
                 <Button variant="outline" onClick={() => openScatter(null)}>
                   <ScatterChart className="w-4 h-4 mr-2" />
@@ -608,21 +658,59 @@ const MainView = ({ onShowUploader }) => {
         <TabsContent value="account">
           <PeriodSummary />
           {platformFilter === 'tiktok' && hasTikTokOverview && (
-            <div className="mb-4">
-              <TikTokOverviewSummary periodParams={periodParams} />
-            </div>
+            <Card className="mb-3">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-sm font-medium text-muted-foreground">Vy:</span>
+                  <div className="inline-flex rounded-md border overflow-hidden">
+                    <button
+                      onClick={() => setTiktokKontoMode('overview')}
+                      className={`px-3 py-1.5 text-sm transition-colors ${
+                        tiktokKontoMode === 'overview'
+                          ? 'bg-black text-white font-medium'
+                          : 'bg-white text-muted-foreground hover:bg-gray-50'
+                      }`}
+                    >
+                      Översikt (per dag)
+                    </button>
+                    <button
+                      onClick={() => setTiktokKontoMode('video')}
+                      className={`px-3 py-1.5 text-sm border-l transition-colors ${
+                        tiktokKontoMode === 'video'
+                          ? 'bg-black text-white font-medium'
+                          : 'bg-white text-muted-foreground hover:bg-gray-50'
+                      }`}
+                    >
+                      Inlägg-aggregat (per video)
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground flex-1 min-w-[280px]">
+                    {tiktokKontoMode === 'overview'
+                      ? 'Sidans daglig statistik (Översikt-CSV). "Sidvisningar" = alla videovisningar på sidan per dag, inkl. äldre videor som tittas på under perioden.'
+                      : 'Inläggsstatistik per video (Video-CSV). "Visningar" = ackumulerade visningar för videor publicerade i perioden, oavsett när visningen skedde.'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           )}
-          <AccountView
-            selectedFields={selectedFields}
-            platform={apiPlatform}
-            periodParams={periodParams}
-            gaListensMode={platformFilter === 'ga_listens'}
-            gaSiteVisitsMode={platformFilter === 'ga_site_visits'}
-            accountGroups={accountGroups}
-            onGroupsChanged={refreshAccountGroups}
-            onPlatformChange={setPlatformFilter}
-            onOpenScatter={openScatter}
-          />
+          {isTikTokOverviewMode ? (
+            <TikTokOverviewKontoView
+              selectedFields={selectedFields}
+              periodParams={periodParams}
+            />
+          ) : (
+            <AccountView
+              selectedFields={selectedFields}
+              platform={apiPlatform}
+              periodParams={periodParams}
+              gaListensMode={platformFilter === 'ga_listens'}
+              gaSiteVisitsMode={platformFilter === 'ga_site_visits'}
+              accountGroups={accountGroups}
+              onGroupsChanged={refreshAccountGroups}
+              onPlatformChange={setPlatformFilter}
+              onOpenScatter={openScatter}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="post">
