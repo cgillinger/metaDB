@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -33,9 +33,14 @@ function suggestTikTokAccountName(filename) {
   if (!filename) return '';
   let s = filename.replace(/\.csv$/i, '');
   for (const m of SV_MONTH_PREFIXES) {
-    if (s.startsWith(m)) { s = s.slice(m.length); break; }
+    if (s.toLowerCase().startsWith(m.toLowerCase())) { s = s.slice(m.length); break; }
   }
-  s = s.replace(/Video$/i, '').replace(/_versikt$/i, '').replace(/_/g, ' ').trim();
+  // Strip trailing type marker, then collapse underscores and trim any leftover
+  // separators (dash/space/underscore) so "April-P3 Din Gata-Video" → "P3 Din Gata".
+  s = s.replace(/(Video|Översikt|Oversikt|_versikt)$/i, '')
+    .replace(/_/g, ' ')
+    .replace(/^[\s_-]+|[\s_-]+$/g, '')
+    .trim();
   return s;
 }
 
@@ -83,6 +88,40 @@ export function FileUploader({ onImportComplete, onCancel }) {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Konton tillgängliga för Översikt-koppling: kända i DB + Video-CSV:er i samma
+  // batch (vars handle extraherats men ännu inte importerats).
+  const availableTikTokAccounts = useMemo(() => {
+    const map = { ...tiktokAccounts };
+    for (const f of files) {
+      if (f.fileType === 'tiktok_video' && f.tiktokHandle) {
+        map[f.tiktokHandle] = f.tiktokAccountName || map[f.tiktokHandle] || f.tiktokHandle;
+      }
+    }
+    return map;
+  }, [tiktokAccounts, files]);
+
+  // Auto-välj konto för Översikt-filer vars föreslagna namn matchar ett tillgängligt
+  // konto (känt i DB eller en Video-CSV i samma batch). Idempotent — sätter bara
+  // handle när det saknas, så ingen loop uppstår.
+  useEffect(() => {
+    setFiles(prev => {
+      let changed = false;
+      const next = prev.map(f => {
+        if (f.fileType === 'tiktok_overview' && !f.tiktokHandle && f.status === FILE_STATUS.PENDING) {
+          const target = (f.tiktokAccountName || '').toLowerCase().trim();
+          if (target) {
+            const match = Object.entries(availableTikTokAccounts).find(
+              ([, name]) => (name || '').toLowerCase().trim() === target
+            );
+            if (match) { changed = true; return { ...f, tiktokHandle: match[0], tiktokAccountName: match[1] }; }
+          }
+        }
+        return f;
+      });
+      return changed ? next : prev;
+    });
+  }, [availableTikTokAccounts]);
 
   const addFiles = useCallback(async (newFiles) => {
     const csvFiles = Array.from(newFiles).filter(
@@ -268,9 +307,13 @@ export function FileUploader({ onImportComplete, onCancel }) {
   };
 
   const handleProcessFiles = async () => {
-    const pendingFiles = files.filter(f =>
-      f.status === FILE_STATUS.PENDING || f.status === FILE_STATUS.ERROR
-    );
+    const pendingFiles = files
+      .filter(f => f.status === FILE_STATUS.PENDING || f.status === FILE_STATUS.ERROR)
+      // Importera TikTok Video-CSV före Översikt-CSV så kontot hinner skapas.
+      .sort((a, b) => {
+        const rank = t => (t === 'tiktok_overview' ? 1 : 0);
+        return rank(a.fileType) - rank(b.fileType);
+      });
     if (pendingFiles.length === 0) return;
 
     setIsProcessing(true);
@@ -426,8 +469,8 @@ export function FileUploader({ onImportComplete, onCancel }) {
                       : 'Släpp CSV-filer här eller klicka för att bläddra'}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  Stöder Facebook- och Instagram-statistik från Meta Business Suite, kontoräckvidd (API) och Google Analytics.
-                  Data sparas permanent i databasen.
+                  Stöder Facebook- och Instagram-statistik från Meta Business Suite, kontoräckvidd (API),
+                  TikTok (Video & Översikt) och Google Analytics. Data sparas permanent i databasen.
                 </p>
               </div>
             </div>
@@ -657,7 +700,7 @@ export function FileUploader({ onImportComplete, onCancel }) {
                             onChange={(e) => {
                               e.stopPropagation();
                               const handle = e.target.value;
-                              const name = tiktokAccounts[handle] || '';
+                              const name = availableTikTokAccounts[handle] || '';
                               setFiles(prev => prev.map(f =>
                                 f.id === entry.id ? { ...f, tiktokHandle: handle, tiktokAccountName: name || f.tiktokAccountName } : f
                               ));
@@ -667,13 +710,13 @@ export function FileUploader({ onImportComplete, onCancel }) {
                             required
                           >
                             <option value="">— välj konto —</option>
-                            {Object.entries(tiktokAccounts).map(([handle, name]) => (
+                            {Object.entries(availableTikTokAccounts).map(([handle, name]) => (
                               <option key={handle} value={handle}>
                                 {name} (@{handle})
                               </option>
                             ))}
                           </select>
-                          {!entry.tiktokHandle && Object.keys(tiktokAccounts).length === 0 && (
+                          {!entry.tiktokHandle && Object.keys(availableTikTokAccounts).length === 0 && (
                             <span className="text-xs text-amber-700">
                               Inga TikTok-konton ännu — ladda upp en Video-CSV först.
                             </span>

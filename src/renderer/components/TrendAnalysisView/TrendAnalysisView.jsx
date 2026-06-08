@@ -119,6 +119,13 @@ const NON_SUMMABLE_METRICS = new Set([
   'reach', 'average_reach', 'account_reach', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks',
 ]);
 
+// När TikTok är aktiv plattform saknar dessa mått data i TikTok-exporterna och
+// döljs ur datapunkt-väljaren (jfr TIKTOK_UNAVAILABLE_FIELDS i MainView).
+const TIKTOK_UNAVAILABLE_METRICS = new Set([
+  'average_reach', 'account_reach', 'ig_account_reach', 'follows',
+  'total_clicks', 'link_clicks', 'avg_daily_link_clicks', 'other_clicks', 'estimated_unique_clicks',
+]);
+
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
 
 // Composite key for unique account identification across platforms
@@ -1122,6 +1129,7 @@ const TrendAnalysisView = ({
                 <div className="space-y-3 max-h-64 overflow-y-auto border rounded-md p-3 bg-gray-50">
                   {METRIC_CATEGORIES.map(category => {
                     const visibleMetrics = category.metrics.filter(m => {
+                      if (platform === 'tiktok' && TIKTOK_UNAVAILABLE_METRICS.has(m.key)) return false;
                       if (m.platform === 'facebook' && !hasFacebook) return false;
                       if (m.platform === 'instagram' && !hasInstagram) return false;
                       return true;
