@@ -29,6 +29,20 @@ metaDB är en self-hosted analysapp som aggregerar data från Meta Business Suit
 ### Backend
 - Route-registreringsordning: specifika DELETE-routes före parametriserade routes.
 - Migrationssystem: filer i server/db/migrations/ med prefix 001_, 002_, etc. Körs automatiskt vid start.
+- Table-swap-migrationer (DROP + återskapa en FK-refererad tabell) MÅSTE köra med `foreign_keys` OFF satt UTANFÖR transaktionen — `PRAGMA foreign_keys` är en no-op inuti en transaktion, så annars utlöser DROP en ON DELETE CASCADE som tömmer barntabeller. Migrations-köraren (runMigrations i server/db/connection.js) togglar FK off→on runt varje migration och kör `foreign_key_check` efteråt.
+
+## Deploy & DB-säkerhet
+
+- Prod byggs från appdata-klonen på disk (`docker compose build` i stacken läser källkoden som ligger utcheckad där). Disken ska normalt stå på `main` — en oavsiktlig `build` plockar upp vad som än är utcheckat.
+- Deploy kör migrationer mot LIVE-databasen vid start; det finns ingen staging. **Ta alltid en verifierad backup före en deploy som kan migrera.**
+- Backup: online-backup via better-sqlite3 `db.backup()` (konsistent mot WAL) + `PRAGMA integrity_check`, lagra på två fysiska diskar. Volymägare är uid/gid 100:101.
+- Behåll en känd-god rollback-image taggad separat (`docker tag … meta-analytics:rollback-pre-x`).
+- Plattformsknappens antal = `SUM(imports.row_count)`, inte `COUNT(*)` posts — överräknar om-importer (UPSERT). Faktiskt antal unika inlägg finns i posts.
+
+## Samarbete mellan Claude-instanser
+
+- `git fetch`/pulla origin INNAN du börjar editera, så du baserar på den senast pushade koden från en parallell instans (slipper merge- och granskningsvarv).
+- Endast en instans äger deploy åt gången: den som mergar till main äger ombyggnad + `compose up`. Den andra rör inte stacken förrän det är pushat — prod byggs från disk, så halvfärdig kod kan annars deployas.
 
 ## P4-regionsfilter
 
