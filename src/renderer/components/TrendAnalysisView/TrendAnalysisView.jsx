@@ -1164,7 +1164,7 @@ const TrendAnalysisView = ({
                                 />
                                 <span className="text-sm flex items-center gap-1.5">
                                   {m.label}
-                                  {m.platform && <PlatformBadge platform={m.platform} />}
+                                  {platform !== 'tiktok' && m.platform && <PlatformBadge platform={m.platform} />}
                                 </span>
                               </Label>
                             );

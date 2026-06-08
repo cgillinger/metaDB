@@ -137,7 +137,7 @@ const EngagementLegend = ({ activePlatform }) => (
   </div>
 );
 
-const ValueSelector = ({ availableFields, selectedFields, onSelectionChange }) => (
+const ValueSelector = ({ availableFields, selectedFields, onSelectionChange, activePlatform }) => (
   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 p-4">
     {FIELD_CATEGORIES.map(category => {
       const visibleFields = category.fields.filter(f => f in availableFields);
@@ -163,8 +163,8 @@ const ValueSelector = ({ availableFields, selectedFields, onSelectionChange }) =
                 />
                 <Label htmlFor={key} className="flex items-center gap-1.5">
                   {availableFields[key]}
-                  {FB_ONLY_FIELDS.includes(key) && <PlatformBadge platform="facebook" />}
-                  {IG_ONLY_FIELDS.includes(key) && <PlatformBadge platform="instagram" />}
+                  {activePlatform !== 'tiktok' && FB_ONLY_FIELDS.includes(key) && <PlatformBadge platform="facebook" />}
+                  {activePlatform !== 'tiktok' && IG_ONLY_FIELDS.includes(key) && <PlatformBadge platform="instagram" />}
                 </Label>
               </div>
             ))}
@@ -545,6 +545,7 @@ const MainView = ({ onShowUploader }) => {
               availableFields={getAvailableFields()}
               selectedFields={selectedFields}
               onSelectionChange={setSelectedFields}
+              activePlatform={activePlatform}
             />
             {selectedFields.includes('engagement') && (
               <EngagementLegend activePlatform={activePlatform} />

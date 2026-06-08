@@ -201,8 +201,12 @@ router.get('/', (req, res) => {
   // Auto-include when there are no post-based accounts but reach data exists,
   // or when explicitly requested via includeReachOnly toggle.
   const hasPostAccounts = accounts.length > 0;
+  // Reach-only accounts are platform-specific (FB/IG). When a specific platform
+  // is requested, only fold in reach-only accounts of THAT platform — otherwise a
+  // TikTok (or FB) view would list every IG reach-only account with zeroed metrics.
+  const reqPlatform = req.query.platform;
   const shouldIncludeReachOnly = req.query.includeReachOnly === 'true' || !hasPostAccounts;
-  if (shouldIncludeReachOnly && reachMonthsAvailable.length > 0) {
+  if (shouldIncludeReachOnly && reachMonthsAvailable.length > 0 && (!reqPlatform || reqPlatform === 'facebook')) {
     const existingAccountKeys = new Set(accounts.map(a => `${a.account_name}::${a.platform}`));
     const reachPlaceholders = reachMonthsAvailable.map(() => '?').join(',');
     const reachOnlyAccounts = db.prepare(`
@@ -232,7 +236,7 @@ router.get('/', (req, res) => {
   }
 
   // Include IG reach-only accounts (in ig_account_reach but not in posts)
-  if (igReachMonthsAvailable.length > 0) {
+  if (igReachMonthsAvailable.length > 0 && (!reqPlatform || reqPlatform === 'instagram')) {
     const existingIGKeys = new Set(accounts.map(a => `${a.account_name}::instagram`));
     const igPlaceholders2 = igReachMonthsAvailable.map(() => '?').join(',');
     const igReachOnlyAccounts = db.prepare(`
