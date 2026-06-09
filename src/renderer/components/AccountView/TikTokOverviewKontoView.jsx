@@ -8,15 +8,16 @@
  *
  * Räckvidd visas som AVG av dagsräckvidd (icke-summerbar invariant).
  */
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Copy, Check } from 'lucide-react';
 import InfoTooltip from '../ui/InfoTooltip';
 import PlatformBadge from '../ui/PlatformBadge';
 import ProfileIcon from '../ui/ProfileIcon';
 import { api } from '@/utils/apiClient';
 import { TIKTOK_DAILY_ENGAGEMENT_INFO } from '@/utils/columnConfig';
+import { copyText } from '@/utils/clipboard';
 
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString('sv-SE'));
 
@@ -149,6 +150,37 @@ const TikTokOverviewKontoView = ({ selectedFields = [], periodParams = {} }) => 
     }));
   };
 
+  const [copyStatus, setCopyStatus] = useState({ field: null, rowId: null, copied: false });
+  useEffect(() => {
+    if (copyStatus.copied) {
+      const t = setTimeout(() => setCopyStatus({ field: null, rowId: null, copied: false }), 1500);
+      return () => clearTimeout(t);
+    }
+  }, [copyStatus]);
+
+  const handleCopyValue = useCallback((value, field, rowId) => {
+    if (value === undefined || value === null) return;
+    const rawValue = typeof value === "number"
+      ? String(value)
+      : String(value).replace(/\s+/g, "").replace(/[^\d.,-]/g, "");
+    copyText(rawValue)
+      .then(() => setCopyStatus({ field, rowId, copied: true }))
+      .catch(err => console.error("Kunde inte kopiera:", err));
+  }, []);
+
+  const CopyButton = ({ value, field, rowId }) => {
+    const isCopied = copyStatus.copied && copyStatus.field === field && copyStatus.rowId === rowId;
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); handleCopyValue(value, field, rowId); }}
+        className="ml-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:text-primary"
+        title="Kopiera till urklipp"
+      >
+        {isCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+      </button>
+    );
+  };
+
   const SortIcon = ({ field }) => {
     if (sortConfig.key !== field) return <ArrowUpDown className="inline w-3 h-3 ml-1 opacity-50" />;
     return sortConfig.direction === 'asc'
@@ -214,11 +246,16 @@ const TikTokOverviewKontoView = ({ selectedFields = [], periodParams = {} }) => 
                   </TableCell>
                   {visibleFields.map(f => (
                     <TableCell key={f} className="text-right tabular-nums">
-                      {f === 'avg_daily_reach' ? (
-                        <span title="AVG av AVG (vägd) — räckvidd kan ej summeras">
-                          {fmt(totals[f])}
-                        </span>
-                      ) : fmt(totals[f])}
+                      <div className="flex items-center justify-end group">
+                        {f === 'avg_daily_reach' ? (
+                          <span title="AVG av AVG (vägd) — räckvidd kan ej summeras">
+                            {fmt(totals[f])}
+                          </span>
+                        ) : (
+                          <span>{fmt(totals[f])}</span>
+                        )}
+                        <CopyButton value={totals[f]} field={f} rowId="total" />
+                      </div>
                     </TableCell>
                   ))}
                 </TableRow>
@@ -242,20 +279,36 @@ const TikTokOverviewKontoView = ({ selectedFields = [], periodParams = {} }) => 
                   </TableCell>
                   {visibleFields.map(f => {
                     const v = r[f];
+                    const copyBtn = <CopyButton value={v} field={f} rowId={`${r.account_username}-${f}`} />;
                     if (f === 'net_follower_growth') {
                       return (
                         <TableCell key={f} className={`text-right tabular-nums font-medium ${v >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                          {v > 0 ? '+' : ''}{fmt(v)}
+                          <div className="flex items-center justify-end group">
+                            <span>{v > 0 ? '+' : ''}{fmt(v)}</span>
+                            {copyBtn}
+                          </div>
                         </TableCell>
                       );
                     }
                     if (f === 'new_followers') {
-                      return <TableCell key={f} className="text-right tabular-nums text-green-700">{fmt(v)}</TableCell>;
+                      return (
+                        <TableCell key={f} className="text-right tabular-nums text-green-700">
+                          <div className="flex items-center justify-end group"><span>{fmt(v)}</span>{copyBtn}</div>
+                        </TableCell>
+                      );
                     }
                     if (f === 'lost_followers') {
-                      return <TableCell key={f} className="text-right tabular-nums text-red-700">{fmt(v)}</TableCell>;
+                      return (
+                        <TableCell key={f} className="text-right tabular-nums text-red-700">
+                          <div className="flex items-center justify-end group"><span>{fmt(v)}</span>{copyBtn}</div>
+                        </TableCell>
+                      );
                     }
-                    return <TableCell key={f} className="text-right tabular-nums">{fmt(v)}</TableCell>;
+                    return (
+                      <TableCell key={f} className="text-right tabular-nums">
+                        <div className="flex items-center justify-end group"><span>{fmt(v)}</span>{copyBtn}</div>
+                      </TableCell>
+                    );
                   })}
                 </TableRow>
               ))}

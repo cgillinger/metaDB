@@ -349,14 +349,8 @@ const MainView = ({ onShowUploader }) => {
 
   useEffect(() => {
     if (isTikTokOverviewMode) {
-      // Seedar standardval när användaren går in i Översikt-läget och inget Översikt-
-      // fält är valt sedan tidigare. Annars filtrerar bort fält som inte hör hit.
-      setSelectedFields(prev => {
-        const overviewKeys = Object.keys(TIKTOK_OVERVIEW_AVAILABLE_FIELDS);
-        const kept = prev.filter(f => overviewKeys.includes(f));
-        if (kept.length > 0) return kept;
-        return ['video_views', 'avg_daily_reach', 'profile_views', 'net_follower_growth'];
-      });
+      // Förikryssa inga värden i Översikt-läget — behåll bara redan valda Översikt-fält.
+      setSelectedFields(prev => prev.filter(f => Object.keys(TIKTOK_OVERVIEW_AVAILABLE_FIELDS).includes(f)));
       return;
     }
     const availableFields = Object.keys(getAvailableFields());
