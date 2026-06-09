@@ -10,6 +10,7 @@ import CollabBadge from '../ui/CollabBadge';
 import { Card } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Calculator, ExternalLink, Copy, Check, Trash2, AlertCircle, Users, LineChart } from 'lucide-react';
+import { copyText } from '@/utils/clipboard';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
@@ -341,7 +342,7 @@ const AccountView = ({
   const handleCopyValue = useCallback((value, field, rowId = 'total') => {
     if (value === undefined || value === null) return;
     const rawValue = String(value).replace(/\s+/g, '').replace(/[^\d.,]/g, '');
-    navigator.clipboard.writeText(rawValue)
+    copyText(rawValue)
       .then(() => setCopyStatus({ field, rowId, copied: true }))
       .catch(err => console.error('Kunde inte kopiera:', err));
   }, []);

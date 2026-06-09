@@ -9,6 +9,7 @@ import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 import { formatValue, DISPLAY_NAMES } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel } from '@/utils/apiClient';
+import { copyText } from '@/utils/clipboard';
 
 const ALL_ACCOUNTS = 'all_accounts';
 const MIN_POSTS_FOR_RELIABLE_STATS = 5;
@@ -168,7 +169,7 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
     if (field === 'percentage') rawValue = String(value.toFixed(1));
     else if (typeof value === 'number') rawValue = String(value);
     else rawValue = String(value).replace(/\s+/g, '').replace(/[^\d.,]/g, '');
-    navigator.clipboard.writeText(rawValue)
+    copyText(rawValue)
       .then(() => setCopyStatus({ field, rowId, copied: true }))
       .catch(err => console.error('Kunde inte kopiera:', err));
   };
