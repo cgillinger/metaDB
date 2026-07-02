@@ -5,6 +5,7 @@
  */
 import Papa from 'papaparse';
 import { getDb } from '../db/connection.js';
+import { canonicalGaAccountName } from './gaAccountAliases.js';
 
 /**
  * Find the "besök" column in a list of headers (case-insensitive substring match).
@@ -71,7 +72,7 @@ export function importGaSiteVisitsCSV(csvContent, month, filename) {
   let skipped = 0;
 
   for (const row of result.data) {
-    const programName = (row['Programnamn'] || '').trim();
+    const programName = canonicalGaAccountName((row['Programnamn'] || '').trim());
     const visits = parseInt(row[visitsCol], 10) || 0;
 
     if (!programName) {

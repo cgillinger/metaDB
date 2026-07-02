@@ -5,6 +5,7 @@
  */
 import Papa from 'papaparse';
 import { getDb } from '../db/connection.js';
+import { canonicalGaAccountName } from './gaAccountAliases.js';
 
 /**
  * Find the listens column in a list of headers.
@@ -81,7 +82,7 @@ export function importGaListensCSV(csvContent, month, filename) {
   let skipped = 0;
 
   for (const row of result.data) {
-    const programName = (row['Programnamn'] || '').trim();
+    const programName = canonicalGaAccountName((row['Programnamn'] || '').trim());
     const listens = parseInt(row[listensCol], 10) || 0;
 
     if (!programName) {
