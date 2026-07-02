@@ -75,6 +75,16 @@ export const api = {
   deleteReachMonth: (month) =>
     fetch(`/api/reach/${month}`, { method: 'DELETE' }).then(handleResponse),
 
+  // FB unique viewers imports (successor to legacy reach)
+  uploadViewersCSV: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch('/api/viewers', { method: 'POST', body: formData }).then(handleResponse);
+  },
+  getViewersMonths: () => fetchWithRetry('/api/viewers/months').then(handleResponse),
+  deleteViewersMonth: (month) =>
+    fetch(`/api/viewers/${month}`, { method: 'DELETE' }).then(handleResponse),
+
   // IG Reach imports
   uploadIGReachCSV: (file) => {
     const formData = new FormData();

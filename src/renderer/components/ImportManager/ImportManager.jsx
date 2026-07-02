@@ -45,6 +45,7 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
   const [stats, setStats] = useState(null);
   const [coverage, setCoverage] = useState(null);
   const [reachMonths, setReachMonths] = useState([]);
+  const [viewersMonths, setViewersMonths] = useState([]);
   const [igReachMonths, setIgReachMonths] = useState([]);
   const [gaListensMonths, setGaListensMonths] = useState([]);
   const [tiktokOverviewMonths, setTiktokOverviewMonths] = useState([]);
@@ -66,11 +67,12 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [importsData, statsData, coverageData, reachMonthsData, igReachMonthsData, gaMonthsData, ttOverviewMonthsData] = await Promise.all([
+      const [importsData, statsData, coverageData, reachMonthsData, viewersMonthsData, igReachMonthsData, gaMonthsData, ttOverviewMonthsData] = await Promise.all([
         api.getImports(),
         api.getStats(),
         api.getCoverage().catch(() => null),
         api.getReachMonths().catch(() => ({ months: [] })),
+        api.getViewersMonths().catch(() => ({ months: [] })),
         api.getIGReachMonths().catch(() => ({ months: [] })),
         api.getGAListensMonths().catch(() => ({ months: [] })),
         api.getTikTokOverviewMonths().catch(() => ({ months: [] })),
@@ -79,6 +81,7 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
       setStats(statsData);
       setCoverage(coverageData);
       setReachMonths(reachMonthsData.months || []);
+      setViewersMonths(viewersMonthsData.months || []);
       setIgReachMonths(igReachMonthsData.months || []);
       setGaListensMonths(gaMonthsData.months || []);
       setTiktokOverviewMonths(ttOverviewMonthsData.months || []);
@@ -443,16 +446,49 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
         </Card>
       )}
 
-      {/* Reach data */}
+      {/* FB unique viewers data */}
+      {viewersMonths.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Unika tittare (Facebook API)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {viewersMonths.map(month => (
+                <div key={month} className="flex items-center gap-1 px-3 py-1.5 rounded border bg-blue-50 border-blue-200 text-blue-800 text-sm font-medium">
+                  {month}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Radera Unika tittare-data för ${month}?`)) {
+                        api.deleteViewersMonth(month).then(fetchData);
+                      }
+                    }}
+                    className="ml-1 hover:text-red-600"
+                    title="Radera"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Unika konton som såg sidans innehåll minst en gång under månaden (Metas
+              nya mått, ersätter Kontoräckvidd sedan juni 2026). Gäller bara Facebook.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Legacy reach data */}
       {reachMonths.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Kontoräckvidd (Facebook API)</CardTitle>
+            <CardTitle className="text-lg">Kontoräckvidd (Facebook API) — äldre mått</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {reachMonths.map(month => (
-                <div key={month} className="flex items-center gap-1 px-3 py-1.5 rounded border bg-blue-50 border-blue-200 text-blue-800 text-sm font-medium">
+                <div key={month} className="flex items-center gap-1 px-3 py-1.5 rounded border bg-amber-50 border-amber-200 text-amber-800 text-sm font-medium">
                   {month}
                   <button
                     onClick={() => {
@@ -469,7 +505,9 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
               ))}
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Räckviddsdata importerad från Metas Graph API. Gäller bara Facebook.
+              Äldre räckviddsmått — avvecklat av Meta i juni 2026 och ersatt av Unika
+              tittare. Historiken behålls som den är; värdena är inte jämförbara med
+              Unika tittare eftersom måtten definieras olika.
             </p>
           </CardContent>
         </Card>

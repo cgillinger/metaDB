@@ -194,6 +194,36 @@ router.get('/', (req, res) => {
   }
   const igReachMonthsAvailable = [...new Set(igReachData.map(r => r.month))].sort();
 
+  // FB unique viewers ("Unika tittare (API)") — successor to legacy account_reach.
+  // Same monthly, never-summed semantics; kept as a separate series (different
+  // measure definition, must not be merged with legacy reach).
+  let viewersData = [];
+  if (reachMonths.length > 0) {
+    const vPlaceholders = reachMonths.map(() => '?').join(',');
+    viewersData = db.prepare(`
+      SELECT account_name, month, viewers
+      FROM account_viewers
+      WHERE month IN (${vPlaceholders})
+      ${hiddenReachFilter()}
+      ORDER BY account_name, month
+    `).all(...reachMonths);
+  } else {
+    viewersData = db.prepare(`
+      SELECT account_name, month, viewers
+      FROM account_viewers
+      WHERE 1=1
+      ${hiddenReachFilter()}
+      ORDER BY account_name, month
+    `).all();
+  }
+
+  const viewersByAccount = {};
+  for (const row of viewersData) {
+    if (!viewersByAccount[row.account_name]) viewersByAccount[row.account_name] = {};
+    viewersByAccount[row.account_name][row.month] = row.viewers;
+  }
+  const viewersMonthsAvailable = [...new Set(viewersData.map(r => r.month))].sort();
+
   // Available reach months (only months that actually have data)
   const reachMonthsAvailable = [...new Set(reachData.map(r => r.month))].sort();
 
@@ -219,6 +249,38 @@ router.get('/', (req, res) => {
 
     for (const row of reachOnlyAccounts) {
       if (existingAccountKeys.has(`${row.account_name}::facebook`)) continue;
+      accounts.push({
+        account_id: null,
+        account_name: row.account_name,
+        account_username: null,
+        platform: 'facebook',
+        is_collab: 0,
+        post_count: 0,
+        views: 0, reach: 0, likes: 0, comments: 0, shares: 0,
+        total_clicks: 0, link_clicks: 0, other_clicks: 0,
+        saves: 0, follows: 0, interactions: 0, engagement: 0,
+        posts_per_day: 0,
+        _reachOnly: true,
+      });
+    }
+  }
+
+  // Include viewers-only FB accounts (in account_viewers but not in posts) —
+  // same rule as reach-only accounts, so post-less pages keep appearing after
+  // the legacy reach series ended (2026-05).
+  if (shouldIncludeReachOnly && viewersMonthsAvailable.length > 0 && (!reqPlatform || reqPlatform === 'facebook')) {
+    const existingFBKeys = new Set(accounts.map(a => `${a.account_name}::${a.platform}`));
+    const vPlaceholders2 = viewersMonthsAvailable.map(() => '?').join(',');
+    const viewersOnlyAccounts = db.prepare(`
+      SELECT DISTINCT av.account_name
+      FROM account_viewers av
+      WHERE av.month IN (${vPlaceholders2})
+      AND LOWER(av.account_name) NOT LIKE 'srholder%'
+      ${hiddenReachFilter('av')}
+    `).all(...viewersMonthsAvailable);
+
+    for (const row of viewersOnlyAccounts) {
+      if (existingFBKeys.has(`${row.account_name}::facebook`)) continue;
       accounts.push({
         account_id: null,
         account_name: row.account_name,
@@ -303,7 +365,7 @@ router.get('/', (req, res) => {
     groupAggregates[group.id] = agg;
   }
 
-  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, igReachByAccount, igReachMonths: igReachMonthsAvailable, estimatedClicksByAccount, groupAggregates, totalPeriodDays: days || 0 });
+  res.json({ accounts, totals, reachByAccount, reachMonths: reachMonthsAvailable, igReachByAccount, igReachMonths: igReachMonthsAvailable, viewersByAccount, viewersMonths: viewersMonthsAvailable, estimatedClicksByAccount, groupAggregates, totalPeriodDays: days || 0 });
 });
 
 export default router;

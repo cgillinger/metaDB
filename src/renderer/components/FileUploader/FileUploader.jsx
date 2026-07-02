@@ -159,14 +159,22 @@ export function FileUploader({ onImportComplete, onCancel }) {
         (previewSet.has('Målgrupp som nåtts') || previewSet.has('Reached audience')) &&
         (previewSet.has('Profilvisningar') || previewSet.has('Profile views'));
 
-      // Reach export: identified by the combination of Page, Page ID and Reach headers
-      const isReach = !isTikTokVideo && !isTikTokOverview &&
+      // FB unique viewers export (fetch_viewers.py): same headers as legacy reach
+      // PLUS Views_Source — the only reliable discriminator between the measures.
+      const isViewers = !isTikTokVideo && !isTikTokOverview &&
+                        preview.includes('Page') &&
+                        preview.includes('Page ID') &&
+                        preview.includes('Reach') &&
+                        preview.includes('Views_Source');
+
+      // Legacy reach export: Page + Page ID + Reach, WITHOUT Views_Source
+      const isReach = !isViewers && !isTikTokVideo && !isTikTokOverview &&
                       preview.includes('Page') &&
                       preview.includes('Page ID') &&
                       preview.includes('Reach');
 
       // GA listens export: must have Programnamn and at least one listening column
-      const isGaListens = !isReach && !isTikTokVideo && !isTikTokOverview &&
+      const isGaListens = !isReach && !isViewers && !isTikTokVideo && !isTikTokOverview &&
         preview.includes('Programnamn') &&
         preview.some(h => {
           const lower = h.toLowerCase();
@@ -176,12 +184,12 @@ export function FileUploader({ onImportComplete, onCancel }) {
         });
 
       // GA site visits export: must have Programnamn and a "besök" column
-      const isGaSiteVisits = !isReach && !isGaListens && !isTikTokVideo && !isTikTokOverview &&
+      const isGaSiteVisits = !isReach && !isViewers && !isGaListens && !isTikTokVideo && !isTikTokOverview &&
         preview.includes('Programnamn') &&
         preview.some(h => h.toLowerCase().includes('besök'));
 
       // IG reach export: ig_username + ig_name + Reach + Period_start
-      const isIGReach = !isReach && !isGaListens && !isGaSiteVisits && !isTikTokVideo && !isTikTokOverview &&
+      const isIGReach = !isReach && !isViewers && !isGaListens && !isGaSiteVisits && !isTikTokVideo && !isTikTokOverview &&
         preview.includes('ig_username') &&
         preview.includes('ig_name') &&
         preview.includes('Reach') &&
@@ -208,7 +216,8 @@ export function FileUploader({ onImportComplete, onCancel }) {
       }
 
       let fileType = 'posts';
-      if (isReach) fileType = 'reach';
+      if (isViewers) fileType = 'viewers';
+      else if (isReach) fileType = 'reach';
       else if (isGaListens) fileType = 'ga_listens';
       else if (isGaSiteVisits) fileType = 'ga_site_visits';
       else if (isIGReach) fileType = 'ig_reach';
@@ -329,7 +338,9 @@ export function FileUploader({ onImportComplete, onCancel }) {
 
       try {
         let result;
-        if (entry.fileType === 'reach') {
+        if (entry.fileType === 'viewers') {
+          result = await api.uploadViewersCSV(entry.file);
+        } else if (entry.fileType === 'reach') {
           if (entry.reachHasPeriodStart) {
             result = await api.uploadReachCSV(entry.file);
           } else {
@@ -522,9 +533,17 @@ export function FileUploader({ onImportComplete, onCancel }) {
                       <p className="font-medium truncate flex items-center gap-1.5">
                         {entry.file.name}
                         {entry.platform && <PlatformBadge platform={entry.platform} />}
+                        {entry.fileType === 'viewers' && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 border border-blue-300">
+                            Unika tittare (API)
+                          </span>
+                        )}
                         {entry.fileType === 'reach' && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 border border-green-300">
-                            Kontoräckvidd
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-800 border border-amber-300"
+                            title="Äldre räckviddsmått — avvecklat av Meta i juni 2026. Historiska filer kan fortfarande importeras."
+                          >
+                            Kontoräckvidd (äldre mått)
                           </span>
                         )}
                         {entry.fileType === 'ga_listens' && (

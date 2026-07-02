@@ -164,6 +164,74 @@ router.get('/', (req, res) => {
     return res.json({ metric, granularity: 'month', months, series });
   }
 
+  // account_viewers: FB unique viewers from account_viewers table (successor to
+  // legacy account_reach — mirrors its logic, always a separate series)
+  if (metric === 'account_viewers') {
+    const vConditions = [];
+    const vParams = [];
+
+    if (accountPairs.length > 0) {
+      const names = accountPairs.map(p => p.name);
+      const placeholders = names.map(() => '?').join(',');
+      vConditions.push(`av.account_name IN (${placeholders})`);
+      vParams.push(...names);
+    }
+
+    vConditions.push(hiddenReachFilter('av').slice(4));
+
+    const { months: monthsParam } = req.query;
+    if (monthsParam) {
+      const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
+      if (monthList.length > 0) {
+        const placeholders = monthList.map(() => '?').join(',');
+        vConditions.push(`av.month IN (${placeholders})`);
+        vParams.push(...monthList);
+      }
+    }
+
+    const vWhere = `WHERE ${vConditions.join(' AND ')}`;
+    const vQuery = `
+      SELECT
+        av.month AS period,
+        av.account_name,
+        av.viewers AS value
+      FROM account_viewers av
+      ${vWhere}
+      ORDER BY av.month ASC, av.account_name ASC
+    `;
+
+    const rows = db.prepare(vQuery).all(...vParams);
+
+    const monthSet = new Set();
+    const byAccount = {};
+
+    for (const row of rows) {
+      monthSet.add(row.period);
+      const key = row.account_name;
+      if (!byAccount[key]) {
+        byAccount[key] = {
+          account_name: row.account_name,
+          platform: 'facebook',
+          is_collab: false,
+          dataMap: {},
+        };
+      }
+      byAccount[key].dataMap[row.period] = row.value;
+    }
+
+    const spanMonths = buildMonthSpan(req.query);
+    const months = resolveSeriesMonths(spanMonths, monthSet, granularity);
+    const series = Object.values(byAccount).map(account => ({
+      account_id: account.account_name,
+      account_name: account.account_name,
+      platform: account.platform,
+      is_collab: account.is_collab,
+      data: months.map(m => account.dataMap[m] || 0),
+    }));
+
+    return res.json({ metric, granularity: 'month', months, series });
+  }
+
   // ig_account_reach: IG reach from ig_account_reach table (mirrors account_reach logic)
   if (metric === 'ig_account_reach') {
     const igConditions = [];

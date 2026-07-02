@@ -42,6 +42,15 @@ export function importReachCSV(csvContent, month, filename) {
     throw new Error('Filen är inte en API-räckviddsexport. Förväntade kolumnerna Page, Page ID, Reach.');
   }
 
+  // Viewers exports (fetch_viewers.py) share these headers but carry Views_Source.
+  // They are a different measure (page_total_media_view_unique) and must never
+  // land in the legacy reach series — route them to the viewers import instead.
+  if (headers.map(h => h.trim()).includes('Views_Source')) {
+    throw new Error(
+      'Filen är en Unika tittare-export (kolumnen Views_Source finns), inte äldre räckvidd. Importera den under "Unika tittare (API)" i stället.'
+    );
+  }
+
   // Auto-detect month from Period_start if present (new CSV format)
   const hasPeriodStart = result.data[0] && result.data[0]['Period_start'];
 

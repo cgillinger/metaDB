@@ -29,13 +29,13 @@ import PeriodSelector from '../PeriodSelector';
 import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
 
-const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'account_reach', 'estimated_unique_clicks'];
+const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'account_reach', 'account_viewers', 'estimated_unique_clicks'];
 const IG_ONLY_FIELDS = ['saves', 'follows', 'ig_account_reach'];
 // TikTok-poster har varken räckvidd per inlägg, totala klick eller länkklick i CSV-export.
 // 'saves' är däremot tillgängligt i TikTok-export (Lägg till i Favoriter) — INTE i denna lista.
 // Räckvidd finns istället på dagsnivå i Översikt-CSV (separat tabell).
 const TIKTOK_UNAVAILABLE_FIELDS = [
-  'reach', 'average_reach', 'account_reach', 'ig_account_reach',
+  'reach', 'average_reach', 'account_reach', 'account_viewers', 'ig_account_reach',
   'total_clicks', 'link_clicks', 'other_clicks',
   'estimated_unique_clicks', 'follows',
 ];
@@ -43,7 +43,7 @@ const TIKTOK_UNAVAILABLE_FIELDS = [
 const FIELD_CATEGORIES = [
   {
     label: 'Räckvidd & visningar',
-    fields: ['views', 'average_reach', 'reach', 'account_reach', 'ig_account_reach', 'follows'],
+    fields: ['views', 'average_reach', 'reach', 'account_viewers', 'account_reach', 'ig_account_reach', 'follows'],
   },
   {
     label: 'Engagemang',
@@ -104,8 +104,8 @@ const POST_VIEW_AVAILABLE_FIELDS = {
 const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'average_reach': 'Räckvidd (genomsnitt)',
-  'account_reach': 'Kontoräckvidd (API) FB',
-  'ig_account_reach': 'Kontoräckvidd (API) IG',
+  'account_reach': 'Unika tittare & Kontoräckvidd (API) FB',
+  'ig_account_reach': 'Unika tittare (API) IG',
   'engagement': 'Totalt engagemang',
   'interactions': 'Interaktioner (gilla+komm+dela)',
   'likes': 'Gilla-markeringar / Reaktioner',
@@ -124,8 +124,9 @@ const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
 const TREND_ANALYSIS_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'reach': 'Räckvidd',
-  'account_reach': 'Kontoräckvidd (API) FB',
-  'ig_account_reach': 'Kontoräckvidd (API) IG',
+  'account_reach': 'Kontoräckvidd (API, äldre mått) FB',
+  'account_viewers': 'Unika tittare (API) FB',
+  'ig_account_reach': 'Unika tittare (API) IG',
   'engagement': 'Totalt engagemang',
   'interactions': 'Interaktioner',
   'likes': 'Gilla-markeringar / Reaktioner',
@@ -337,10 +338,11 @@ const MainView = ({ onShowUploader }) => {
     else if (activeView === 'trend_analysis') fields = TREND_ANALYSIS_AVAILABLE_FIELDS;
     else fields = POST_VIEW_AVAILABLE_FIELDS;
 
-    // account_reach/ig_account_reach are monthly-only — hide in custom date range mode.
-    if (periodMode === 'custom' && (fields.account_reach || fields.ig_account_reach)) {
+    // account_reach/account_viewers/ig_account_reach are monthly-only — hide in custom date range mode.
+    if (periodMode === 'custom' && (fields.account_reach || fields.account_viewers || fields.ig_account_reach)) {
       fields = { ...fields };
       delete fields.account_reach;
+      delete fields.account_viewers;
       delete fields.ig_account_reach;
     }
 

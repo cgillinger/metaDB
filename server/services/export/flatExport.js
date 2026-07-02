@@ -209,6 +209,21 @@ function accountReachMonthly(db) {
   }));
 }
 
+function accountViewersMonthly(db) {
+  // FB unique viewers — successor to legacy account_reach (frozen 2024-01..2026-05).
+  // Separate tab: different measure definition, series must never be merged.
+  return db.prepare(`
+    SELECT account_name, month, viewers, period_start, period_end, views_source
+    FROM account_viewers
+    WHERE ${NONEMPTY_NAME} ${hiddenReachFilter()} ORDER BY account_name, month
+  `).all().map(r => ({
+    account_name: r.account_name, normalized_name: normalizeMetaName(r.account_name),
+    platform: 'facebook',
+    month: r.month, month_date: monthDate(r.month), unique_viewers: r.viewers,
+    period_start: r.period_start, period_end: r.period_end, views_source: r.views_source,
+  }));
+}
+
 // ---- Group-grain tabs (SBS, source-scoped) ----------------------------------
 
 /**
@@ -350,7 +365,19 @@ const README_LINES = [
   [''],
   ['Räckvidd kan inte summeras över konton eller månader — samma person kan nås'],
   ['flera gånger (överlapp). Därför finns ingen räckvidd på grupp-flikarna. Använd'],
-  ['per-konto reach/account_reach som ett GENOMSNITT, aldrig som en summa.'],
+  ['per-konto reach/account_reach som ett GENOMSNITT, aldrig som en summa. Samma'],
+  ['regel gäller unique_viewers i account_viewers_monthly.'],
+  [''],
+  ['DEPREKERAT MÅTT — account_reach_monthly (Facebook) är fryst historik t.o.m.'],
+  ['maj 2026: Meta stängde måttet (page_impressions_unique) 2026-06-15. Ersättaren'],
+  ['är account_viewers_monthly ("Unika tittare (API)", page_total_media_view_unique)'],
+  ['= unika konton som såg innehållet minst en gång under månaden. Nivåerna skiljer'],
+  ['sig mellan måtten eftersom definitionerna skiljer: viewers kräver en faktisk'],
+  ['visning (minst halva skärmen i minst 0,25 sekunder) medan gamla reach byggde på'],
+  ['leverans till skärmen. Jämför ALDRIG värden över måttbytet som en serie —'],
+  ['skillnaden är metodologisk, inte en publikförändring. Instagram-räckvidden i'],
+  ['account_reach_monthly (platform=instagram) berörs inte: den bygger redan på'],
+  ['samma mått som viewers och fortsätter obruten.'],
   [''],
   ['Uppskattade unika klickare är beräknade PER MÅNAD och får inte summeras över'],
   ['flera månader (samma person återkommer). overlap_factor_f är överlappsfaktorn;'],
@@ -375,7 +402,8 @@ const README_LINES = [
   ['blanka kontorader.'],
   [''],
   ['Flikar: posts_monthly, estimated_unique_clicks_monthly, ga_listens_monthly,'],
-  ['ga_site_visits_monthly, account_reach_monthly, posts_groups_monthly,'],
+  ['ga_site_visits_monthly, account_reach_monthly, account_viewers_monthly,'],
+  ['posts_groups_monthly,'],
   ['ga_listens_groups_monthly, ga_site_visits_groups_monthly, tiktok_posts_monthly,'],
   ['tiktok_overview_monthly, tiktok_overview_daily, dim_accounts, dim_account_key,'],
   ['dim_groups, dim_group_members.'],
@@ -414,6 +442,7 @@ export function buildFlatWorkbook() {
   const listens = gaListensMonthly(db);
   const visits = gaSiteVisitsMonthly(db);
   const reach = accountReachMonthly(db);
+  const viewers = accountViewersMonthly(db);
   const tiktokPosts = tiktokPostsMonthly(db);
   const tiktokOverview = tiktokOverviewMonthly(db);
   const tiktokDaily = tiktokOverviewDaily(db);
@@ -454,6 +483,9 @@ export function buildFlatWorkbook() {
     ['account_name', 'normalized_name', 'month', 'month_date', 'visits', 'avg_daily_visits'], visits);
   addObjectSheet(wb, 'account_reach_monthly',
     ['account_name', 'normalized_name', 'platform', 'month', 'month_date', 'account_reach'], reach);
+  addObjectSheet(wb, 'account_viewers_monthly',
+    ['account_name', 'normalized_name', 'platform', 'month', 'month_date', 'unique_viewers',
+      'period_start', 'period_end', 'views_source'], viewers);
 
   // TikTok-flikar — separata från posts_monthly/account_reach eftersom TikTok-data
   // har egna fält (saves istället för reach per inlägg; dagsräckvidd istället för

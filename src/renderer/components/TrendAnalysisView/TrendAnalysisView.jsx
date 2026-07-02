@@ -60,8 +60,9 @@ const METRIC_CATEGORIES = [
     metrics: [
       { key: 'views', label: 'Visningar' },
       { key: 'average_reach', label: 'Räckvidd (genomsnitt)' },
-      { key: 'account_reach', label: 'Kontoräckvidd (API)', platform: 'facebook' },
-      { key: 'ig_account_reach', label: 'Kontoräckvidd (API)', platform: 'instagram' },
+      { key: 'account_viewers', label: 'Unika tittare (API)', platform: 'facebook' },
+      { key: 'account_reach', label: 'Kontoräckvidd (API, äldre mått)', platform: 'facebook' },
+      { key: 'ig_account_reach', label: 'Unika tittare (API)', platform: 'instagram' },
       { key: 'follows', label: 'Följare', platform: 'instagram' },
     ],
   },
@@ -106,8 +107,8 @@ const TREND_METRICS_COMMON = {
   'post_count': 'Antal publiceringar',
   'posts_per_day': 'Publiceringar per dag'
 };
-const TREND_METRICS_FB = { 'account_reach': 'Kontoräckvidd (API) FB', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'avg_daily_link_clicks': 'Länkklick snitt/dag', 'other_clicks': 'Övriga klick', 'estimated_unique_clicks': 'Uppsk. unika länkklickare' };
-const TREND_METRICS_IG = { 'ig_account_reach': 'Kontoräckvidd (API) IG', 'saves': 'Sparade', 'follows': 'Följare' };
+const TREND_METRICS_FB = { 'account_viewers': 'Unika tittare (API) FB', 'account_reach': 'Kontoräckvidd (API, äldre mått) FB', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'avg_daily_link_clicks': 'Länkklick snitt/dag', 'other_clicks': 'Övriga klick', 'estimated_unique_clicks': 'Uppsk. unika länkklickare' };
+const TREND_METRICS_IG = { 'ig_account_reach': 'Unika tittare (API) IG', 'saves': 'Sparade', 'follows': 'Följare' };
 
 const CHART_COLORS = [
   '#2563EB', '#16A34A', '#EAB308', '#DC2626', '#7C3AED', '#EA580C',
@@ -116,13 +117,13 @@ const CHART_COLORS = [
 
 // Metrics that cannot be meaningfully summed across accounts in a group
 const NON_SUMMABLE_METRICS = new Set([
-  'reach', 'average_reach', 'account_reach', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks',
+  'reach', 'average_reach', 'account_reach', 'account_viewers', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks',
 ]);
 
 // När TikTok är aktiv plattform saknar dessa mått data i TikTok-exporterna och
 // döljs ur datapunkt-väljaren (jfr TIKTOK_UNAVAILABLE_FIELDS i MainView).
 const TIKTOK_UNAVAILABLE_METRICS = new Set([
-  'average_reach', 'account_reach', 'ig_account_reach', 'follows',
+  'average_reach', 'account_reach', 'account_viewers', 'ig_account_reach', 'follows',
   'total_clicks', 'link_clicks', 'avg_daily_link_clicks', 'other_clicks', 'estimated_unique_clicks',
 ]);
 
@@ -205,6 +206,7 @@ const TrendAnalysisView = ({
   const [accountList, setAccountList] = useState([]);
   const [igReachAccountNames, setIgReachAccountNames] = useState(new Set());
   const [fbReachAccountNames, setFbReachAccountNames] = useState(new Set());
+  const [fbViewersAccountNames, setFbViewersAccountNames] = useState(new Set());
   const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -374,6 +376,7 @@ const TrendAnalysisView = ({
         })));
         setIgReachAccountNames(new Set(Object.keys(data.igReachByAccount || {})));
         setFbReachAccountNames(new Set(Object.keys(data.reachByAccount || {})));
+        setFbViewersAccountNames(new Set(Object.keys(data.viewersByAccount || {})));
       } catch (error) {
         console.error('Fel vid hämtning av konton:', error);
       }
@@ -886,13 +889,18 @@ const TrendAnalysisView = ({
         a._isGroup || (a.platform === 'facebook' && fbReachAccountNames.has(a.account_name))
       );
     }
+    if (selectedMetric === 'account_viewers') {
+      return accountListWithGroups.filter(a =>
+        a._isGroup || (a.platform === 'facebook' && fbViewersAccountNames.has(a.account_name))
+      );
+    }
     if (selectedMetric === 'ig_account_reach') {
       return accountListWithGroups.filter(a =>
         a._isGroup || (a.platform === 'instagram' && igReachAccountNames.has(a.account_name))
       );
     }
     return accountListWithGroups;
-  }, [accountListWithGroups, selectedMetric, igReachAccountNames, fbReachAccountNames]);
+  }, [accountListWithGroups, selectedMetric, igReachAccountNames, fbReachAccountNames, fbViewersAccountNames]);
 
   // When metric changes to a platform-specific metric, remove incompatible accounts from selection
   useEffect(() => {
@@ -904,6 +912,14 @@ const TrendAnalysisView = ({
       );
       setSelectedAccounts(prev => prev.filter(k => fbKeys.has(k)));
     }
+    if (!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers') {
+      const fbvKeys = new Set(
+        accountListWithGroups
+          .filter(a => a._isGroup || (a.platform === 'facebook' && fbViewersAccountNames.has(a.account_name)))
+          .map(a => a.key)
+      );
+      setSelectedAccounts(prev => prev.filter(k => fbvKeys.has(k)));
+    }
     if (!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'ig_account_reach') {
       const igKeys = new Set(
         accountListWithGroups
@@ -912,7 +928,7 @@ const TrendAnalysisView = ({
       );
       setSelectedAccounts(prev => prev.filter(k => igKeys.has(k)));
     }
-  }, [gaListensMode, gaSiteVisitsMode, selectedMetric, accountListWithGroups, igReachAccountNames, fbReachAccountNames]);
+  }, [gaListensMode, gaSiteVisitsMode, selectedMetric, accountListWithGroups, igReachAccountNames, fbReachAccountNames, fbViewersAccountNames]);
 
   // Final display account list
   const activeAccountList = gaSiteVisitsMode
@@ -1227,6 +1243,30 @@ const TrendAnalysisView = ({
             <Alert className="py-2">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{groupNotice}</AlertDescription>
+            </Alert>
+          )}
+
+          {selectedMetric === 'account_reach' && !gaListensMode && !gaSiteVisitsMode && (
+            <Alert className="py-2 border-amber-300 bg-amber-50 text-amber-900">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Äldre mått:</strong> Kontoräckvidd avvecklades av Meta i juni 2026 —
+                serien slutar i maj 2026 och fortsätter inte. Ersättaren heter Unika tittare (API).
+                Jämför inte nivåerna mellan måtten: de definieras olika (gamla räckvidden räknade
+                leverans till skärmen, Unika tittare kräver en faktisk visning), så ett hopp vid
+                bytet är metodologiskt — inte en publikförändring.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {selectedMetric === 'account_viewers' && !gaListensMode && !gaSiteVisitsMode && (
+            <Alert className="py-2">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Unika tittare:</strong> antal unika konton som såg kontots innehåll minst
+                en gång under månaden (Metas mått fr.o.m. juni 2026, ersätter Kontoräckvidd).
+                Data finns från januari 2026. Månader utan data visas som 0.
+              </AlertDescription>
             </Alert>
           )}
 

@@ -53,7 +53,7 @@ const sortGAPrograms = (a, b) => {
 const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'average_reach': 'Genomsnittlig räckvidd',
-  'account_reach': 'Kontoräckvidd (API)',
+  'account_reach': 'Unika tittare & Kontoräckvidd (API)',
   'interactions': 'Interaktioner',
   'engagement': 'Engagemang',
   'likes': 'Reaktioner/Gilla',
@@ -81,6 +81,19 @@ function formatReachColumnHeader(month) {
   const [year, m] = month.split('-');
   return `Räckvidd ${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${year.slice(2)}`;
 }
+
+function formatViewersColumnHeader(month) {
+  const [year, m] = month.split('-');
+  return `Tittare ${MONTH_NAMES_SV[parseInt(m, 10) - 1]} ${year.slice(2)}`;
+}
+
+// Info texts for the two FB account-level measures. Legacy reach is frozen
+// history (Meta killed the metric 2026-06-15); viewers is its successor with a
+// different definition, so the series are never comparable across the switch.
+const VIEWERS_INFO =
+  'Unika tittare = antal unika konton som såg sidans innehåll minst en gång under månaden (Metas mått fr.o.m. juni 2026, kräver att innehållet visats i minst 0,25 sekunder). Ersätter Kontoräckvidd.';
+const LEGACY_REACH_INFO =
+  'Äldre räckviddsmått — avvecklat av Meta i juni 2026 (sista månad: maj 2026) och ersatt av Unika tittare. Nivåerna är INTE jämförbara mellan måtten: gamla räckvidden räknade leverans till skärmen, Unika tittare kräver en faktisk visning. En skillnad i nivå vid bytet är metodologisk, inte en publikförändring.';
 
 const PAGE_SIZE_OPTIONS = [
   { value: '10', label: '10 per sida' },
@@ -114,6 +127,8 @@ const AccountView = ({
   const [totalPeriodDays, setTotalPeriodDays] = useState(0);
   const [reachByAccount, setReachByAccount] = useState({});
   const [reachMonths, setReachMonths] = useState([]);
+  const [viewersByAccount, setViewersByAccount] = useState({});
+  const [viewersMonths, setViewersMonths] = useState([]);
   const [igReachByAccount, setIgReachByAccount] = useState({});
   const [igReachMonths, setIgReachMonths] = useState([]);
   const [estimatedClicksByAccount, setEstimatedClicksByAccount] = useState({});
@@ -193,6 +208,8 @@ const AccountView = ({
         setTotalPeriodDays(data.totalPeriodDays || 0);
         setReachByAccount(data.reachByAccount || {});
         setReachMonths(data.reachMonths || []);
+        setViewersByAccount(data.viewersByAccount || {});
+        setViewersMonths(data.viewersMonths || []);
         setIgReachByAccount(data.igReachByAccount || {});
         setIgReachMonths(data.igReachMonths || []);
         setEstimatedClicksByAccount(data.estimatedClicksByAccount || {});
@@ -661,7 +678,11 @@ const AccountView = ({
       sorted.sort((a, b) => {
         let aVal, bVal;
 
-        if (sortConfig.key.startsWith('reach_')) {
+        if (sortConfig.key.startsWith('viewers_')) {
+          const month = sortConfig.key.replace('viewers_', '');
+          aVal = a.platform === 'facebook' ? (viewersByAccount[a.account_name]?.[month] ?? -1) : -1;
+          bVal = b.platform === 'facebook' ? (viewersByAccount[b.account_name]?.[month] ?? -1) : -1;
+        } else if (sortConfig.key.startsWith('reach_')) {
           const month = sortConfig.key.replace('reach_', '');
           aVal = a.platform === 'facebook' ? (reachByAccount[a.account_name]?.[month] ?? -1) : -1;
           bVal = b.platform === 'facebook' ? (reachByAccount[b.account_name]?.[month] ?? -1) : -1;
@@ -2091,6 +2112,23 @@ const AccountView = ({
                   </div>
                 </TableHead>
               ))}
+              {selectedFields.includes('account_reach') && viewersMonths.length > 0 && viewersMonths.map(month => (
+                <TableHead
+                  key={`viewers-${month}`}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => setSortConfig(current => ({
+                    key: `viewers_${month}`,
+                    direction: current.key === `viewers_${month}` && current.direction === 'asc' ? 'desc' : 'asc'
+                  }))}
+                  title={VIEWERS_INFO}
+                >
+                  <div className="flex items-center justify-end whitespace-nowrap">
+                    {formatViewersColumnHeader(month)}
+                    <PlatformBadge platform="facebook" />
+                    {getSortIcon(`viewers_${month}`)}
+                  </div>
+                </TableHead>
+              ))}
               {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => (
                 <TableHead
                   key={`reach-${month}`}
@@ -2099,18 +2137,20 @@ const AccountView = ({
                     key: `reach_${month}`,
                     direction: current.key === `reach_${month}` && current.direction === 'asc' ? 'desc' : 'asc'
                   }))}
+                  title={LEGACY_REACH_INFO}
                 >
-                  <div className="flex items-center justify-end whitespace-nowrap">
+                  <div className="flex items-center justify-end whitespace-nowrap text-amber-700">
                     {formatReachColumnHeader(month)}
+                    <span className="ml-1 text-[10px] font-normal uppercase tracking-wide border border-amber-300 bg-amber-50 rounded px-1">äldre mått</span>
                     <PlatformBadge platform="facebook" />
                     {getSortIcon(`reach_${month}`)}
                   </div>
                 </TableHead>
               ))}
-              {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
+              {selectedFields.includes('account_reach') && viewersMonths.length === 0 && reachMonths.length === 0 && (
                 <TableHead>
                   <div className="flex items-center justify-end whitespace-nowrap">
-                    Kontoräckvidd
+                    Unika tittare
                     <PlatformBadge platform="facebook" />
                   </div>
                 </TableHead>
@@ -2166,12 +2206,17 @@ const AccountView = ({
                   ) : ''}
                 </TableCell>
               ))}
+              {selectedFields.includes('account_reach') && viewersMonths.length > 0 && viewersMonths.map(month => (
+                <TableCell key={`total-viewers-${month}`} className="text-right font-semibold text-primary">
+                  —
+                </TableCell>
+              ))}
               {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => (
                 <TableCell key={`total-reach-${month}`} className="text-right font-semibold text-primary">
                   —
                 </TableCell>
               ))}
-              {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
+              {selectedFields.includes('account_reach') && viewersMonths.length === 0 && reachMonths.length === 0 && (
                 <TableCell className="text-right font-semibold text-primary">—</TableCell>
               )}
               {selectedFields.includes('ig_account_reach') && igReachMonths.length > 0 && igReachMonths.map(month => (
@@ -2214,7 +2259,7 @@ const AccountView = ({
                         colSpan={
                           2 +
                           displayFields.length +
-                          (selectedFields.includes('account_reach') ? Math.max(reachMonths.length, 1) : 0) +
+                          (selectedFields.includes('account_reach') ? Math.max(viewersMonths.length + reachMonths.length, 1) : 0) +
                           (selectedFields.includes('ig_account_reach') ? Math.max(igReachMonths.length, 1) : 0) +
                           (showDeleteColumn ? 1 : 0) +
                           1
@@ -2280,6 +2325,29 @@ const AccountView = ({
                         )}
                       </TableCell>
                     ))}
+                    {selectedFields.includes('account_reach') && viewersMonths.length > 0 && viewersMonths.map(month => {
+                      if (isGroup) {
+                        return (
+                          <TableCell key={`viewers-${month}`} className="text-right">
+                            <span className="text-muted-foreground">—</span>
+                          </TableCell>
+                        );
+                      }
+                      const viewersMap = account.platform === 'facebook' ? viewersByAccount[account.account_name] : undefined;
+                      const viewersValue = viewersMap ? viewersMap[month] : undefined;
+                      return (
+                        <TableCell key={`viewers-${month}`} className="text-right">
+                          {viewersValue !== undefined ? (
+                            <div className="flex items-center justify-end group">
+                              <span>{formatValue(viewersValue)}</span>
+                              <CopyButton value={viewersValue} field={`viewers-${month}`} rowId={`${account.account_id}-viewers-${month}`} />
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground cursor-help" title="Unika tittare saknas för denna månad">—</span>
+                          )}
+                        </TableCell>
+                      );
+                    })}
                     {selectedFields.includes('account_reach') && reachMonths.length > 0 && reachMonths.map(month => {
                       if (isGroup) {
                         return (
@@ -2298,12 +2366,12 @@ const AccountView = ({
                               <CopyButton value={reachValue} field={`reach-${month}`} rowId={`${account.account_id}-reach-${month}`} />
                             </div>
                           ) : (
-                            <span className="text-muted-foreground cursor-help" title="Kontoräckvidd saknas för denna månad">—</span>
+                            <span className="text-muted-foreground cursor-help" title="Kontoräckvidd (äldre mått) saknas för denna månad — måttet avvecklades av Meta i juni 2026">—</span>
                           )}
                         </TableCell>
                       );
                     })}
-                    {selectedFields.includes('account_reach') && reachMonths.length === 0 && (
+                    {selectedFields.includes('account_reach') && viewersMonths.length === 0 && reachMonths.length === 0 && (
                       <TableCell className="text-right">
                         <span className="text-muted-foreground text-xs">{isGroup ? '—' : 'Saknas'}</span>
                       </TableCell>
