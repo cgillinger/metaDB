@@ -19,6 +19,8 @@ metaDB är en self-hosted analysapp som aggregerar data från Meta Business Suit
 - Räckvidd = alltid AVG, aldrig SUM.
 - Upsert-säker import. INSERT OR REPLACE + dedup "keep highest interactions".
 - First-non-empty-wins för dual-language CSV-kolumner (SV+EN).
+- Kontonamnbyten splittrar serier: UNIQUE går på account_name, så ett namnbyte i källan skapar en ny parallell serie. Fix = SQL-sammanslagning till senaste namnet + alias i importern (mönster: gaAccountAliases.js, Ekot 2026-07). **Känd risk:** IG-kontot @sverigesradiossymfoniorkester saknar visningsnamn hos Meta och ligger som handle i ig_account_reach (via ig_username-fallbacken, v2.21.1) — får kontot ett riktigt ig_name senare splittras serien och måste slås ihop/aliasas på samma sätt.
+- FB "Unika tittare" (account_viewers) och legacy-reach (account_reach, fryst t.o.m. 2026-05) är OLIKA mått — slå aldrig ihop serierna. Importdetektering via Views_Source-kolumnen.
 
 ### Frontend
 - Locale-medveten formatering: toLocaleString('sv-SE') för siffror, localeCompare('sv') för sortering.
