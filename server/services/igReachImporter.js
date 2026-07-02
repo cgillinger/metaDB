@@ -81,8 +81,10 @@ export function importIGReachCSV(csvContent, filename) {
 
   db.transaction(() => {
     for (const row of result.data) {
-      const igName = row['ig_name'] ? String(row['ig_name']).trim() : '';
       const igUsername = row['ig_username'] ? String(row['ig_username']).trim() : null;
+      // Some IG accounts have no display name in Meta (empty ig_name) — fall back
+      // to the handle so their reach still lands instead of being skipped.
+      const igName = (row['ig_name'] ? String(row['ig_name']).trim() : '') || igUsername || '';
       const reach = parseInt(row['Reach'], 10) || 0;
       const followers = parseInt(row['Followers'], 10) || 0;
       const status = row['Status'] ? String(row['Status']).trim() : '';
