@@ -152,7 +152,10 @@ const PlatformTrendView = ({ periodParams = {} }) => {
   const canvasRef = useRef(null);
 
   // Fetch aggregated data when platform, group or period changes.
+  // Stale-flag guards against out-of-order responses on rapid filter changes:
+  // only the latest request may update state or release the loading flag.
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
       setLoading(true);
       try {
@@ -160,15 +163,17 @@ const PlatformTrendView = ({ periodParams = {} }) => {
           ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
           : null;
         const result = await api.getPlatformTrends(platform, group, monthsArray);
+        if (cancelled) return;
         setData(result);
       } catch (err) {
         console.error('Fel vid hämtning av plattformstrend:', err);
-        setData(null);
+        if (!cancelled) setData(null);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchData();
+    return () => { cancelled = true; };
   }, [platform, group, periodParams]);
 
   const months = data?.months || [];

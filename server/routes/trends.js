@@ -314,6 +314,7 @@ router.get('/', (req, res) => {
     const rows = getEstimatedUniqueClicks({
       accountNames: accountNames.length > 0 ? accountNames : undefined,
       months: filterMonths || undefined,
+      excludeCollab: req.query.excludeCollab === 'true',
     });
 
     const monthSet = new Set();
@@ -426,9 +427,16 @@ router.get('/', (req, res) => {
 
     let value = row.value;
     if (metric === 'posts_per_day' && row.period) {
-      const [year, month] = row.period.split('-').map(Number);
-      const daysInMonth = new Date(year, month, 0).getDate();
-      value = Math.round((row.post_count / daysInMonth) * 10) / 10;
+      let dayCount;
+      if (/^\d{4}-W\d{2}$/.test(row.period)) {
+        // Week periods have 7 days — parsing 'Wnn' as a month gave NaN
+        // and nulled the whole series.
+        dayCount = 7;
+      } else {
+        const [year, month] = row.period.split('-').map(Number);
+        dayCount = new Date(year, month, 0).getDate();
+      }
+      value = Math.round((row.post_count / dayCount) * 10) / 10;
     }
 
     byAccount[key].dataMap[row.period] = value;

@@ -74,8 +74,11 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
   const [loading, setLoading] = useState(false);
   const [hasMixedData, setHasMixedData] = useState(false);
 
-  // Fetch posts from API with server-side pagination & sorting
+  // Fetch posts from API with server-side pagination & sorting.
+  // Stale-flag guards against out-of-order responses on rapid filter changes:
+  // only the latest request may update state or release the loading flag.
   useEffect(() => {
+    let cancelled = false;
     const fetchPosts = async () => {
       setLoading(true);
       try {
@@ -98,16 +101,18 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
         }
 
         const data = await api.getPosts(params);
+        if (cancelled) return;
         setPosts(data.data || []);
         setTotalPosts(data.total || 0);
         setTotalPages(data.totalPages || 0);
       } catch (error) {
         console.error('Fel vid hämtning av inlägg:', error);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchPosts();
+    return () => { cancelled = true; };
   }, [currentPage, pageSize, sortConfig, platform, selectedAccount, periodParams]);
 
   // Fetch unique accounts for filter dropdown
@@ -188,10 +193,12 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
     return formatValue(post[field]);
   };
 
-  // Export fetches ALL matching posts (not just current page)
+  // Export fetches ALL matching posts (not just current page) via the
+  // server's unpaginated mode (paginate=false) — a huge pageSize would be
+  // clamped to 100 server-side and silently truncate the export.
   const handleExportToCSV = async () => {
     try {
-      const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction, ...periodParams };
+      const params = { paginate: 'false', sort: sortConfig.key, order: sortConfig.direction, ...periodParams };
       if (platform) params.platform = platform;
       if (selectedAccount !== ALL_ACCOUNTS) {
         const sepIdx = selectedAccount.lastIndexOf('::');
@@ -239,7 +246,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
 
   const handleExportToExcel = async () => {
     try {
-      const params = { page: 1, pageSize: 100000, sort: sortConfig.key, order: sortConfig.direction, ...periodParams };
+      const params = { paginate: 'false', sort: sortConfig.key, order: sortConfig.direction, ...periodParams };
       if (platform) params.platform = platform;
       if (selectedAccount !== ALL_ACCOUNTS) {
         const sepIdx = selectedAccount.lastIndexOf('::');

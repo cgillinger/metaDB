@@ -70,7 +70,11 @@ const TikTokOverviewKontoView = ({ selectedFields = [], periodParams = {} }) => 
         const months = periodParams.months
           ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
           : null;
-        const result = await api.getTikTokOverviewSummary(months);
+        // Anpassad period (dateFrom/dateTo) har företräde framför månadslistan.
+        const result = await api.getTikTokOverviewSummary(months, {
+          dateFrom: periodParams.dateFrom,
+          dateTo: periodParams.dateTo,
+        });
         if (!cancelled) setSummary(result.summary || []);
       } catch (e) {
         if (!cancelled) setSummary([]);

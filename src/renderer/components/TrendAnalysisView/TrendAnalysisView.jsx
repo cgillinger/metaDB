@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
 import { daysInMonth } from '@/utils/dateHelpers';
+import { calculateNiceYAxis } from '@/utils/chartAxis';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 import {
   YOY_MONTH_AXIS,
@@ -134,22 +135,6 @@ const accountKey = (name, platform) => `${name}::${platform}`;
 const parseAccountKey = (key) => {
   const idx = key.lastIndexOf('::');
   return { name: key.slice(0, idx), platform: key.slice(idx + 2) };
-};
-
-const calculateNiceYAxis = (maxValue) => {
-  if (maxValue <= 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
-  const magnitude = Math.pow(10, Math.floor(Math.log10(maxValue)));
-  let tickInterval;
-  const normalizedMax = maxValue / magnitude;
-  if (normalizedMax <= 1) tickInterval = magnitude * 0.25;
-  else if (normalizedMax <= 2) tickInterval = magnitude * 0.5;
-  else if (normalizedMax <= 5) tickInterval = magnitude * 1;
-  else if (normalizedMax <= 10) tickInterval = magnitude * 2;
-  else tickInterval = magnitude * 5;
-  const niceMax = Math.ceil(maxValue / tickInterval) * tickInterval;
-  const ticks = [];
-  for (let i = 0; i <= niceMax; i += tickInterval) ticks.push(Math.round(i));
-  return { min: 0, max: niceMax, ticks, tickInterval };
 };
 
 const createSmoothPath = (points) => {
@@ -1320,7 +1305,7 @@ const TrendAnalysisView = ({
                     return (
                       <g key={tickValue}>
                         <line x1="70" y1={yPos} x2="930" y2={yPos} stroke="#d1d5db" strokeWidth="1" />
-                        <text x="65" y={yPos + 4} textAnchor="end" fontSize="14" fill="#6b7280">{tickValue.toLocaleString()}</text>
+                        <text x="65" y={yPos + 4} textAnchor="end" fontSize="14" fill="#6b7280">{tickValue.toLocaleString('sv-SE')}</text>
                       </g>
                     );
                   })}

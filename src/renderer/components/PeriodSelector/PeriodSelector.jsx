@@ -143,7 +143,7 @@ const PeriodSelector = ({
     const reachCount = months.filter(m => m.has_reach).length;
     const parts = [];
     if (totalPosts > 0) parts.push(`${totalPosts.toLocaleString('sv-SE')} inlägg`);
-    if (reachCount > 0) parts.push(`${months.length} mån räckvidd`);
+    if (reachCount > 0) parts.push(`${reachCount} mån räckvidd`);
     if (parts.length === 0) parts.push(`${months.length} månader`);
     return parts.join(', ');
   };

@@ -4,6 +4,7 @@
  * Ingen extern styling, ingen Chart.js — ren SVG.
  */
 import React, { useState } from 'react';
+import { calculateNiceYAxis } from '@/utils/chartAxis';
 
 // Svenska månadsförkortningar
 const MONTH_NAMES_SV = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
@@ -15,26 +16,6 @@ const Y_TOP = 70;
 const Y_BOTTOM = 450;
 const PLOT_WIDTH = X_RIGHT - X_LEFT;   // 860
 const PLOT_HEIGHT = Y_BOTTOM - Y_TOP;  // 380
-
-/**
- * Beräknar snygga y-axel-tick-värden utifrån ett maxvärde.
- * Anpassad från TrendAnalysisView.
- */
-const calculateNiceYAxis = (maxValue) => {
-  if (maxValue <= 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
-  const magnitude = Math.pow(10, Math.floor(Math.log10(maxValue)));
-  let tickInterval;
-  const normalizedMax = maxValue / magnitude;
-  if (normalizedMax <= 1) tickInterval = magnitude * 0.25;
-  else if (normalizedMax <= 2) tickInterval = magnitude * 0.5;
-  else if (normalizedMax <= 5) tickInterval = magnitude * 1;
-  else if (normalizedMax <= 10) tickInterval = magnitude * 2;
-  else tickInterval = magnitude * 5;
-  const niceMax = Math.ceil(maxValue / tickInterval) * tickInterval;
-  const ticks = [];
-  for (let i = 0; i <= niceMax; i += tickInterval) ticks.push(Math.round(i));
-  return { min: 0, max: niceMax, ticks, tickInterval };
-};
 
 // Max antal x-ticks innan vi glesar ut till varannan/var tredje månad.
 const X_TICK_TARGET = 24;

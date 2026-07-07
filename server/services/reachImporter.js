@@ -51,11 +51,14 @@ export function importReachCSV(csvContent, month, filename) {
     );
   }
 
-  // Auto-detect month from Period_start if present (new CSV format)
-  const hasPeriodStart = result.data[0] && result.data[0]['Period_start'];
+  // Auto-detect month from Period_start if present (new CSV format).
+  // Scan all rows, not just the first: a placeholder/empty leading row must not
+  // suppress the auto-detect and cross-validation the guard below performs.
+  const hasPeriodStart = result.data.some(row => row && row['Period_start']);
 
   if (!month && hasPeriodStart) {
-    const ps = String(result.data[0]['Period_start']);
+    const firstWithPeriod = result.data.find(row => row && row['Period_start']);
+    const ps = String(firstWithPeriod['Period_start']);
     const m = ps.match(/(\d{4})-(\d{2})/);
     if (!m) {
       throw new Error(`Kunde inte tolka månaden från Period_start: ${ps}`);
@@ -71,6 +74,19 @@ export function importReachCSV(csvContent, month, filename) {
     }
   } else if (!month) {
     throw new Error('Månad måste anges i formatet YYYY-MM (eller CSV:n måste innehålla Period_start).');
+  } else if (hasPeriodStart) {
+    // User picked a month AND the CSV carries Period_start — cross-validate so
+    // a mispicked month can't silently upsert rows under the wrong month.
+    for (const row of result.data) {
+      if (!row['Period_start']) continue;
+      const rm = String(row['Period_start']).match(/(\d{4})-(\d{2})/);
+      if (rm && `${rm[1]}-${rm[2]}` !== month) {
+        throw new Error(
+          `Vald månad (${month}) matchar inte CSV-filens Period_start (${rm[1]}-${rm[2]}). ` +
+          'Kontrollera att rätt fil och månad valts.'
+        );
+      }
+    }
   }
 
   if (!/^\d{4}-\d{2}$/.test(month)) {

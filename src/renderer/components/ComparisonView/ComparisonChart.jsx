@@ -1,22 +1,7 @@
 import React, { useState } from 'react';
+import { calculateNiceYAxis } from '@/utils/chartAxis';
 
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
-
-const calculateNiceYAxis = (maxValue) => {
-  if (maxValue <= 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
-  const magnitude = Math.pow(10, Math.floor(Math.log10(maxValue)));
-  let tickInterval;
-  const normalizedMax = maxValue / magnitude;
-  if (normalizedMax <= 1) tickInterval = magnitude * 0.25;
-  else if (normalizedMax <= 2) tickInterval = magnitude * 0.5;
-  else if (normalizedMax <= 5) tickInterval = magnitude * 1;
-  else if (normalizedMax <= 10) tickInterval = magnitude * 2;
-  else tickInterval = magnitude * 5;
-  const niceMax = Math.ceil(maxValue / tickInterval) * tickInterval;
-  const ticks = [];
-  for (let i = 0; i <= niceMax; i += tickInterval) ticks.push(Math.round(i));
-  return { min: 0, max: niceMax, ticks, tickInterval };
-};
 
 const createSmoothPath = (points) => {
   if (points.length < 2) return '';
@@ -79,7 +64,14 @@ const ComparisonChart = ({ data, seriesAConfig, seriesBConfig, dualAxis }) => {
 
   const handleMouseEnter = (e, point, series) => {
     const rect = e.currentTarget.closest('svg').getBoundingClientRect();
-    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    // Convert client pixels to viewBox coordinates (1000x500) so the tooltip
+    // lands next to the cursor regardless of the rendered SVG size.
+    const scaleX = 1000 / rect.width;
+    const scaleY = 500 / rect.height;
+    setMousePos({
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    });
     setHoveredPoint({ ...point, series });
   };
 

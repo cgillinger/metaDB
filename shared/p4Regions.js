@@ -12,3 +12,16 @@ export const P4_REGIONS = [
   'Stockholm', 'Sörmland', 'Uppland', 'Värmland', 'Väst',
   'Västerbotten', 'Västernorrland', 'Västmanland', 'Örebro', 'Östergötland'
 ];
+
+/**
+ * True if a Meta account name is one of the 25 active P4 local stations.
+ * Canonical matcher — mirrors the backend SQL filter (account_name LIKE
+ * 'P4 {region}%', which is case-insensitive in SQLite). Use this everywhere
+ * instead of re-implementing the startsWith check per call site.
+ * @param {string} accountName
+ * @returns {boolean}
+ */
+export function isP4LocalStation(accountName) {
+  const name = (accountName || '').toLowerCase();
+  return P4_REGIONS.some(region => name.startsWith(`p4 ${region.toLowerCase()}`));
+}

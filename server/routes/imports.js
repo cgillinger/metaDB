@@ -355,7 +355,6 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
           ?, ?
         )
         ON CONFLICT(post_id, platform) DO UPDATE SET
-          import_id = excluded.import_id,
           account_id = excluded.account_id,
           account_name = excluded.account_name,
           account_username = excluded.account_username,
@@ -407,8 +406,10 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
         }
       }
 
-      // Update the import row_count to reflect actual inserts
-      // (some posts may have been updates of existing posts)
+      // Update the import row_count to reflect actual inserts.
+      // import_id is NOT reassigned on conflict: posts stay owned by the import
+      // that first inserted them, so deleting a re-import only CASCADE-removes
+      // rows that import actually added (never pre-existing history).
       const actualPostCount = db.prepare(
         'SELECT COUNT(*) AS count FROM posts WHERE import_id = ?'
       ).get(importId).count;

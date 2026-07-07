@@ -29,6 +29,12 @@ function mapRow(rawRow, mappings) {
     const norm = normalizeText(origCol);
     for (const [mapKey, internal] of Object.entries(mappings)) {
       if (normalizeText(mapKey) === norm) {
+        // First-non-empty-wins (same guard as csvProcessor.mapRow): an empty
+        // duplicate SV/EN column must not overwrite an already mapped value.
+        if (internal in out && out[internal] != null && out[internal] !== ''
+            && (value == null || value === '')) {
+          break;
+        }
         out[internal] = value;
         break;
       }
@@ -243,15 +249,27 @@ export function getTikTokOverviewAccounts() {
  * Övriga fält summeras över dagarna inom månaden.
  * Engagement-formel (per dag, summerad): likes + comments + shares + new_followers.
  */
-export function getTikTokOverviewMonthlySummary(months) {
+export function getTikTokOverviewMonthlySummary(months, dateRange = null) {
   const db = getDb();
   const params = [];
-  let monthClause = '';
-  if (months && months.length > 0) {
+  const conditions = [];
+  // A custom period (both bounds) takes priority over `months` — matching the
+  // apiClient, which sends one or the other. ANDing them would intersect to an
+  // empty result when the range and the months don't overlap.
+  const hasRange = !!(dateRange?.dateFrom && dateRange?.dateTo);
+  if (hasRange) {
+    // Inclusive YYYY-MM-DD bounds on the daily rows, so a partial month
+    // aggregates only the days inside the range.
+    conditions.push('date >= ?');
+    params.push(dateRange.dateFrom);
+    conditions.push('date <= ?');
+    params.push(dateRange.dateTo);
+  } else if (months && months.length > 0) {
     const placeholders = months.map(() => '?').join(',');
-    monthClause = `WHERE month IN (${placeholders})`;
+    conditions.push(`month IN (${placeholders})`);
     params.push(...months);
   }
+  const monthClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return db.prepare(`
     SELECT
       account_username,

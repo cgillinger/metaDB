@@ -50,6 +50,23 @@ const sortGAPrograms = (a, b) => {
   return a.localeCompare(b, 'sv');
 };
 
+/**
+ * Re-sorts a GA/GSV summary client-side when sorting by an avg_daily_* key,
+ * since the backend always sorts by the total_* column.
+ * Returns the summary unchanged for all other sort keys.
+ */
+const applyAvgDailySort = (result, sortKey, sortDir, avgKey) => {
+  if (sortKey !== avgKey) return result;
+  return {
+    ...result,
+    programmes: [...result.programmes].sort((a, b) =>
+      sortDir === 'asc'
+        ? (a[avgKey] ?? 0) - (b[avgKey] ?? 0)
+        : (b[avgKey] ?? 0) - (a[avgKey] ?? 0)
+    ),
+  };
+};
+
 const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'views': 'Visningar',
   'average_reach': 'Genomsnittlig räckvidd',
@@ -233,15 +250,7 @@ const AccountView = ({
           ? periodParams.months.split(',').map(m => m.trim())
           : null;
         const result = await api.getGAListensSummary(months, gaSortDir);
-        // Sort client-side if sorting by avg_daily_listens (backend always sorts by total_listens)
-        if (gaSortKey === 'avg_daily_listens') {
-          result.programmes = [...result.programmes].sort((a, b) =>
-            gaSortDir === 'asc'
-              ? (a.avg_daily_listens ?? 0) - (b.avg_daily_listens ?? 0)
-              : (b.avg_daily_listens ?? 0) - (a.avg_daily_listens ?? 0)
-          );
-        }
-        setGaSummary(result);
+        setGaSummary(applyAvgDailySort(result, gaSortKey, gaSortDir, 'avg_daily_listens'));
       } catch (err) {
         console.error('Fel vid hämtning av GA-lyssningar:', err);
       } finally {
@@ -266,7 +275,7 @@ const AccountView = ({
         const monthsSet = new Set(rows.map(r => r.month));
         const sortedMonths = [...monthsSet].sort();
         setGaMonths(sortedMonths);
-        if (sortedMonths.length > 0 && !gaMonthlySortConfig.key) {
+        if (sortedMonths.length > 0 && !sortedMonths.includes(gaMonthlySortConfig.key)) {
           setGaMonthlySortConfig({ key: sortedMonths[sortedMonths.length - 1], direction: 'desc' });
         }
       } catch (err) {
@@ -288,14 +297,7 @@ const AccountView = ({
           ? periodParams.months.split(',').map(m => m.trim())
           : null;
         const result = await api.getGASiteVisitsSummary(months, gsvSortDir);
-        if (gsvSortKey === 'avg_daily_visits') {
-          result.programmes = [...result.programmes].sort((a, b) =>
-            gsvSortDir === 'asc'
-              ? (a.avg_daily_visits ?? 0) - (b.avg_daily_visits ?? 0)
-              : (b.avg_daily_visits ?? 0) - (a.avg_daily_visits ?? 0)
-          );
-        }
-        setGsvSummary(result);
+        setGsvSummary(applyAvgDailySort(result, gsvSortKey, gsvSortDir, 'avg_daily_visits'));
       } catch (err) {
         console.error('Fel vid hämtning av GSV-summary:', err);
       } finally {
@@ -319,7 +321,7 @@ const AccountView = ({
         setGsvData(rows);
         const uniqueMonths = [...new Set(rows.map(r => r.month))].sort();
         setGsvMonths(uniqueMonths);
-        if (uniqueMonths.length > 0 && !gsvMonthlySortConfig.key) {
+        if (uniqueMonths.length > 0 && !uniqueMonths.includes(gsvMonthlySortConfig.key)) {
           setGsvMonthlySortConfig({ key: uniqueMonths[uniqueMonths.length - 1], direction: 'desc' });
         }
       } catch (err) {
@@ -694,11 +696,8 @@ const AccountView = ({
           aVal = a.platform === 'facebook' ? (estimatedClicksByAccount[a.account_name]?.upper ?? -1) : -1;
           bVal = b.platform === 'facebook' ? (estimatedClicksByAccount[b.account_name]?.upper ?? -1) : -1;
         } else if (sortConfig.key === 'account_name') {
-          aVal = (a.account_name || '').toLowerCase();
-          bVal = (b.account_name || '').toLowerCase();
-          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-          return 0;
+          const cmp = (a.account_name || '').localeCompare((b.account_name || ''), 'sv');
+          return sortConfig.direction === 'asc' ? cmp : -cmp;
         } else {
           aVal = a[sortConfig.key];
           bVal = b[sortConfig.key];
@@ -716,7 +715,7 @@ const AccountView = ({
     const startIndex = (currentPage - 1) * pageSize;
     const paginatedIndividuals = sorted.slice(startIndex, startIndex + pageSize);
     return [...groupRows, ...paginatedIndividuals];
-  }, [filteredAccountDataWithGroups, sortConfig, currentPage, pageSize, reachByAccount]);
+  }, [filteredAccountDataWithGroups, sortConfig, currentPage, pageSize, reachByAccount, viewersByAccount, igReachByAccount, estimatedClicksByAccount]);
 
   const totalPages = Math.ceil(accountData.length / pageSize);
 
@@ -1009,7 +1008,7 @@ const AccountView = ({
           ? periodParams.months.split(',').map(m => m.trim())
           : null;
         const result = await api.getGASiteVisitsSummary(months, gsvSortDir);
-        setGsvSummary(result);
+        setGsvSummary(applyAvgDailySort(result, gsvSortKey, gsvSortDir, 'avg_daily_visits'));
       } catch (err) {
         console.error('Batch-radering misslyckades:', err);
         alert(`Radering misslyckades: ${err.message}`);
@@ -1567,7 +1566,7 @@ const AccountView = ({
           ? periodParams.months.split(',').map(m => m.trim())
           : null;
         const result = await api.getGAListensSummary(months, gaSortDir);
-        setGaSummary(result);
+        setGaSummary(applyAvgDailySort(result, gaSortKey, gaSortDir, 'avg_daily_listens'));
       } catch (err) {
         console.error('Batch-radering misslyckades:', err);
         alert(`Radering misslyckades: ${err.message}`);

@@ -49,11 +49,14 @@ const ComparisonView = ({ periodParams = {}, accountGroups = [], onGroupsChanged
     [comparisonType]
   );
 
+  // Stale-flag guards against out-of-order responses on rapid filter changes:
+  // only the latest request may update state or release the loading flag.
   useEffect(() => {
     if (!selectedAccount) return;
     const months = periodParams.months
       ? periodParams.months.split(',').map(m => m.trim()).filter(Boolean)
       : null;
+    let cancelled = false;
     setLoading(true);
     setMatchInfo(null);
 
@@ -67,17 +70,19 @@ const ComparisonView = ({ periodParams = {}, accountGroups = [], onGroupsChanged
       }
       api.getComparisonBesokLankklickGroup(group.memberGaNames, months)
         .then(res => {
+          if (cancelled) return;
           setData(res.data || []);
           setMatchInfo(res.matchInfo || null);
         })
         .catch(err => console.error('Fel vid hämtning av jämförelsedata:', err))
-        .finally(() => setLoading(false));
+        .finally(() => { if (!cancelled) setLoading(false); });
     } else {
       api[activeConfig.fetchMethod](selectedAccount, months)
-        .then(res => setData(res.data || []))
+        .then(res => { if (!cancelled) setData(res.data || []); })
         .catch(err => console.error('Fel vid hämtning av jämförelsedata:', err))
-        .finally(() => setLoading(false));
+        .finally(() => { if (!cancelled) setLoading(false); });
     }
+    return () => { cancelled = true; };
   }, [selectedAccount, comparisonType, activeConfig, periodParams, groups]);
 
   const isGroupSelected = selectedAccount.startsWith('__group__');

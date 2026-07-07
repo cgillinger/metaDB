@@ -38,6 +38,7 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
   const [confirmHide, setConfirmHide] = useState(null); // { account_name, platform } | 'bulk'
   const [hiddenExpanded, setHiddenExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null); // { succeeded, failed } | null
 
   const makeKey = (name, platform) => `${name}::${platform}`;
 
@@ -140,10 +141,31 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
 
   const doHideBulk = async () => {
     setBusy(true);
+    setBulkResult(null);
     try {
       const toHide = visible.filter(a => selected.has(makeKey(a.account_name, a.platform)));
-      await Promise.all(toHide.map(a => api.hideAccount(a.account_name, a.platform)));
-      setSelected(new Set());
+      // Kör sekventiellt i små batchar i stället för en stor Promise.all —
+      // annars kan API:ets rate-limit (200 req/min) tyst fälla en delmängd.
+      const BATCH_SIZE = 10;
+      let succeeded = 0;
+      const failedAccounts = [];
+      for (let i = 0; i < toHide.length; i += BATCH_SIZE) {
+        const batch = toHide.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map(a => api.hideAccount(a.account_name, a.platform))
+        );
+        results.forEach((r, idx) => {
+          if (r.status === 'fulfilled') {
+            succeeded++;
+          } else {
+            failedAccounts.push(batch[idx]);
+            console.error('Fel vid bulk-döljning:', batch[idx].account_name, r.reason);
+          }
+        });
+      }
+      // Konton som inte kunde döljas förblir markerade så att det går att försöka igen.
+      setSelected(new Set(failedAccounts.map(a => makeKey(a.account_name, a.platform))));
+      setBulkResult({ succeeded, failed: failedAccounts.length });
       await fetchData();
       if (onImportsChanged) onImportsChanged();
     } catch (err) {
@@ -194,6 +216,26 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Bulk hide result */}
+        {bulkResult && (
+          <Alert variant={bulkResult.failed > 0 ? 'destructive' : 'default'}>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>
+              {bulkResult.failed > 0 ? 'Alla konton kunde inte döljas' : 'Konton dolda'}
+            </AlertTitle>
+            <AlertDescription>
+              <p className="mb-2">
+                {bulkResult.failed > 0
+                  ? `${bulkResult.succeeded} av ${bulkResult.succeeded + bulkResult.failed} konton doldes. ${bulkResult.failed} konton kunde inte döljas — de är fortfarande markerade, så du kan försöka igen.`
+                  : `${bulkResult.succeeded} konton doldes.`}
+              </p>
+              <Button variant="outline" size="sm" onClick={() => setBulkResult(null)}>
+                Stäng
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Confirm single hide */}
         {confirmHide && confirmHide !== 'bulk' && (
           <Alert variant="destructive">
