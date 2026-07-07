@@ -69,7 +69,9 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
     try {
       const [importsData, statsData, coverageData, reachMonthsData, viewersMonthsData, igReachMonthsData, gaMonthsData, ttOverviewMonthsData] = await Promise.all([
         api.getImports(),
-        api.getStats(),
+        // Stats får inte fälla hela laddningen — importlistan ska visas ändå,
+        // stats-korten renderas då tomma via sina ?.-fallbacks.
+        api.getStats().catch(() => null),
         api.getCoverage().catch(() => null),
         api.getReachMonths().catch(() => ({ months: [] })),
         api.getViewersMonths().catch(() => ({ months: [] })),
@@ -236,7 +238,7 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-3 bg-muted/50 rounded-lg">
               <BarChart3 className="h-5 w-5 mx-auto mb-1 text-primary" />
-              <p className="text-2xl font-bold">{(stats?.posts || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold">{(stats?.posts || 0).toLocaleString('sv-SE')}</p>
               <p className="text-xs text-muted-foreground">Inlägg</p>
             </div>
             <div className="text-center p-3 bg-muted/50 rounded-lg">
@@ -703,13 +705,13 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
                       <TableCell className="text-right whitespace-nowrap">
                         <div className="flex items-center justify-end">
                           <BarChart3 className="w-3 h-3 mr-1 text-muted-foreground" />
-                          {(imp.row_count || 0).toLocaleString()}
+                          {(imp.row_count || 0).toLocaleString('sv-SE')}
                         </div>
                       </TableCell>
                       <TableCell className="text-right whitespace-nowrap">
                         <div className="flex items-center justify-end">
                           <Users className="w-3 h-3 mr-1 text-muted-foreground" />
-                          {(imp.account_count || 0).toLocaleString()}
+                          {(imp.account_count || 0).toLocaleString('sv-SE')}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">

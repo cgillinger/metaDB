@@ -270,7 +270,9 @@ export function FileUploader({ onImportComplete, onCancel }) {
     }
 
     setFiles(prev => [...prev, ...fileEntries]);
-  }, []);
+    // tiktokAccounts måste vara med i deps — annars läser closuren en stale (tom)
+    // karta och autofyllen av display-namn för kända TikTok-konton dör.
+  }, [tiktokAccounts]);
 
   const handleFileInputChange = (event) => {
     if (event.target.files && event.target.files.length > 0) {

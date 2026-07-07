@@ -318,11 +318,20 @@ export const api = {
   getTikTokOverviewAccounts: () =>
     fetchWithRetry('/api/tiktok-overview/accounts').then(handleResponse),
 
-  getTikTokOverviewSummary: (months) => {
-    const params = months && months.length > 0
-      ? '?' + new URLSearchParams({ months: months.join(',') })
-      : '';
-    return fetchWithRetry(`/api/tiktok-overview/summary${params}`).then(handleResponse);
+  /**
+   * Summary of TikTok overview data. Filter either by months (array of
+   * 'YYYY-MM') or by an inclusive date range { dateFrom, dateTo } ('YYYY-MM-DD').
+   */
+  getTikTokOverviewSummary: (months, { dateFrom, dateTo } = {}) => {
+    const params = new URLSearchParams();
+    if (dateFrom && dateTo) {
+      params.set('dateFrom', dateFrom);
+      params.set('dateTo', dateTo);
+    } else if (months && months.length > 0) {
+      params.set('months', months.join(','));
+    }
+    const query = params.toString() ? `?${params}` : '';
+    return fetchWithRetry(`/api/tiktok-overview/summary${query}`).then(handleResponse);
   },
 
   getTikTokOverviewDaily: (account, months) => {

@@ -17,6 +17,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
 import { AlertTriangle } from 'lucide-react';
 import { api } from '@/utils/apiClient';
+import { isP4LocalStation } from '../../../../shared/p4Regions.js';
 
 const GroupCreateDialog = ({ open, onOpenChange, source, availableAccounts, editGroup, onSave }) => {
   const [name, setName] = useState('');
@@ -65,7 +66,7 @@ const GroupCreateDialog = ({ open, onOpenChange, source, availableAccounts, edit
       setName('Alla P4');
       setSelected(new Set(
         availableAccounts
-          .filter(a => /^P4\s/i.test(a.account_name))
+          .filter(a => isP4LocalStation(a.account_name))
           .map(a => a.key)
       ));
     }

@@ -85,8 +85,11 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
     return selectedFields.filter(field => ALL_METRIC_FIELDS.includes(field));
   }, [selectedFields]);
 
-  // Fetch post type data from API
+  // Fetch post type data from API.
+  // Stale-flag guards against out-of-order responses on rapid filter changes:
+  // only the latest request may update state or release the loading flag.
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
       setLoading(true);
       try {
@@ -104,14 +107,16 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
         if (selectedFields && selectedFields.length > 0) params.fields = selectedFields.join(',');
 
         const data = await api.getPostTypes(params);
+        if (cancelled) return;
         setPostTypeData(data.postTypes || []);
       } catch (error) {
         console.error('Fel vid hämtning av inläggstyper:', error);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchData();
+    return () => { cancelled = true; };
   }, [platform, selectedAccount, selectedFields, periodParams]);
 
   // Fetch unique accounts for filter
@@ -213,7 +218,7 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
       if (aValue == null) return 1; if (bValue == null) return -1;
       if (typeof aValue === 'number' && typeof bValue === 'number')
         return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-      return sortConfig.direction === 'asc' ? String(aValue).localeCompare(String(bValue)) : String(bValue).localeCompare(String(aValue));
+      return sortConfig.direction === 'asc' ? String(aValue).localeCompare(String(bValue), 'sv') : String(bValue).localeCompare(String(aValue), 'sv');
     });
   }, [filteredData, sortConfig]);
 
