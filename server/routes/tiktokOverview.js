@@ -71,11 +71,18 @@ router.get('/accounts', (req, res) => {
 });
 
 // GET /summary?months=YYYY-MM,YYYY-MM — månadsaggregat per konto
+// Alternativt anpassad period: ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD (inklusive)
 router.get('/summary', (req, res) => {
   const months = req.query.months
     ? req.query.months.split(',').map(m => m.trim()).filter(Boolean)
     : null;
-  res.json({ summary: getTikTokOverviewMonthlySummary(months) });
+  const dateOk = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+  // Require BOTH bounds for a custom period. A one-sided bound would otherwise
+  // aggregate an unbounded open range (all history up to / from the one date).
+  const dateRange = (dateOk(req.query.dateFrom) && dateOk(req.query.dateTo))
+    ? { dateFrom: req.query.dateFrom, dateTo: req.query.dateTo }
+    : null;
+  res.json({ summary: getTikTokOverviewMonthlySummary(months, dateRange) });
 });
 
 // GET /daily?account=<handle>&months=...

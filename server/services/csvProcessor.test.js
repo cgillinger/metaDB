@@ -76,3 +76,25 @@ test('parseCSV handles empty TikTok title (defensive)', () => {
   assert.equal(empty.description, null);
   assert.equal(empty.account_username, 'p3dingata');
 });
+
+// Pacific→Stockholm-konverteringen måste vara oberoende av processens tidszon.
+// Regressionsskydd för TZ-buggen där `new Date(str)` tolkades i serverns lokala
+// tidszon: resultatet var bara korrekt på UTC-servrar, och inlägg nära midnatt
+// vid månadsskifte bokfördes på fel månad.
+test('parseCSV converts Pacific publish times to Stockholm, TZ-independent', () => {
+  const csv = [
+    'Publicerings-id,Sidnamn,Titel,Publiceringstid,Inläggstyp',
+    '10,TestSida,Vinter,2026-01-15 14:30:00,Foton',   // PST (UTC-8) → +9h till Stockholm
+    '11,TestSida,Sommar,2026-05-31 16:30:00,Foton',   // PDT (UTC-7) → +9h, korsar månadsskiftet
+  ].join('\n');
+  const { posts, month, dateRangeStart, dateRangeEnd } = parseCSV(csv, 'fb.csv');
+  const byId = Object.fromEntries(posts.map(p => [p.post_id, p]));
+
+  assert.equal(byId['10'].publish_time, '2026-01-15 23:30:00');
+  assert.equal(byId['11'].publish_time, '2026-06-01 01:30:00');
+
+  // Månad och datumintervall härleds ur Stockholm-tider, inte UTC-round-trip
+  assert.equal(month, '2026-01');
+  assert.equal(dateRangeStart, '2026-01-15');
+  assert.equal(dateRangeEnd, '2026-06-01');
+});

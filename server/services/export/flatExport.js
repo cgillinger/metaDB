@@ -22,18 +22,13 @@ import { getAccountGroups } from '../accountGroupService.js';
 import { normalizeMetaName } from '../comparisonService.js';
 import { avgPerDay } from '../metrics/dailyAverages.js';
 import { daysInMonth } from '../../utils/dateHelpers.js';
-import { P4_REGIONS } from '../../../shared/p4Regions.js';
+import { isP4LocalStation as isP4 } from '../../../shared/p4Regions.js';
 import * as XLSX from 'xlsx';
 
 /** First day of a 'YYYY-MM' month as a real Date (local midnight → clean Excel date). */
 function monthDate(month) {
   const [y, m] = month.split('-').map(Number);
   return new Date(y, m - 1, 1);
-}
-
-/** True if a Meta account name is one of the 25 active P4 local stations. */
-function isP4(accountName) {
-  return !!accountName && P4_REGIONS.some(r => accountName.startsWith(`P4 ${r}`));
 }
 
 // Export guard: skip rows with no identifiable account (empty account_name). After the
@@ -46,7 +41,8 @@ const NONEMPTY_NAME = "trim(COALESCE(account_name, '')) <> ''";
 function postsMonthly(db) {
   const rows = db.prepare(`
     SELECT account_name, platform, strftime('%Y-%m', publish_time) AS month,
-      COUNT(*) AS post_count, SUM(views) AS views, SUM(reach) AS reach,
+      COUNT(*) AS post_count, SUM(views) AS views,
+      CAST(ROUND(AVG(reach)) AS INTEGER) AS reach,
       SUM(link_clicks) AS link_clicks, SUM(interactions) AS interactions
     FROM posts
     WHERE publish_time IS NOT NULL AND ${NONEMPTY_NAME} ${hiddenPostsFilter()}

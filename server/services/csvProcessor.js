@@ -7,81 +7,66 @@ import {
   parseTikTokVideoUrl,
 } from '../../shared/columnConfig.js';
 
+// Intl.DateTimeFormat construction is the expensive part of the Intl API, so
+// cache one formatter per time zone. Only two fixed zones are ever used here,
+// but an import can call zoneWallClockAsUtcMs thousands of times per run.
+const zoneFormatters = new Map();
+function zoneFormatter(timeZone) {
+  let fmt = zoneFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false
+    });
+    zoneFormatters.set(timeZone, fmt);
+  }
+  return fmt;
+}
+
+/**
+ * Format an instant (ms since epoch) as wall-clock components in a time zone,
+ * re-encoded as a UTC timestamp. Used to derive the zone's UTC offset without
+ * depending on the process time zone.
+ */
+function zoneWallClockAsUtcMs(ms, timeZone) {
+  const parts = zoneFormatter(timeZone).formatToParts(new Date(ms));
+  const o = {};
+  for (const part of parts) o[part.type] = part.value;
+  const hour = o.hour === '24' ? '00' : o.hour;
+  return Date.UTC(+o.year, +o.month - 1, +o.day, +hour, +o.minute, +o.second);
+}
+
 /**
  * Convert a Pacific Time datetime string to Stockholm time (Europe/Stockholm).
  * Meta CSV exports use PST/PDT. We store Stockholm time in the database.
+ *
+ * Must be independent of the process time zone: the wall-clock components are
+ * parsed manually and anchored via Date.UTC, never via `new Date(string)`
+ * (which parses in local time and made re-imports shift posts between months
+ * depending on the importing machine's TZ).
  */
 function convertPacificToStockholm(dateStr) {
   if (!dateStr) return null;
   try {
-    // Parse the date string. Meta exports format: "2026-01-15 14:30:00" or similar
-    // Treat it as Pacific Time by appending the timezone
-    const pacificDate = new Date(dateStr);
-    if (isNaN(pacificDate.getTime())) return dateStr;
+    const m = String(dateStr).trim().replace(/\//g, '-')
+      .match(/^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (!m) return dateStr;
+    const [, y, mo, d, h, mi, s = '0'] = m;
 
-    // Format in Pacific to get a proper date, then convert to Stockholm
-    const pacificStr = pacificDate.toLocaleString('sv-SE', { timeZone: 'America/Los_Angeles' });
-    const stockholmStr = pacificDate.toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' });
+    // The input wall clock, encoded as a UTC timestamp (TZ-independent anchor)
+    const wallMs = Date.UTC(+y, +mo - 1, +d, +h, +mi, +s);
 
-    // We need to figure out the actual instant. The input IS in Pacific Time.
-    // So we construct a Date that represents the Pacific interpretation.
-    // Parse the input as if it's in Pacific Time:
-    const parts = dateStr.replace(/[/]/g, '-').trim();
+    // Pacific offset (utc - wall) — two passes so DST transitions between the
+    // wall-clock anchor and the actual instant resolve correctly
+    const guess = wallMs + (wallMs - zoneWallClockAsUtcMs(wallMs, 'America/Los_Angeles'));
+    const actualUtcMs = wallMs + (guess - zoneWallClockAsUtcMs(guess, 'America/Los_Angeles'));
 
-    // Try to create a date object assuming the string IS Pacific Time
-    // by using Intl to figure out the UTC offset for Los Angeles at that date
-    const naiveDate = new Date(parts);
-    if (isNaN(naiveDate.getTime())) return dateStr;
-
-    // Get the Pacific offset at this date (handles DST)
-    const pacificFormatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Los_Angeles',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false
-    });
-
-    // Use a round-trip: format naiveDate as Pacific, then as Stockholm
-    // Since naiveDate was parsed from the string (browser interprets as local/UTC),
-    // we need to find the actual UTC instant where Pacific Time shows the given value.
-
-    // Method: Use the difference between what the date shows in Pacific vs UTC
-    const utcStr = naiveDate.toISOString();
-    const pacificParts = pacificFormatter.formatToParts(naiveDate);
-    const pacificObj = {};
-    for (const part of pacificParts) {
-      pacificObj[part.type] = part.value;
-    }
-    const pacificReconstructed = `${pacificObj.year}-${pacificObj.month}-${pacificObj.day}T${pacificObj.hour}:${pacificObj.minute}:${pacificObj.second}`;
-    const naiveStr = naiveDate.toISOString().slice(0, 19);
-
-    // The offset between UTC and Pacific at this moment
-    const utcMs = new Date(naiveStr + 'Z').getTime();
-    const pacificMs = new Date(pacificReconstructed + 'Z').getTime();
-    const offsetMs = utcMs - pacificMs;
-
-    // The input IS in Pacific, so the actual UTC instant is: input + offset
-    const inputMs = naiveDate.getTime();
-    // If naiveDate was parsed as UTC, inputMs is what we want to interpret as Pacific
-    // Actual UTC = inputMs + offsetMs
-    const actualUtcMs = inputMs + offsetMs;
-
-    // Now format that UTC instant in Stockholm time
-    const stockholmFormatter = new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Europe/Stockholm',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false
-    });
-
-    const actualDate = new Date(actualUtcMs);
-    const sthlmParts = stockholmFormatter.formatToParts(actualDate);
-    const s = {};
-    for (const part of sthlmParts) {
-      s[part.type] = part.value;
-    }
-
-    return `${s.year}-${s.month}-${s.day} ${s.hour}:${s.minute}:${s.second}`;
+    // Format that instant as Stockholm wall clock
+    const sthlmMs = zoneWallClockAsUtcMs(actualUtcMs, 'Europe/Stockholm');
+    const iso = new Date(sthlmMs).toISOString();
+    return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
   } catch {
     return dateStr;
   }
@@ -241,10 +226,12 @@ export function parseCSV(csvContent, filename, opts = {}) {
       normalizedType = rawType && POST_TYPE_MAP[rawType] ? POST_TYPE_MAP[rawType] : rawType;
     }
 
-    // Collect date for month derivation
+    // Collect date for month derivation. publish_time is a Stockholm wall-clock
+    // string at this point — use it directly instead of round-tripping through
+    // Date (which is TZ-dependent and shifted range/month at month boundaries).
     if (mapped.publish_time) {
-      const d = new Date(mapped.publish_time);
-      if (!isNaN(d.getTime())) dates.push(d);
+      const dm = String(mapped.publish_time).match(/^(\d{4}-\d{2}-\d{2})/);
+      if (dm) dates.push(dm[1]);
     }
 
     posts.push({
@@ -315,14 +302,15 @@ export function parseCSV(csvContent, filename, opts = {}) {
   let dateRangeEnd = null;
 
   if (dates.length > 0) {
-    dates.sort((a, b) => a - b);
-    dateRangeStart = dates[0].toISOString().slice(0, 10);
-    dateRangeEnd = dates[dates.length - 1].toISOString().slice(0, 10);
+    // 'YYYY-MM-DD' strings sort lexicographically = chronologically
+    dates.sort();
+    dateRangeStart = dates[0];
+    dateRangeEnd = dates[dates.length - 1];
 
     // Use the most common month among the posts
     const monthCounts = {};
     for (const d of dates) {
-      const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const m = d.slice(0, 7);
       monthCounts[m] = (monthCounts[m] || 0) + 1;
     }
     month = Object.entries(monthCounts).sort((a, b) => b[1] - a[1])[0][0];

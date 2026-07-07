@@ -40,7 +40,7 @@ metaDB är en self-hosted analysapp som aggregerar data från Meta Business Suit
 - Backup: online-backup via better-sqlite3 `db.backup()` (konsistent mot WAL) + `PRAGMA integrity_check`, lagra på två fysiska diskar. Volymägare är uid/gid 100:101.
 - Behåll en känd-god rollback-image taggad separat (`docker tag … meta-analytics:rollback-pre-x`).
 - **Städa gamla deploy-backuper:** ad hoc-backuper från deploydagar ska rensas när releasen bevisat sig (fråga Christian först). Väntar på rensning: `analytics-pre-ekot-merge-20260702.db`, `analytics-pre-v2.20-20260702.db`, `analytics-pre-v2.21-20260702.db` i `/home/chris/` på server2 + kopior i `/mnt/storage3tb/meta-analytics-db/` (~200 MB/st). Ordinarie Kopia/btrbk täcker ändå.
-- Plattformsknappens antal = `SUM(imports.row_count)`, inte `COUNT(*)` posts — överräknar om-importer (UPSERT). Faktiskt antal unika inlägg finns i posts.
+- Plattformsknappens antal = `SUM(imports.row_count)`, inte `COUNT(*)` posts. Sedan v2.22.0 behåller inlägg sitt ursprungliga `import_id` vid UPSERT (om-importer får row_count = enbart nya rader, och DELETE på en om-import raderar inte historik) — äldre om-importer kan dock fortfarande vara överräknade i summan. Faktiskt antal unika inlägg finns i posts.
 
 ## Samarbete mellan Claude-instanser
 

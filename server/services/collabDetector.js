@@ -35,12 +35,15 @@ function isSafeAccount(accountName) {
 export function redetectAllCollabs() {
   const db = getDb();
 
-  // Count posts per account_id, grouped by platform — exclude hidden accounts
+  // Count posts per account, grouped by platform — exclude hidden accounts.
+  // Rows without account_id group by account_name instead: pooling all NULL ids
+  // into one group both inflated their post count past the ≤2 threshold and
+  // made them unflaggable (IN (...) never matches NULL).
   const accountCounts = db.prepare(`
     SELECT account_id, account_name, platform, COUNT(*) AS post_count
     FROM posts
     WHERE ${hiddenPostsFilter().slice(4)}
-    GROUP BY account_id, platform
+    GROUP BY COALESCE(account_id, 'noid:' || COALESCE(account_name, '')), platform
   `).all();
 
   const totalAccounts = accountCounts.length;
@@ -51,14 +54,17 @@ export function redetectAllCollabs() {
     return { flagged: 0, cleared: totalAccounts };
   }
 
-  const collabAccountIds = new Set();
-  const safeAccountIds = new Set();
+  const collabTargets = [];
+  let cleared = 0;
 
   for (const row of accountCounts) {
     if (row.post_count <= 2 && !isSafeAccount(row.account_name)) {
-      collabAccountIds.add(row.account_id);
+      // Rows with neither id nor name can't be addressed — skip, never flag
+      if (row.account_id != null || (row.account_name && row.account_name !== '')) {
+        collabTargets.push(row);
+      }
     } else {
-      safeAccountIds.add(row.account_id);
+      cleared++;
     }
   }
 
@@ -69,17 +75,25 @@ export function redetectAllCollabs() {
       `UPDATE posts SET is_collab = 0 WHERE ${hiddenPostsFilter().slice(4)}`
     ).run();
 
-    // Set collab flags for detected accounts
-    if (collabAccountIds.size > 0) {
-      const placeholders = [...collabAccountIds].map(() => '?').join(',');
-      db.prepare(
-        `UPDATE posts SET is_collab = 1 WHERE account_id IN (${placeholders})`
-      ).run(...collabAccountIds);
+    // Set collab flags per detected account, scoped by platform so an id/name
+    // reused across platforms never leaks the flag. The hidden-account filter
+    // mirrors the clear step above: hidden posts are never touched, so they can
+    // neither be flagged nor cleared here (avoids leaving a stale is_collab=1 on
+    // a hidden post that the clear step deliberately skips).
+    const byId = db.prepare(
+      `UPDATE posts SET is_collab = 1 WHERE account_id = ? AND platform = ? ${hiddenPostsFilter()}`
+    );
+    const byName = db.prepare(
+      `UPDATE posts SET is_collab = 1 WHERE account_id IS NULL AND account_name = ? AND platform = ? ${hiddenPostsFilter()}`
+    );
+    for (const t of collabTargets) {
+      if (t.account_id != null) byId.run(t.account_id, t.platform);
+      else byName.run(t.account_name, t.platform);
     }
   })();
 
   return {
-    flagged: collabAccountIds.size,
-    cleared: safeAccountIds.size
+    flagged: collabTargets.length,
+    cleared
   };
 }

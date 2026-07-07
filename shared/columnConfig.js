@@ -4,7 +4,15 @@
  * Maps Swedish CSV column names from Meta Business Suite to internal field names.
  * Supports both Facebook and Instagram CSV formats with normalized field names.
  *
- * This file is shared between server and client.
+ * This file is shared between server and client. The client module
+ * src/utils/columnConfig.js is a pure re-export of this file.
+ *
+ * Key normalization decisions:
+ * - "Räckvidd" → reach (both platforms)
+ * - "Reaktioner, kommentarer och delningar" → interactions (FB)
+ * - likes + comments + shares → interactions (IG, calculated)
+ * - FB Meta "Engagemang" concept → engagement (interactions + clicks for FB)
+ * - IG engagement_total_extended → engagement (likes+comments+shares+saves+follows for IG)
  */
 
 // Facebook CSV column mappings
@@ -163,7 +171,14 @@ export const DISPLAY_NAMES = {
   'other_clicks': 'Övriga klick',
   'link_clicks': 'Länkklick',
   'post_count': 'Antal publiceringar',
-  'posts_per_day': 'Publiceringar per dag'
+  'posts_per_day': 'Publiceringar per dag',
+  'estimated_unique_clicks': 'Uppsk. unika klickare',
+  'avg_daily_link_clicks': 'Länkklick snitt/dag',
+  'video_views': 'Videovisningar',
+  'profile_views': 'Profilvisningar',
+  'new_followers': 'Nya följare',
+  'lost_followers': 'Tappade följare',
+  'net_follower_growth': 'Nettotillväxt följare'
 };
 
 // Info tooltips explaining what engagement means per platform
@@ -318,10 +333,12 @@ export function findMatchingColumnKey(columnName, mappings) {
 export function getValue(dataObject, targetField) {
   if (!dataObject || !targetField) return null;
 
+  // Direct access
   if (dataObject[targetField] !== undefined) {
     return dataObject[targetField];
   }
 
+  // Calculate interactions if not stored directly
   if (targetField === 'interactions') {
     const likes = safeParseValue(dataObject.likes) || 0;
     const comments = safeParseValue(dataObject.comments) || 0;
@@ -329,6 +346,7 @@ export function getValue(dataObject, targetField) {
     return likes + comments + shares;
   }
 
+  // Calculate engagement based on platform
   if (targetField === 'engagement') {
     const platform = dataObject._platform || dataObject.platform;
     const likes = safeParseValue(dataObject.likes) || 0;
@@ -336,15 +354,23 @@ export function getValue(dataObject, targetField) {
     const shares = safeParseValue(dataObject.shares) || 0;
 
     if (platform === 'facebook') {
+      // FB engagement = interactions + clicks
       const totalClicks = safeParseValue(dataObject.total_clicks) || 0;
       return likes + comments + shares + totalClicks;
+    } else if (platform === 'tiktok') {
+      // TikTok per-post engagement = likes + comments + shares + saves
+      const saves = safeParseValue(dataObject.saves) || 0;
+      return likes + comments + shares + saves;
     } else {
+      // IG engagement = likes + comments + shares + saves + follows
       const saves = safeParseValue(dataObject.saves) || 0;
       const follows = safeParseValue(dataObject.follows) || 0;
       return likes + comments + shares + saves + follows;
     }
   }
 
+  // All our data uses exact field names after CSV mapping.
+  // If we get here, the field genuinely doesn't exist.
   return null;
 }
 

@@ -134,6 +134,13 @@ test('(b) metric cells are numbers, not strings', () => {
   assert.equal(typeof g.member_count, 'number');
 });
 
+test('posts_monthly reach is a per-post average (AVG), never a sum', () => {
+  // All seeded posts have reach 60 — a SUM would scale with post_count.
+  const multi = sheet('posts_monthly').find(r => r.post_count > 1 && r.reach != null);
+  assert.ok(multi, 'expected an account-month with >1 post');
+  assert.equal(multi.reach, 60);
+});
+
 test('(c) month_date is a real Date', () => {
   for (const t of ['posts_monthly', 'ga_listens_monthly', 'posts_groups_monthly']) {
     assert.ok(sheet(t)[0].month_date instanceof Date, `${t}.month_date not a Date`);

@@ -71,22 +71,42 @@ router.post('/redetect-collab', async (req, res) => {
 });
 
 // GET /api/maintenance/backup
-router.get('/backup', (req, res) => {
+// Online-backup via better-sqlite3 db.backup() (WAL-konsistent snapshot) —
+// att streama den levande filen direkt kan ge en trasig kopia om en import
+// checkpointar mitt under nedladdningen.
+router.get('/backup', async (req, res) => {
   const dbPath = process.env.DB_PATH || './data/analytics.db';
   if (!fs.existsSync(dbPath)) {
     return res.status(404).json({ error: 'Databasfil hittades inte.' });
   }
 
-  // Checkpoint WAL before backup to ensure consistency
   const db = getDb();
-  db.pragma('wal_checkpoint(TRUNCATE)');
+  const stamp = new Date().toISOString().slice(0, 10);
+  const tmpPath = `${dbPath}.download-${process.pid}-${Date.now()}`;
 
-  const filename = `analytics-backup-${new Date().toISOString().slice(0, 10)}.db`;
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.setHeader('Content-Type', 'application/x-sqlite3');
+  try {
+    await db.backup(tmpPath);
 
-  const stream = fs.createReadStream(dbPath);
-  stream.pipe(res);
+    const check = new (db.constructor)(tmpPath, { readonly: true });
+    const integrity = check.pragma('integrity_check', { simple: true });
+    check.close();
+    if (integrity !== 'ok') {
+      throw new Error(`Integritetskontrollen misslyckades: ${integrity}`);
+    }
+
+    res.setHeader('Content-Disposition', `attachment; filename="analytics-backup-${stamp}.db"`);
+    res.setHeader('Content-Type', 'application/x-sqlite3');
+    res.setHeader('Content-Length', fs.statSync(tmpPath).size);
+
+    const stream = fs.createReadStream(tmpPath);
+    const cleanup = () => fs.unlink(tmpPath, () => {});
+    stream.on('close', cleanup);
+    stream.on('error', cleanup);
+    stream.pipe(res);
+  } catch (err) {
+    fs.unlink(tmpPath, () => {});
+    res.status(500).json({ error: `Backup misslyckades: ${err.message}` });
+  }
 });
 
 export default router;
