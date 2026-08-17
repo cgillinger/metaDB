@@ -27,6 +27,9 @@ import * as XLSX from 'xlsx';
 
 /** First day of a 'YYYY-MM' month as a real Date (local midnight → clean Excel date). */
 function monthDate(month) {
+  // strftime('%Y-%m', ...) yields NULL for unparseable publish_time — one bad
+  // row must not 500 the whole export, so map it to an empty cell instead.
+  if (!month) return null;
   const [y, m] = month.split('-').map(Number);
   return new Date(y, m - 1, 1);
 }
@@ -45,7 +48,7 @@ function postsMonthly(db) {
       CAST(ROUND(AVG(reach)) AS INTEGER) AS reach,
       SUM(link_clicks) AS link_clicks, SUM(interactions) AS interactions
     FROM posts
-    WHERE publish_time IS NOT NULL AND ${NONEMPTY_NAME} ${hiddenPostsFilter()}
+    WHERE strftime('%Y-%m', publish_time) IS NOT NULL AND ${NONEMPTY_NAME} ${hiddenPostsFilter()}
     GROUP BY account_name, platform, month
     ORDER BY account_name, platform, month
   `).all();
@@ -108,7 +111,7 @@ function tiktokPostsMonthly(db) {
       SUM(likes) AS likes, SUM(comments) AS comments, SUM(shares) AS shares,
       SUM(saves) AS saves, SUM(interactions) AS interactions, SUM(engagement) AS engagement
     FROM posts
-    WHERE platform = 'tiktok' AND publish_time IS NOT NULL AND ${NONEMPTY_NAME} ${hiddenPostsFilter()}
+    WHERE platform = 'tiktok' AND strftime('%Y-%m', publish_time) IS NOT NULL AND ${NONEMPTY_NAME} ${hiddenPostsFilter()}
     GROUP BY account_username, account_name, month
     ORDER BY account_username, month
   `).all();

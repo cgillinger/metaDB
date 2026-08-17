@@ -50,10 +50,18 @@ function zoneWallClockAsUtcMs(ms, timeZone) {
 function convertPacificToStockholm(dateStr) {
   if (!dateStr) return null;
   try {
-    const m = String(dateStr).trim().replace(/\//g, '-')
-      .match(/^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/);
-    if (!m) return dateStr;
-    const [, y, mo, d, h, mi, s = '0'] = m;
+    const raw = String(dateStr).trim().replace(/\//g, '-');
+    // Meta Business Suite exports US-style MM/DD/YYYY HH:MM (no seconds);
+    // ISO YYYY-MM-DD is accepted too so re-imports of normalized data round-trip.
+    let y, mo, d, h, mi, s;
+    const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (iso) {
+      [, y, mo, d, h, mi, s = '0'] = iso;
+    } else {
+      const us = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if (!us) return null;
+      [, mo, d, y, h, mi, s = '0'] = us;
+    }
 
     // The input wall clock, encoded as a UTC timestamp (TZ-independent anchor)
     const wallMs = Date.UTC(+y, +mo - 1, +d, +h, +mi, +s);
@@ -65,10 +73,10 @@ function convertPacificToStockholm(dateStr) {
 
     // Format that instant as Stockholm wall clock
     const sthlmMs = zoneWallClockAsUtcMs(actualUtcMs, 'Europe/Stockholm');
-    const iso = new Date(sthlmMs).toISOString();
-    return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
+    const out = new Date(sthlmMs).toISOString();
+    return `${out.slice(0, 10)} ${out.slice(11, 19)}`;
   } catch {
-    return dateStr;
+    return null;
   }
 }
 
@@ -160,6 +168,8 @@ export function parseCSV(csvContent, filename, opts = {}) {
   const columnMappings = getMappingsForPlatform(platform);
   const posts = [];
   const dates = [];
+  const unparsableDates = [];
+  let unparsableCount = 0;
 
   for (const rawRow of result.data) {
     const mapped = mapRow(rawRow, columnMappings, platform);
@@ -172,7 +182,14 @@ export function parseCSV(csvContent, filename, opts = {}) {
       }
     } else if (mapped.publish_time) {
       // FB/IG: Meta exporterar i Pacific Time → konvertera till Stockholm.
-      mapped.publish_time = convertPacificToStockholm(String(mapped.publish_time));
+      const original = String(mapped.publish_time);
+      mapped.publish_time = convertPacificToStockholm(original);
+      // Reject the whole file rather than store rows whose month can't be
+      // derived — unparsed dates silently corrupt every month aggregation.
+      if (mapped.publish_time === null) {
+        unparsableCount++;
+        if (unparsableDates.length < 3) unparsableDates.push(original);
+      }
     }
 
     // TikTok: extrahera handle + post_id ur Videolänk-URL. Permalink är kanonisk identifierare.
@@ -257,6 +274,15 @@ export function parseCSV(csvContent, filename, opts = {}) {
       interactions,
       engagement,
     });
+  }
+
+  if (unparsableCount > 0) {
+    throw new Error(
+      `${unparsableCount} rader har publiceringstid i okänt datumformat ` +
+      `(exempel: ${unparsableDates.map(d => `"${d}"`).join(', ')}). ` +
+      `Förväntat format: MM/DD/YYYY HH:MM (Metas export) eller YYYY-MM-DD HH:MM. ` +
+      `Filen importerades inte.`
+    );
   }
 
   // --- Deduplicate by post_id: keep the row with highest interactions ---

@@ -98,3 +98,33 @@ test('parseCSV converts Pacific publish times to Stockholm, TZ-independent', () 
   assert.equal(dateRangeStart, '2026-01-15');
   assert.equal(dateRangeEnd, '2026-06-01');
 });
+
+// Meta Business Suite exporterar publiceringstid i US-format MM/DD/YYYY HH:MM
+// (utan sekunder). Regressionsskydd för julibuggen 2026-08: v2.22.0:s strikta
+// ISO-regex släppte igenom US-datum oparsade → NULL-månader i alla aggregat.
+test('parseCSV converts US-format (MM/DD/YYYY) Meta dates to Stockholm', () => {
+  const csv = [
+    'Publicerings-id,Sidnamn,Titel,Publiceringstid,Inläggstyp',
+    '20,TestSida,Juli,07/01/2026 00:15,Foton',      // PDT (UTC-7) → +9h till Stockholm
+    '21,TestSida,Vinter,01/15/2026 14:30,Foton',    // PST (UTC-8) → +9h
+  ].join('\n');
+  const { posts, dateRangeStart } = parseCSV(csv, 'fb.csv');
+  const byId = Object.fromEntries(posts.map(p => [p.post_id, p]));
+
+  assert.equal(byId['20'].publish_time, '2026-07-01 09:15:00');
+  assert.equal(byId['21'].publish_time, '2026-01-15 23:30:00');
+  assert.equal(dateRangeStart, '2026-01-15');
+});
+
+// Okänt datumformat får aldrig importeras tyst — hela filen ska avvisas
+// med ett fel som visar exempelvärden.
+test('parseCSV rejects the whole file on unparseable publish times', () => {
+  const csv = [
+    'Publicerings-id,Sidnamn,Titel,Publiceringstid,Inläggstyp',
+    '30,TestSida,Trasig,15 januari 2026 kl 14:30,Foton',
+  ].join('\n');
+  assert.throws(
+    () => parseCSV(csv, 'fb.csv'),
+    /okänt datumformat.*15 januari 2026/
+  );
+});
