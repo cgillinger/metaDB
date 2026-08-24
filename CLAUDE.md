@@ -39,6 +39,14 @@ metaDB är en self-hosted analysapp som aggregerar data från Meta Business Suit
 ## Deploy & DB-säkerhet
 
 - Prod byggs från appdata-klonen på disk (`docker compose build` i stacken läser källkoden som ligger utcheckad där). Disken ska normalt stå på `main` — en oavsiktlig `build` plockar upp vad som än är utcheckat.
+- **Kod och stack ligger i SKILDA kataloger på server2.** Kör aldrig `docker compose` i kodkatalogen — repots `docker-compose.yml` är enbart för lokal dev och publicerar `127.0.0.1:3001`. Prod-stacken publicerar `51517:3001`, och det är port 51517 som Tailscale-ACL:n släpper igenom. Deployar man från fel katalog byter containern port och blir onåbar både i LAN och via Tailscale (hände 2026-08-24). Rätt sekvens:
+  ```bash
+  cd /mnt/docker/appdata/meta-analytics && git pull       # kod
+  cd /mnt/docker/stacks/meta-analytics && docker compose build
+  chown -R 100:101 /mnt/docker/appdata/meta-analytics/data/
+  docker compose up -d                                    # från stack-katalogen
+  ```
+- Åtkomst: LAN via `192.168.50.8:51517`, fjärr via Tailscale. Inget är WAN-exponerat (ingen portforward, ingen UPnP) — se `server2-docs/server2-09-network-security.md`. `ADMIN_TOKEN` är medvetet inte satt; LAN + Tailscale-ACL bedöms tillräckligt.
 - Deploy kör migrationer mot LIVE-databasen vid start; det finns ingen staging. **Ta alltid en verifierad backup före en deploy som kan migrera.**
 - Backup: online-backup via better-sqlite3 `db.backup()` (konsistent mot WAL) + `PRAGMA integrity_check`, lagra på två fysiska diskar. Volymägare är uid/gid 100:101.
 - Behåll en känd-god rollback-image taggad separat (`docker tag … meta-analytics:rollback-pre-x`).

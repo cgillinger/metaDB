@@ -1,3 +1,10 @@
+# LOCAL DEVELOPMENT ONLY — this is not the production stack.
+#
+# Production on server2 runs from /mnt/docker/stacks/meta-analytics/docker-compose.yml,
+# which publishes 51517:3001 (the port the Tailscale ACL grants) and bind-mounts
+# /mnt/docker/appdata/meta-analytics/data. Building or `up`-ing from THIS file on the
+# server recreates the container on the wrong port and silently cuts off LAN and
+# Tailscale access. Deploy steps are in metaDB CLAUDE.md.
 services:
   meta-analytics:
     build: .
