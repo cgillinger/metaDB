@@ -16,6 +16,8 @@ import {
   AlertCircle,
   Users,
   Check,
+  Search,
+  X,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
 import { daysInMonth } from '@/utils/dateHelpers';
@@ -137,6 +139,10 @@ const parseAccountKey = (key) => {
   return { name: key.slice(0, idx), platform: key.slice(idx + 2) };
 };
 
+// Search normalisation for the account picker. Lowercase only — å/ä/ö are distinct
+// letters in Swedish, so folding diacritics would make "mal" match "Mål".
+const normalizeSearch = (s) => (s || '').trim().toLocaleLowerCase('sv-SE');
+
 const createSmoothPath = (points) => {
   if (points.length < 2) return '';
   if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
@@ -187,6 +193,8 @@ const TrendAnalysisView = ({
   const [hoveredDataPoint, setHoveredDataPoint] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [groupNotice, setGroupNotice] = useState(null);
+  // Free-text filter over the account picker. Purely visual — never touches selectedAccounts.
+  const [accountSearch, setAccountSearch] = useState('');
 
   const [accountList, setAccountList] = useState([]);
   const [igReachAccountNames, setIgReachAccountNames] = useState(new Set());
@@ -223,6 +231,7 @@ const TrendAnalysisView = ({
     setTrendData(null);
     setViewMode('linear');
     setYoyDataMap(null);
+    setAccountSearch('');
   }, [gaListensMode, gaSiteVisitsMode]);
 
   const isYoY = viewMode === 'yoy';
@@ -920,6 +929,28 @@ const TrendAnalysisView = ({
     ? gsvAccountListWithGroups
     : gaListensMode ? gaAccountListWithGroups : filteredAccountList;
 
+  // Search-filtered view of the picker. Groups match on their own name, like accounts.
+  // Only the rendered list is filtered — selectedAccounts and the chart are untouched,
+  // so a search never removes a drawn line.
+  const accountSearchQuery = normalizeSearch(accountSearch);
+  const visibleAccountList = useMemo(() => {
+    if (!accountSearchQuery) return activeAccountList;
+    return activeAccountList.filter(a => normalizeSearch(a.account_name).includes(accountSearchQuery));
+  }, [activeAccountList, accountSearchQuery]);
+
+  const visibleSelectableKeys = useMemo(
+    () => visibleAccountList.filter(a => !a.disabled).map(a => a.key),
+    [visibleAccountList]
+  );
+
+  // Selected accounts that the current search hides — surfaced so the count in the
+  // label ("N valda") never looks wrong against a shorter list.
+  const hiddenSelectedCount = useMemo(() => {
+    if (!accountSearchQuery) return 0;
+    const visible = new Set(visibleAccountList.map(a => a.key));
+    return selectedAccounts.filter(k => !visible.has(k)).length;
+  }, [accountSearchQuery, visibleAccountList, selectedAccounts]);
+
   const handleAccountToggle = (key) => {
     // YoY shows one series at a time → selecting an account replaces the selection.
     if (isYoY) {
@@ -939,16 +970,19 @@ const TrendAnalysisView = ({
     setViewMode(mode);
   };
 
-  const handleToggleAllAccounts = () => {
-    const selectableKeys = activeAccountList.filter(a => !a.disabled).map(a => a.key);
-    const allSelected = selectableKeys.length > 0 && selectableKeys.every(k => selectedAccounts.includes(k));
-    setSelectedAccounts(allSelected ? [] : selectableKeys);
-  };
+  // Select-all acts on the search hits only, matching GroupCreateDialog's picker.
+  // Selections outside the current search are preserved in both directions.
+  const allAccountsSelected = visibleSelectableKeys.length > 0
+    && visibleSelectableKeys.every(k => selectedAccounts.includes(k));
 
-  const allAccountsSelected = (() => {
-    const selectableKeys = activeAccountList.filter(a => !a.disabled).map(a => a.key);
-    return selectableKeys.length > 0 && selectableKeys.every(k => selectedAccounts.includes(k));
-  })();
+  const handleToggleAllAccounts = () => {
+    const visible = new Set(visibleSelectableKeys);
+    setSelectedAccounts(current =>
+      allAccountsSelected
+        ? current.filter(k => !visible.has(k))
+        : [...new Set([...current, ...visibleSelectableKeys])]
+    );
+  };
 
   const handleMouseMove = (event, point) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1011,16 +1045,57 @@ const TrendAnalysisView = ({
                   {(gaListensMode || gaSiteVisitsMode) ? 'Välj program' : 'Välj konton'}
                   {isYoY ? '' : ` (${selectedAccounts.length} valda)`}
                 </Label>
-                {!isYoY && (
-                  <Button variant="outline" size="sm" onClick={handleToggleAllAccounts}>
-                    {allAccountsSelected ? 'Avmarkera alla' : 'Välj alla'}
+                {!isYoY && visibleSelectableKeys.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleToggleAllAccounts}
+                    title={accountSearchQuery ? 'Gäller bara sökträffarna. Val utanför sökningen behålls.' : undefined}
+                  >
+                    {accountSearchQuery
+                      ? (allAccountsSelected ? 'Avmarkera träffarna' : 'Välj alla träffar')
+                      : (allAccountsSelected ? 'Avmarkera alla' : 'Välj alla')}
                   </Button>
                 )}
               </div>
+              <div className="flex items-center gap-2 mb-2 rounded-md border bg-white px-2">
+                <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                <input
+                  value={accountSearch}
+                  onChange={e => setAccountSearch(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Escape') setAccountSearch(''); }}
+                  placeholder={(gaListensMode || gaSiteVisitsMode) ? 'Sök program…' : 'Sök konto…'}
+                  aria-label={(gaListensMode || gaSiteVisitsMode) ? 'Sök program' : 'Sök konto'}
+                  className="w-full py-2 text-sm outline-none bg-transparent"
+                />
+                {accountSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setAccountSearch('')}
+                    aria-label="Rensa sökning"
+                    className="text-muted-foreground hover:text-foreground shrink-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              {hiddenSelectedCount > 0 && (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  {hiddenSelectedCount} valda döljs av sökningen.{' '}
+                  <button type="button" onClick={() => setAccountSearch('')} className="underline hover:text-foreground">
+                    Visa alla
+                  </button>
+                </p>
+              )}
               <div className="max-h-48 overflow-y-auto border rounded-md p-3 space-y-2 bg-gray-50">
-                {activeAccountList.map((account, idx) => {
+                {visibleAccountList.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-2">
+                    Inga {(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konton'} matchar ”{accountSearch}”.
+                  </p>
+                )}
+                {visibleAccountList.map((account, idx) => {
                   const isGroup = account._isGroup;
-                  const prevIsGroup = idx > 0 && activeAccountList[idx - 1]._isGroup;
+                  const prevIsGroup = idx > 0 && visibleAccountList[idx - 1]._isGroup;
                   const showDivider = !isGroup && idx > 0 && prevIsGroup;
                   return (
                     <React.Fragment key={account.key}>
