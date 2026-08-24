@@ -50,7 +50,8 @@ metaDB är en self-hosted analysapp som aggregerar data från Meta Business Suit
 - Deploy kör migrationer mot LIVE-databasen vid start; det finns ingen staging. **Ta alltid en verifierad backup före en deploy som kan migrera.**
 - Backup: online-backup via better-sqlite3 `db.backup()` (konsistent mot WAL) + `PRAGMA integrity_check`, lagra på två fysiska diskar. Volymägare är uid/gid 100:101.
 - Behåll en känd-god rollback-image taggad separat (`docker tag … meta-analytics:rollback-pre-x`).
-- **Städa gamla deploy-backuper:** ad hoc-backuper från deploydagar ska rensas när releasen bevisat sig (fråga Christian först). Väntar på rensning: `analytics-pre-ekot-merge-20260702.db`, `analytics-pre-v2.20-20260702.db`, `analytics-pre-v2.21-20260702.db` i `/home/chris/` på server2 + kopior i `/mnt/storage3tb/meta-analytics-db/` (~200 MB/st). Ordinarie Kopia/btrbk täcker ändå.
+- **Städa gamla deploy-backuper:** ad hoc-backuper från deploydagar ska rensas när releasen bevisat sig (fråga Christian först). Ordinarie Kopia/btrbk täcker ändå. Rensat 2026-08-24 (~2,7 GB): allt från mars–juli utom den senast föregående releasen. Behåll som tumregel de två färskaste plus föregående release, på båda diskarna.
+- **Lägg aldrig backuper i `data/`.** Katalogen bind-monteras som `/sources/meta-analytics-data:ro` i Kopia, så varje kopia där backas upp till pCloud dagligen. Ad hoc-backuper hör hemma i `/home/chris/` + `/mnt/storage3tb/meta-analytics-db/`. Åtta sådana kopior (1,7 GB) låg felplacerade i `data/` fram till 2026-08-24.
 - Plattformsknappens antal = `SUM(imports.row_count)`, inte `COUNT(*)` posts. Sedan v2.22.0 behåller inlägg sitt ursprungliga `import_id` vid UPSERT (om-importer får row_count = enbart nya rader, och DELETE på en om-import raderar inte historik) — äldre om-importer kan dock fortfarande vara överräknade i summan. Faktiskt antal unika inlägg finns i posts.
 
 ## Samarbete mellan Claude-instanser
