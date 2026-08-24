@@ -357,21 +357,29 @@ const MainView = ({ onShowUploader }) => {
     return filterFieldsByPlatform(fields, activePlatform);
   };
 
-  useEffect(() => {
-    if (isTikTokOverviewMode) {
-      // Förikryssa inga värden i Översikt-läget — behåll bara redan valda Översikt-fält.
-      setSelectedFields(prev => prev.filter(f => Object.keys(TIKTOK_OVERVIEW_AVAILABLE_FIELDS).includes(f)));
-      return;
-    }
-    const availableFields = Object.keys(getAvailableFields());
+  // selectedFields is the user's standing choice and is never pruned when the
+  // platform or view changes — pruning it lost the selection for good, so
+  // stepping through TikTok (whose Översikt mode shares no field names) and back
+  // left the table empty. What the current mode can actually show is derived.
+  const availableFields = useMemo(
+    () => getAvailableFields(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeView, activePlatform, periodMode, isTikTokOverviewMode]
+  );
+
+  const visibleSelectedFields = useMemo(
+    () => selectedFields.filter(f => f in availableFields),
+    [selectedFields, availableFields]
+  );
+
+  // The picker only ever shows the fields available here, so a change from it
+  // replaces exactly those and leaves fields belonging to other modes untouched.
+  const handleFieldSelectionChange = useCallback((nextVisible) => {
     setSelectedFields(prev => {
-      const filtered = prev.filter(field => availableFields.includes(field));
-      if (filtered.length === prev.length && filtered.every((f, i) => f === prev[i])) {
-        return prev;
-      }
-      return filtered;
+      const shown = new Set(Object.keys(availableFields));
+      return [...prev.filter(f => !shown.has(f)), ...nextVisible];
     });
-  }, [activeView, activePlatform, periodMode, isTikTokOverviewMode]);
+  }, [availableFields]);
 
   const handleImportsChanged = async () => {
     try {
@@ -605,13 +613,13 @@ const MainView = ({ onShowUploader }) => {
           <CardContent className="pt-6">
             <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
             <ValueSelector
-              availableFields={getAvailableFields()}
-              selectedFields={selectedFields}
-              onSelectionChange={setSelectedFields}
+              availableFields={availableFields}
+              selectedFields={visibleSelectedFields}
+              onSelectionChange={handleFieldSelectionChange}
               activePlatform={activePlatform}
               categories={isTikTokOverviewMode ? TIKTOK_OVERVIEW_FIELD_CATEGORIES : FIELD_CATEGORIES}
             />
-            {selectedFields.includes('engagement') && (
+            {visibleSelectedFields.includes('engagement') && (
               <EngagementLegend activePlatform={activePlatform} />
             )}
             {/* Scatter (räckvidd per inlägg) bygger på posts-data — bara meningsfullt
@@ -706,12 +714,12 @@ const MainView = ({ onShowUploader }) => {
           )}
           {isTikTokOverviewMode ? (
             <TikTokOverviewKontoView
-              selectedFields={selectedFields}
+              selectedFields={visibleSelectedFields}
               periodParams={periodParams}
             />
           ) : (
             <AccountView
-              selectedFields={selectedFields}
+              selectedFields={visibleSelectedFields}
               platform={apiPlatform}
               periodParams={periodParams}
               gaListensMode={platformFilter === 'ga_listens'}
@@ -726,12 +734,12 @@ const MainView = ({ onShowUploader }) => {
 
         <TabsContent value="post">
           <PeriodSummary />
-          <PostView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
+          <PostView selectedFields={visibleSelectedFields} platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="post_type">
           <PeriodSummary />
-          <PostTypeView selectedFields={selectedFields} platform={apiPlatform} periodParams={periodParams} />
+          <PostTypeView selectedFields={visibleSelectedFields} platform={apiPlatform} periodParams={periodParams} />
         </TabsContent>
 
         <TabsContent value="trend_analysis">
