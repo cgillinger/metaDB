@@ -33,8 +33,10 @@ ENV DB_PATH=/data/analytics.db
 
 EXPOSE 3001
 
+# 127.0.0.1, not localhost: the container resolves localhost to ::1 as well, and the
+# server binds IPv4 only — BusyBox wget then hits the v6 address and gets refused.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-  CMD wget -qO- http://localhost:3001/api/health || exit 1
+  CMD wget -qO- http://127.0.0.1:3001/api/health || exit 1
 
 # Run as non-root for reduced attack surface
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
