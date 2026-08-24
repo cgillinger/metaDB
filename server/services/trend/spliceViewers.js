@@ -32,33 +32,41 @@ export function spliceAccountSeries(axis, legacyMap, viewersMap) {
 
   const legacy_last_month = legacyMonths.length ? legacyMonths[legacyMonths.length - 1] : null;
   const viewers_first_month = viewersMonths.length ? viewersMonths[0] : null;
-
-  // En brytpunkt finns bara när BÅDA måtten är representerade och legacy föregår viewers.
-  const breakpoint_month =
-    viewers_first_month && legacyMonths.some(m => m < viewers_first_month)
-      ? viewers_first_month
-      : null;
-
   const overlap_months = legacyMonths.filter(m => viewers[m] !== undefined);
 
+  // Viewers always wins where it exists — the new measure is what counts going
+  // forward, and legacy becomes the shadow. Legacy only carries the line for
+  // months before viewers starts.
+  //
+  // This rule must not depend on what the period filter happens to include. An
+  // earlier version required a legacy month *before* the first viewers month,
+  // which made a filtered view (e.g. 2026 only) silently fall back to legacy for
+  // the overlap and draw it as one unmarked line — the exact mixing this metric
+  // exists to prevent.
+  let seenViewers = false;
   const data = (axis || []).map(m => {
     const l = legacy[m];
     const v = viewers[m];
 
-    if (breakpoint_month !== null && m >= breakpoint_month) {
-      // Viewers-eran: linjen följer viewers, legacy blir skugga.
-      return {
-        value: v ?? null,
-        source: v === undefined ? null : 'viewers',
-        ghost: l ?? null,
-      };
+    if (v !== undefined) {
+      seenViewers = true;
+      return { value: v, source: 'viewers', ghost: l ?? null };
     }
-
-    // Legacy-eran, eller ingen brytpunkt alls (bara ett av måtten finns).
-    const value = l !== undefined ? l : (v ?? null);
-    const source = l !== undefined ? 'legacy' : (v !== undefined ? 'viewers' : null);
-    return { value, source, ghost: null };
+    // Past the switch, a stray legacy row is shadow only — never a continuation
+    // of the line, or the curve would flip between two measure definitions.
+    if (seenViewers) return { value: null, source: null, ghost: l ?? null };
+    if (l !== undefined) return { value: l, source: 'legacy', ghost: null };
+    return { value: null, source: null, ghost: null };
   });
+
+  // Visual breakpoint: the first month on THIS axis where viewers takes over
+  // from a legacy stretch. Null when the axis holds only one of the measures.
+  let breakpoint_month = null;
+  let sawLegacy = false;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i].source === 'legacy') { sawLegacy = true; continue; }
+    if (data[i].source === 'viewers' && sawLegacy) { breakpoint_month = axis[i]; break; }
+  }
 
   let splice_status = 'empty';
   if (legacyMonths.length && viewersMonths.length) splice_status = 'spliced';
