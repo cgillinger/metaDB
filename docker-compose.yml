@@ -3,10 +3,7 @@ services:
     build: .
     container_name: meta-analytics
     ports:
-      # LAN-reachable, like every other service on the host. A loopback-only bind
-      # was tried but there is no reverse proxy in front of this, so it just made
-      # the app unreachable. Maintenance endpoints stay behind the admin token.
-      - "0.0.0.0:3001:3001"
+      - "127.0.0.1:3001:3001"
     volumes:
       - ./data:/data
     environment:
