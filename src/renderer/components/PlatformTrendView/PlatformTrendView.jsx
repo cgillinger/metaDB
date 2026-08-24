@@ -149,6 +149,13 @@ const PlatformTrendView = ({ periodParams = {} }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Kryssrutorna under grafen styr vilka linjer som ritas. Alla på från start.
+  const [visibleSeries, setVisibleSeries] = useState({
+    views: true,
+    reach: true,
+    posts: true,
+  });
+
   const canvasRef = useRef(null);
 
   // Fetch aggregated data when platform, group or period changes.
@@ -215,7 +222,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
       data: {
         labels,
         datasets: [
-          {
+          visibleSeries.views && {
             label: 'Visningar / inlägg',
             data: months.map(m => m.avg_views),
             borderColor: COLOR_VIEWS,
@@ -227,7 +234,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
             pointHoverRadius: 6,
             yAxisID: 'y',
           },
-          {
+          visibleSeries.reach && {
             label: 'Räckvidd / inlägg',
             data: months.map(m => m.avg_reach),
             borderColor: COLOR_REACH,
@@ -238,7 +245,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
             pointHoverRadius: 6,
             yAxisID: 'y',
           },
-          {
+          visibleSeries.posts && {
             label: 'Antal inlägg',
             data: months.map(m => m.post_count),
             borderColor: COLOR_POSTS,
@@ -250,7 +257,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
             pointHoverRadius: 3,
             yAxisID: 'y1',
           },
-        ],
+        ].filter(Boolean),
       },
       options: {
         responsive: true,
@@ -277,6 +284,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
           y1: {
             type: 'linear',
             position: 'right',
+            display: visibleSeries.posts,
             title: { display: true, text: 'Antal inlägg' },
             grid: { drawOnChartArea: false },
             ticks: {
@@ -289,7 +297,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
 
     const chart = new Chart(canvasRef.current, config);
     return () => chart.destroy();
-  }, [months]);
+  }, [months, visibleSeries]);
 
   const footerRange = months.length > 0
     ? `${monthName(months[0].month)} ${months[0].month.split('-')[0]} – ${monthName(months[months.length - 1].month)} ${months[months.length - 1].month.split('-')[0]}`
@@ -363,20 +371,38 @@ const PlatformTrendView = ({ periodParams = {} }) => {
         </div>
       </div>
 
-      {/* Legend */}
+      {/* Legend + kryssrutor: kryssa ur/i vilka serier som ritas i grafen */}
       <div className="flex gap-4 text-xs text-muted-foreground flex-wrap">
-        <span className="flex items-center gap-1.5">
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={visibleSeries.views}
+            onChange={() => setVisibleSeries(v => ({ ...v, views: !v.views }))}
+            className="h-3.5 w-3.5 accent-blue-600"
+          />
           <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_VIEWS }} />
           Visningar / inlägg
-        </span>
-        <span className="flex items-center gap-1.5">
+        </label>
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={visibleSeries.reach}
+            onChange={() => setVisibleSeries(v => ({ ...v, reach: !v.reach }))}
+            className="h-3.5 w-3.5 accent-blue-600"
+          />
           <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_REACH }} />
           Räckvidd / inlägg
-        </span>
-        <span className="flex items-center gap-1.5">
+        </label>
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={visibleSeries.posts}
+            onChange={() => setVisibleSeries(v => ({ ...v, posts: !v.posts }))}
+            className="h-3.5 w-3.5 accent-blue-600"
+          />
           <span className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: COLOR_POSTS }} />
           Antal inlägg
-        </span>
+        </label>
       </div>
 
       {/* Chart */}
