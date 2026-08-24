@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
+import { breakpointIndex, ghostRuns, distinctBreakpointIndexes } from './splicedLine.js';
 import { daysInMonth } from '@/utils/dateHelpers';
 import { calculateNiceYAxis } from '@/utils/chartAxis';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
@@ -33,7 +34,7 @@ import {
 } from './yearOverYear';
 
 // Metrics whose data shape (value/lower/quality bands) isn't supported in YoY mode.
-const YOY_UNSUPPORTED_METRICS = new Set(['estimated_unique_clicks']);
+const YOY_UNSUPPORTED_METRICS = new Set(['estimated_unique_clicks', 'account_viewers_spliced']);
 
 // P4 Lokalt regional channel names — explicit Set for O(1) membership lookup.
 const P4_CHANNELS = new Set([
@@ -64,6 +65,7 @@ const METRIC_CATEGORIES = [
       { key: 'views', label: 'Visningar' },
       { key: 'average_reach', label: 'Räckvidd (genomsnitt)' },
       { key: 'account_viewers', label: 'Unika tittare (API)', platform: 'facebook' },
+      { key: 'account_viewers_spliced', label: 'Unika tittare & Kontoräckvidd (API, skarvad)', platform: 'facebook' },
       { key: 'account_reach', label: 'Kontoräckvidd (API, äldre mått)', platform: 'facebook' },
       { key: 'ig_account_reach', label: 'Unika tittare (API)', platform: 'instagram' },
       { key: 'follows', label: 'Följare', platform: 'instagram' },
@@ -110,7 +112,7 @@ const TREND_METRICS_COMMON = {
   'post_count': 'Antal publiceringar',
   'posts_per_day': 'Publiceringar per dag'
 };
-const TREND_METRICS_FB = { 'account_viewers': 'Unika tittare (API) FB', 'account_reach': 'Kontoräckvidd (API, äldre mått) FB', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'avg_daily_link_clicks': 'Länkklick snitt/dag', 'other_clicks': 'Övriga klick', 'estimated_unique_clicks': 'Uppsk. unika länkklickare' };
+const TREND_METRICS_FB = { 'account_viewers': 'Unika tittare (API) FB', 'account_viewers_spliced': 'Unika tittare & Kontoräckvidd (API, skarvad) FB', 'account_reach': 'Kontoräckvidd (API, äldre mått) FB', 'total_clicks': 'Totalt antal klick', 'link_clicks': 'Länkklick', 'avg_daily_link_clicks': 'Länkklick snitt/dag', 'other_clicks': 'Övriga klick', 'estimated_unique_clicks': 'Uppsk. unika länkklickare' };
 const TREND_METRICS_IG = { 'ig_account_reach': 'Unika tittare (API) IG', 'saves': 'Sparade', 'follows': 'Följare' };
 
 const CHART_COLORS = [
@@ -120,13 +122,13 @@ const CHART_COLORS = [
 
 // Metrics that cannot be meaningfully summed across accounts in a group
 const NON_SUMMABLE_METRICS = new Set([
-  'reach', 'average_reach', 'account_reach', 'account_viewers', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks',
+  'reach', 'average_reach', 'account_reach', 'account_viewers', 'account_viewers_spliced', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks',
 ]);
 
 // När TikTok är aktiv plattform saknar dessa mått data i TikTok-exporterna och
 // döljs ur datapunkt-väljaren (jfr TIKTOK_UNAVAILABLE_FIELDS i MainView).
 const TIKTOK_UNAVAILABLE_METRICS = new Set([
-  'average_reach', 'account_reach', 'account_viewers', 'ig_account_reach', 'follows',
+  'average_reach', 'account_reach', 'account_viewers', 'account_viewers_spliced', 'ig_account_reach', 'follows',
   'total_clicks', 'link_clicks', 'avg_daily_link_clicks', 'other_clicks', 'estimated_unique_clicks',
 ]);
 
@@ -195,6 +197,9 @@ const TrendAnalysisView = ({
   const [groupNotice, setGroupNotice] = useState(null);
   // Free-text filter over the account picker. Purely visual — never touches selectedAccounts.
   const [accountSearch, setAccountSearch] = useState('');
+  // Ghost shadow of the older measure during the overlap. On by default; once viewers is
+  // backfilled the overlap spans many months and the shadow becomes a second full line.
+  const [showGhostShadow, setShowGhostShadow] = useState(true);
 
   const [accountList, setAccountList] = useState([]);
   const [igReachAccountNames, setIgReachAccountNames] = useState(new Set());
@@ -436,6 +441,9 @@ const TrendAnalysisView = ({
       if (!entry) return null;
 
       if (entry._isGroup) {
+        // Spliced series carry objects, not numbers — summing them would yield NaN.
+        // Groups are already blocked via NON_SUMMABLE_METRICS; this is belt and braces.
+        if (selectedMetric === 'account_viewers_spliced') return null;
         // Sum member series element-wise
         const summedData = trendData.months.map((_, mIndex) =>
           entry.memberKeys.reduce((sum, memberKey) => {
@@ -463,14 +471,26 @@ const TrendAnalysisView = ({
       const series = seriesByKey[selectedKey];
       if (!series) return null;
       const isEstimatedMetric = selectedMetric === 'estimated_unique_clicks';
+      const isSplicedMetric = selectedMetric === 'account_viewers_spliced';
       return {
         key: selectedKey,
         account_name: series.account_name,
         platform: series.platform,
         is_collab: series.is_collab || false,
         _isGroup: false,
+        breakpointMonth: series.breakpoint_month ?? null,
+        spliceStatus: series.splice_status ?? null,
         color: CHART_COLORS[colorIndex++ % CHART_COLORS.length],
         points: trendData.months.map((monthKey, mIndex) => {
+          if (isSplicedMetric) {
+            const datum = series.data[mIndex];
+            return {
+              month: monthKey,
+              value: datum?.value ?? null,
+              source: datum?.source ?? null,
+              ghost: datum?.ghost ?? null,
+            };
+          }
           if (isEstimatedMetric) {
             const datum = series.data[mIndex];
             return {
@@ -508,7 +528,9 @@ const TrendAnalysisView = ({
 
   const yAxisConfig = useMemo(() => {
     if (chartLines.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
-    const allValues = chartLines.flatMap(line => line.points.map(p => p.value).filter(v => v !== null && v !== undefined));
+    // Ghost values are drawn too — leaving them out can push the shadow above the top gridline.
+    const allValues = chartLines.flatMap(line =>
+      line.points.flatMap(p => [p.value, p.ghost]).filter(v => v !== null && v !== undefined));
     if (allValues.length === 0) return { min: 0, max: 100, ticks: [0, 25, 50, 75, 100] };
     return calculateNiceYAxis(Math.max(...allValues));
   }, [chartLines]);
@@ -878,6 +900,13 @@ const TrendAnalysisView = ({
   // Filter account list based on selected metric (account_reach = FB only, ig_account_reach = IG only)
   // Groups are always kept in the list regardless of metric filter
   const filteredAccountList = useMemo(() => {
+    // Spliced metric spans both FB tables → an account qualifies if it appears in either.
+    if (selectedMetric === 'account_viewers_spliced') {
+      return accountListWithGroups.filter(a =>
+        a._isGroup || (a.platform === 'facebook' &&
+          (fbReachAccountNames.has(a.account_name) || fbViewersAccountNames.has(a.account_name)))
+      );
+    }
     if (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks') {
       return accountListWithGroups.filter(a =>
         a._isGroup || (a.platform === 'facebook' && fbReachAccountNames.has(a.account_name))
@@ -898,6 +927,15 @@ const TrendAnalysisView = ({
 
   // When metric changes to a platform-specific metric, remove incompatible accounts from selection
   useEffect(() => {
+    if (!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced') {
+      const splicedKeys = new Set(
+        accountListWithGroups
+          .filter(a => a._isGroup || (a.platform === 'facebook' &&
+            (fbReachAccountNames.has(a.account_name) || fbViewersAccountNames.has(a.account_name))))
+          .map(a => a.key)
+      );
+      setSelectedAccounts(prev => prev.filter(k => splicedKeys.has(k)));
+    }
     if (!gaListensMode && !gaSiteVisitsMode && (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks')) {
       const fbKeys = new Set(
         accountListWithGroups
@@ -923,6 +961,13 @@ const TrendAnalysisView = ({
       setSelectedAccounts(prev => prev.filter(k => igKeys.has(k)));
     }
   }, [gaListensMode, gaSiteVisitsMode, selectedMetric, accountListWithGroups, igReachAccountNames, fbReachAccountNames, fbViewersAccountNames]);
+
+  // Accounts whose spliced series never reaches the new measure — usually a name change
+  // in the source, since the two tables are matched on account_name.
+  const splicedLegacyOnlyCount = useMemo(() => {
+    if (selectedMetric !== 'account_viewers_spliced') return 0;
+    return chartLines.filter(l => l.spliceStatus === 'legacy_only').length;
+  }, [selectedMetric, chartLines]);
 
   // Final display account list
   const activeAccountList = gaSiteVisitsMode
@@ -1330,6 +1375,29 @@ const TrendAnalysisView = ({
             </Alert>
           )}
 
+          {selectedMetric === 'account_viewers_spliced' && !gaListensMode && !gaSiteVisitsMode && (
+            <Alert className="py-2 border-amber-300 bg-amber-50 text-amber-900">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Skarvad serie — läs som riktning, inte som exakta tal.</strong>{' '}
+                Linjen sätter ihop två olika mått för att visa hur många unika personer kontot
+                nått över tid. Den bleka streckade delen är Kontoräckvidd (API), Metas gamla mått
+                som slutar i maj 2026. Den heldragna delen är Unika tittare (API), det nya måttet.
+                Måtten är inte definierade lika: det gamla räknade leverans till skärmen, det nya
+                kräver en faktisk visning. Nivåskillnaden vid ”Måttbyte” är därför metodologisk —
+                inte en publikförändring. Där båda måtten finns följer linjen Unika tittare, och
+                det äldre måttet visas som en tunn prickad skugga så att du ser skillnaden.
+                Inga värden är omräknade eller skalade.
+                {splicedLegacyOnlyCount > 0 && (
+                  <>
+                    {' '}<strong>{splicedLegacyOnlyCount} av de valda kontona saknar data i det nya måttet.</strong>{' '}
+                    Kontrollera om kontot bytt namn i källan — serierna matchas på kontonamn.
+                  </>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
           {showChart ? (
             <div className="space-y-4">
               {/* Legend — hidden in YoY, where the interactive year picker above doubles as the legend */}
@@ -1358,10 +1426,42 @@ const TrendAnalysisView = ({
                       )}
                       {!line._isGroup && !line._isYoYYear && <PlatformBadge platform={line.platform === 'ga_listens' || line.platform === 'ga_site_visits' ? 'google_analytics' : line.platform} />}
                       {line.is_collab ? <CollabBadge compact /> : null}
+                      {line.spliceStatus === 'legacy_only' && (
+                        <span className="text-[10px] uppercase tracking-wide border border-amber-300 bg-amber-50 text-amber-700 rounded px-1 shrink-0">
+                          endast äldre mått
+                        </span>
+                      )}
                     </span>
                   </div>
                 ))}
               </div>
+              )}
+
+              {/* What the two line styles mean. Colour-neutral — each account keeps its own hue. */}
+              {!isYoY && !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced' && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <svg width="26" height="8" aria-hidden="true"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" strokeWidth="2.5" strokeDasharray="7 4" strokeOpacity="0.45" /></svg>
+                    Kontoräckvidd (äldre mått)
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <svg width="26" height="8" aria-hidden="true"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" strokeWidth="2.5" /></svg>
+                    Unika tittare (API)
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <svg width="26" height="8" aria-hidden="true"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" strokeWidth="1" strokeDasharray="1.5 3" strokeOpacity="0.35" /></svg>
+                    Äldre mått under överlappet
+                  </span>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showGhostShadow}
+                      onChange={() => setShowGhostShadow(v => !v)}
+                      className="h-3.5 w-3.5 accent-blue-600"
+                    />
+                    Visa äldre mått som skugga
+                  </label>
+                </div>
               )}
 
               {/* Line chart */}
@@ -1399,12 +1499,13 @@ const TrendAnalysisView = ({
                     );
                   })}
 
-                  {displayChartLines.map(line => {
+                  {displayChartLines.map((line, lineIndex) => {
                     if (line.points.length < 1) return null;
                     const isEstimated = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'estimated_unique_clicks';
-                    // Render null values as gaps (line breaks) in both the estimated-clicks
-                    // metric and YoY mode, so missing months don't crash to the baseline.
-                    const allowGaps = isEstimated || isYoY;
+                    const isSpliced = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced';
+                    // Render null values as gaps (line breaks) in the estimated-clicks metric,
+                    // the spliced metric and YoY mode, so missing months don't crash to the baseline.
+                    const allowGaps = isEstimated || isYoY || isSpliced;
                     const yRange = displayYAxisConfig.max - displayYAxisConfig.min;
                     const toY = (val) => yRange > 0 ? 450 - ((val - displayYAxisConfig.min) / yRange) * 380 : 450;
 
@@ -1417,11 +1518,27 @@ const TrendAnalysisView = ({
                         x,
                         y: toY(point.value ?? 0),
                         yLower: isEstimated && point.valueLower !== null ? toY(point.valueLower) : null,
+                        ghostY: isSpliced && point.ghost !== null && point.ghost !== undefined ? toY(point.ghost) : null,
                         point,
                       };
                     });
 
                     const visiblePoints = allowGaps ? pathPoints.filter(p => p.y !== null) : pathPoints;
+
+                    // Spliced line: one smooth path drawn twice and clipped at the breakpoint.
+                    // Clipping (rather than splitting the point list) keeps the curve pixel-identical
+                    // across the join and leaves createSmoothPath untouched.
+                    const bpIndex = isSpliced ? breakpointIndex(displayMonths, line.breakpointMonth) : -1;
+                    const xBreak = bpIndex > 0
+                      ? 70 + (bpIndex / Math.max(1, displayMonths.length - 1)) * 860
+                      : null;
+                    const clipId = `splice-${lineIndex}`;
+                    const splicedPath = isSpliced && visiblePoints.length > 1
+                      ? createSmoothPath(visiblePoints.map(p => ({ x: p.x, y: p.y })))
+                      : null;
+                    // No breakpoint in view → the whole line is one measure. Style carries the
+                    // provenance: faded/dashed when it is all legacy, solid when it is all viewers.
+                    const allLegacy = isSpliced && visiblePoints.every(p => p.point.source !== 'viewers');
 
                     const bandPath = isEstimated && visiblePoints.length > 1
                       ? (() => {
@@ -1447,7 +1564,60 @@ const TrendAnalysisView = ({
                             strokeLinecap="round"
                           />
                         )}
-                        {visiblePoints.length > 1 && (
+                        {/* Ghost shadow: the older measure during the overlap. Non-interactive —
+                            its value is surfaced in the main point's tooltip instead. */}
+                        {isSpliced && showGhostShadow && ghostRuns(pathPoints).map((run, runIndex) => (
+                          run.length > 1 ? (
+                            <path
+                              key={`ghost-${runIndex}`}
+                              d={createSmoothPath(run.map(p => ({ x: p.x, y: p.ghostY })))}
+                              fill="none"
+                              stroke={line.color}
+                              strokeWidth="1"
+                              strokeDasharray="1.5 3"
+                              strokeOpacity="0.35"
+                              strokeLinecap="round"
+                            />
+                          ) : (
+                            <circle
+                              key={`ghost-${runIndex}`}
+                              cx={run[0].x} cy={run[0].ghostY} r="2.5"
+                              fill="none" stroke={line.color} strokeOpacity="0.35"
+                            />
+                          )
+                        ))}
+                        {isSpliced && splicedPath && xBreak !== null && (
+                          <>
+                            <defs>
+                              <clipPath id={`${clipId}-old`}>
+                                <rect x="0" y="0" width={xBreak} height="500" />
+                              </clipPath>
+                              <clipPath id={`${clipId}-new`}>
+                                <rect x={xBreak} y="0" width={1000 - xBreak} height="500" />
+                              </clipPath>
+                            </defs>
+                            <path
+                              d={splicedPath} fill="none" stroke={line.color} strokeWidth="2.5"
+                              strokeDasharray="7 4" strokeOpacity="0.45"
+                              strokeLinecap="round" strokeLinejoin="round"
+                              clipPath={`url(#${clipId}-old)`}
+                            />
+                            <path
+                              d={splicedPath} fill="none" stroke={line.color} strokeWidth="2.5"
+                              strokeLinecap="round" strokeLinejoin="round"
+                              clipPath={`url(#${clipId}-new)`}
+                            />
+                          </>
+                        )}
+                        {isSpliced && splicedPath && xBreak === null && (
+                          <path
+                            d={splicedPath} fill="none" stroke={line.color} strokeWidth="2.5"
+                            strokeDasharray={allLegacy ? '7 4' : undefined}
+                            strokeOpacity={allLegacy ? '0.45' : '1'}
+                            strokeLinecap="round" strokeLinejoin="round"
+                          />
+                        )}
+                        {!isSpliced && visiblePoints.length > 1 && (
                           <path
                             d={createSmoothPath(visiblePoints.map(p => ({ x: p.x, y: p.y })))}
                             fill="none"
@@ -1464,6 +1634,7 @@ const TrendAnalysisView = ({
                             cx={x} cy={y}
                             r={line._isGroup ? '6' : '5'}
                             fill={line.color}
+                            fillOpacity={isSpliced && point.source === 'legacy' ? 0.45 : 1}
                             stroke="white"
                             strokeWidth="2"
                             className="cursor-pointer"
@@ -1474,8 +1645,26 @@ const TrendAnalysisView = ({
                     );
                   })}
 
+                  {/* Measure-switch markers. The breakpoint is per account, so several can
+                      coexist; only the earliest is labelled to avoid a thicket of text. */}
+                  {!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced' && !isYoY &&
+                    distinctBreakpointIndexes(displayChartLines, displayMonths).map((i, n) => {
+                      const x = 70 + (i / Math.max(1, displayMonths.length - 1)) * 860;
+                      const right = x > 800;
+                      return (
+                        <g key={`bp-${i}`}>
+                          <line x1={x} y1="70" x2={x} y2="450" stroke="#6b7280" strokeWidth="1.5" strokeDasharray="4 4" />
+                          {n === 0 && (
+                            <text x={right ? x - 5 : x + 5} y="82" textAnchor={right ? 'end' : 'start'}
+                              fontSize="11" fill="#6b7280">Måttbyte</text>
+                          )}
+                        </g>
+                      );
+                    })}
+
                   {hoveredDataPoint && (() => {
-                    const tooltipWidth = 240, tooltipHeight = 88;
+                    const isSplicedTooltip = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced';
+                    const tooltipWidth = 240, tooltipHeight = isSplicedTooltip ? 124 : 88;
                     let tooltipX = mousePosition.x + 15, tooltipY = mousePosition.y - 45;
                     if (tooltipX + tooltipWidth > 980) tooltipX = mousePosition.x - tooltipWidth - 15;
                     if (tooltipY < 15) tooltipY = mousePosition.y + 15;
@@ -1485,7 +1674,7 @@ const TrendAnalysisView = ({
                       ? (gsvMetric === 'avg_daily_visits' ? 'Besök snitt/dag' : 'Besök')
                       : gaListensMode
                         ? (gaMetric === 'avg_daily_listens' ? 'Lyssningar snitt/dag' : 'Lyssningar')
-                        : availableMetrics[selectedMetric];
+                        : (selectedMetric === 'account_viewers_spliced' ? 'Unika personer (skarvad serie)' : availableMetrics[selectedMetric]);
                     const isEstimatedTooltip = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'estimated_unique_clicks';
                     const tooltipValueText = isEstimatedTooltip
                       ? (() => {
@@ -1506,6 +1695,16 @@ const TrendAnalysisView = ({
                         <text x={tooltipX + 12} y={tooltipY + 38} fill="white" fontSize="12">{getMonthName(month)} {year}</text>
                         <text x={tooltipX + 12} y={tooltipY + 55} fill="white" fontSize="11">{tooltipMetric}</text>
                         <text x={tooltipX + 12} y={tooltipY + 73} fill="white" fontSize={isEstimatedTooltip ? '13' : '14'} fontWeight="bold">{tooltipValueText}</text>
+                        {isSplicedTooltip && (
+                          <text x={tooltipX + 12} y={tooltipY + 91} fill="#d1d5db" fontSize="11">
+                            Källa: {hoveredDataPoint.source === 'viewers' ? 'Unika tittare (API)' : 'Kontoräckvidd (äldre mått)'}
+                          </text>
+                        )}
+                        {isSplicedTooltip && hoveredDataPoint.ghost !== null && hoveredDataPoint.ghost !== undefined && (
+                          <text x={tooltipX + 12} y={tooltipY + 109} fill="#d1d5db" fontSize="11">
+                            Äldre mått samma månad: {hoveredDataPoint.ghost.toLocaleString('sv-SE')}
+                          </text>
+                        )}
                       </g>
                     );
                   })()}
@@ -1520,7 +1719,9 @@ const TrendAnalysisView = ({
                   <p className="text-lg font-medium mb-2">År över år</p>
                   <p className="text-sm">
                     {yoyUnsupported
-                      ? 'År över år stöds inte för uppskattade unika klick.'
+                      ? (selectedMetric === 'account_viewers_spliced'
+                          ? 'År över år stöds inte för den skarvade serien — åren före och efter måttbytet är inte jämförbara.'
+                          : 'År över år stöds inte för uppskattade unika klick.')
                       : !yoyKey
                         ? `Välj ett ${(gaListensMode || gaSiteVisitsMode) ? 'program' : 'konto'} i listan ovan.`
                         : yoyLoading

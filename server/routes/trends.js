@@ -5,6 +5,7 @@ import { hiddenPostsFilter, hiddenReachFilter, hiddenIGReachFilter } from '../se
 import { getEstimatedUniqueClicks } from '../services/estimatedUniqueClicks.js';
 import { resolveMonthAxis } from '../services/period/resolve.js';
 import { fullMonthAxis } from '../services/trend/series.js';
+import { buildSplicedSeries, collectMonths } from '../services/trend/spliceViewers.js';
 
 const router = Router();
 
@@ -80,6 +81,42 @@ function buildAccountFilter(pairs, tableAlias = '') {
     p.platform ? [p.name, p.platform] : [p.name]
   );
   return { sql: `(${conditions.join(' OR ')})`, params };
+}
+
+/**
+ * Read a monthly account-level table (account_reach / account_viewers) with the
+ * same filtering the dedicated metric branches use. Only account_viewers_spliced
+ * goes through here — the existing branches keep their own byte-identical code so
+ * their behaviour is provably unchanged.
+ *
+ * table/valueColumn/alias are hardcoded literals from the call site; only names and
+ * months come from the request, and both are bound as parameters.
+ */
+function queryMonthlyAccountTable(db, { table, valueColumn, alias, names, monthsParam }) {
+  const conditions = [];
+  const params = [];
+
+  if (names && names.length > 0) {
+    conditions.push(`${alias}.account_name IN (${names.map(() => '?').join(',')})`);
+    params.push(...names);
+  }
+
+  conditions.push(hiddenReachFilter(alias).slice(4));
+
+  if (monthsParam) {
+    const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
+    if (monthList.length > 0) {
+      conditions.push(`${alias}.month IN (${monthList.map(() => '?').join(',')})`);
+      params.push(...monthList);
+    }
+  }
+
+  return db.prepare(`
+    SELECT ${alias}.month AS period, ${alias}.account_name, ${alias}.${valueColumn} AS value
+    FROM ${table} ${alias}
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY ${alias}.month ASC, ${alias}.account_name ASC
+  `).all(...params);
 }
 
 // GET /api/trends?metric=interactions&accountKeys=name1::facebook||name2::instagram&granularity=month
@@ -229,6 +266,29 @@ router.get('/', (req, res) => {
       data: months.map(m => account.dataMap[m] || 0),
     }));
 
+    return res.json({ metric, granularity: 'month', months, series });
+  }
+
+  // account_viewers_spliced: FB unique people across the June 2026 measure switch.
+  // Draws legacy reach and viewers as ONE line with per-month provenance so the UI can
+  // mark the breakpoint. Raw values only — nothing is merged, scaled or aggregated.
+  if (metric === 'account_viewers_spliced') {
+    const names = accountPairs.map(p => p.name);
+    const monthsParam = req.query.months;
+
+    const legacyRows = queryMonthlyAccountTable(db, {
+      table: 'account_reach', valueColumn: 'reach', alias: 'ar', names, monthsParam,
+    });
+    const viewersRows = queryMonthlyAccountTable(db, {
+      table: 'account_viewers', valueColumn: 'viewers', alias: 'av', names, monthsParam,
+    });
+
+    // The axis is the union of both tables — neither measure alone spans the series.
+    const monthSet = collectMonths(legacyRows, viewersRows);
+    const spanMonths = buildMonthSpan(req.query);
+    const axis = resolveSeriesMonths(spanMonths, monthSet, 'month');
+
+    const { months, series } = buildSplicedSeries({ axis, legacyRows, viewersRows });
     return res.json({ metric, granularity: 'month', months, series });
   }
 
