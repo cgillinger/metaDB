@@ -23,6 +23,7 @@ import {
 } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
 import { daysInMonth } from '@/utils/dateHelpers';
+import { platformFromFields } from '@/utils/fieldPlatforms';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 import ProfileIcon from '../ui/ProfileIcon';
 
@@ -214,7 +215,12 @@ const AccountView = ({
           fields: selectedFields.join(','),
           ...periodParams,
         };
-        if (platform) params.platform = platform;
+        // The platform chip wins. Without one, a selection of platform-specific
+        // datapoints narrows the list itself — picking an FB measure should not fill
+        // the table with IG and TikTok rows that only have blank cells for it.
+        // Sent to the API rather than filtered client-side so the totals stay correct.
+        const effectivePlatform = platform || platformFromFields(selectedFields);
+        if (effectivePlatform) params.platform = effectivePlatform;
         if (showReachOnlyAccounts && selectedFields.includes('account_reach')) {
           params.includeReachOnly = 'true';
         }

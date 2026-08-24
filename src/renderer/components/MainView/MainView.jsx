@@ -28,17 +28,8 @@ import PlatformTrendView from '../PlatformTrendView';
 import PeriodSelector from '../PeriodSelector';
 import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
+import { FB_ONLY_FIELDS, IG_ONLY_FIELDS, TIKTOK_UNAVAILABLE_FIELDS } from '@/utils/fieldPlatforms';
 
-const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'account_reach', 'account_viewers', 'estimated_unique_clicks'];
-const IG_ONLY_FIELDS = ['saves', 'follows', 'ig_account_reach'];
-// TikTok-poster har varken räckvidd per inlägg, totala klick eller länkklick i CSV-export.
-// 'saves' är däremot tillgängligt i TikTok-export (Lägg till i Favoriter) — INTE i denna lista.
-// Räckvidd finns istället på dagsnivå i Översikt-CSV (separat tabell).
-const TIKTOK_UNAVAILABLE_FIELDS = [
-  'reach', 'average_reach', 'account_reach', 'account_viewers', 'ig_account_reach',
-  'total_clicks', 'link_clicks', 'other_clicks',
-  'estimated_unique_clicks', 'follows',
-];
 
 const FIELD_CATEGORIES = [
   {
@@ -136,6 +127,20 @@ const TREND_ANALYSIS_AVAILABLE_FIELDS = {
   'saves': 'Sparade',
   'follows': 'Följare'
 };
+
+// Tint the whole view in the active platform's colour so an active chip filter is
+// impossible to miss. Same colour language as PlatformBadge: FB blue, IG pink,
+// TikTok black, GA green. 'all' stays neutral.
+const PLATFORM_THEME = {
+  facebook:       { tint: 'bg-blue-50/70 border-blue-200',   chip: 'bg-blue-600 text-white border-blue-600',   hover: 'hover:border-blue-400' },
+  instagram:      { tint: 'bg-pink-50/70 border-pink-200',   chip: 'bg-pink-600 text-white border-pink-600',   hover: 'hover:border-pink-400' },
+  tiktok:         { tint: 'bg-gray-100 border-gray-300',     chip: 'bg-black text-white border-black',         hover: 'hover:border-black/60' },
+  ga_listens:     { tint: 'bg-green-50/70 border-green-200', chip: 'bg-green-600 text-white border-green-600', hover: 'hover:border-green-400' },
+  ga_site_visits: { tint: 'bg-green-50/70 border-green-200', chip: 'bg-green-600 text-white border-green-600', hover: 'hover:border-green-400' },
+};
+
+const CHIP_BASE = 'px-3 py-1 rounded-full text-sm font-medium border transition-colors';
+const CHIP_INACTIVE = 'bg-white text-gray-700 border-gray-300';
 
 function filterFieldsByPlatform(fields, activePlatform) {
   if (!activePlatform || activePlatform === 'mixed') return fields;
@@ -326,6 +331,9 @@ const MainView = ({ onShowUploader }) => {
   // The platform filter value to pass to API (undefined = no filter)
   const apiPlatform = platformFilter !== 'all' ? platformFilter : undefined;
 
+  // Active platform theme — null when no chip filter is applied ('all').
+  const platformTheme = PLATFORM_THEME[platformFilter] || null;
+
   // Är vi i Per konto + TikTok Översikt-läge? Då används en helt egen field-uppsättning.
   const isTikTokOverviewMode =
     activeView === 'account' && platformFilter === 'tiktok' && hasTikTokOverview && tiktokKontoMode === 'overview';
@@ -485,7 +493,12 @@ const MainView = ({ onShowUploader }) => {
   };
 
   return (
-    <div className="space-y-6" data-platform={activePlatform || undefined}>
+    <div
+      className={`space-y-6 transition-colors ${
+        platformTheme ? `${platformTheme.tint} border rounded-lg p-4 -m-1` : ''
+      }`}
+      data-platform={activePlatform || undefined}
+    >
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">{PLATFORM_TITLE[platformInfo.detected]}</h2>
         <div className="flex items-center space-x-2">
@@ -501,16 +514,18 @@ const MainView = ({ onShowUploader }) => {
       </div>
 
       {(platformInfo.hasMixed || hasGAListens || hasGASiteVisits || platformInfo.hasTikTok || hasTikTokOverview) && (
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className={`flex items-center gap-2 flex-wrap rounded-lg transition-colors ${
+          platformTheme ? 'bg-white/70 border border-white/80 p-2' : ''
+        }`}>
           <span className="text-sm text-gray-500 mr-1">Plattform:</span>
           {platformInfo.hasMixed && (
             <button
               key="all"
               onClick={() => setPlatformFilter('all')}
-              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+              className={`${CHIP_BASE} ${
                 platformFilter === 'all'
                   ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-primary/60'
+                  : `${CHIP_INACTIVE} hover:border-primary/60`
               }`}
             >
               Alla ({platformInfo.fbPosts + platformInfo.igPosts + platformInfo.ttPosts})
@@ -519,10 +534,10 @@ const MainView = ({ onShowUploader }) => {
           {platformInfo.hasFacebook && platformInfo.hasMixed && (
             <button
               onClick={() => setPlatformFilter('facebook')}
-              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+              className={`${CHIP_BASE} ${
                 platformFilter === 'facebook'
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-primary/60'
+                  ? PLATFORM_THEME.facebook.chip
+                  : `${CHIP_INACTIVE} ${PLATFORM_THEME.facebook.hover}`
               }`}
             >
               Facebook ({platformInfo.fbPosts})
@@ -531,10 +546,10 @@ const MainView = ({ onShowUploader }) => {
           {platformInfo.hasInstagram && platformInfo.hasMixed && (
             <button
               onClick={() => setPlatformFilter('instagram')}
-              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+              className={`${CHIP_BASE} ${
                 platformFilter === 'instagram'
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-primary/60'
+                  ? PLATFORM_THEME.instagram.chip
+                  : `${CHIP_INACTIVE} ${PLATFORM_THEME.instagram.hover}`
               }`}
             >
               Instagram ({platformInfo.igPosts})
@@ -543,10 +558,10 @@ const MainView = ({ onShowUploader }) => {
           {(platformInfo.hasTikTok || hasTikTokOverview) && (
             <button
               onClick={() => setPlatformFilter('tiktok')}
-              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+              className={`${CHIP_BASE} ${
                 platformFilter === 'tiktok'
-                  ? 'bg-black text-white border-black'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-black/60'
+                  ? PLATFORM_THEME.tiktok.chip
+                  : `${CHIP_INACTIVE} ${PLATFORM_THEME.tiktok.hover}`
               }`}
             >
               TikTok{platformInfo.hasTikTok ? ` (${platformInfo.ttPosts})` : ''}
@@ -560,10 +575,10 @@ const MainView = ({ onShowUploader }) => {
                   setPlatformFilter(hasGAListens ? 'ga_listens' : 'ga_site_visits');
                 }
               }}
-              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+              className={`${CHIP_BASE} ${
                 platformFilter === 'ga_listens' || platformFilter === 'ga_site_visits'
-                  ? 'bg-green-600 text-white border-green-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+                  ? PLATFORM_THEME.ga_listens.chip
+                  : `${CHIP_INACTIVE} ${PLATFORM_THEME.ga_listens.hover}`
               }`}
             >
               Google Analytics
