@@ -14,6 +14,10 @@ importvägen eller säkerheten** — de innehåller färdig analys som annars g�
   interaktioner från en enskild dag i stället för månadstotalen. Tyst felaktig data,
   alltså värre än en tom lucka. Innehåller bevis från torrkörning, detekteringsregel
   och testfall.
+- `TASK-saknade-exportmanader.md` — tolv FB-konton saknar hela månader i databasen
+  (Kvällspasset ~3,5 mn räckvidd, Naturmorgon ~1,9 mn m.fl.). Kontona finns inte i
+  Metas exportfiler för de månaderna — kräver om-export, inte kodändring. Innehåller
+  åtgärdslista och SQL för att hitta luckorna igen.
 - `TASK-security-hardening.md` — femfasig säkerhetshärdning.
 
 Ta bort TASK-filen när uppgiften är gjord (jfr commit 43cf9ff).
