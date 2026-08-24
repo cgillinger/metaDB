@@ -4,6 +4,20 @@
 
 metaDB är en self-hosted analysapp som aggregerar data från Meta Business Suite (Facebook/Instagram), Meta Graph API och Google Analytics. Stack: Node.js/Express backend, React/Vite frontend, SQLite via better-sqlite3, custom SVG-charts + Chart.js (Plattformstrend).
 
+## Öppna uppgifter
+
+Uppskjutet arbete ligger i `TASK-*.md` i repo-roten. **Läs dem innan du tar dig an
+importvägen eller säkerheten** — de innehåller färdig analys som annars görs om.
+
+- `TASK-import-guard-daily-breakdown.md` — spärr mot FB-exporter med daglig
+  nedbrytning. Sådana filer glider igenom importen idag och ger `views = 0` plus
+  interaktioner från en enskild dag i stället för månadstotalen. Tyst felaktig data,
+  alltså värre än en tom lucka. Innehåller bevis från torrkörning, detekteringsregel
+  och testfall.
+- `TASK-security-hardening.md` — femfasig säkerhetshärdning.
+
+Ta bort TASK-filen när uppgiften är gjord (jfr commit 43cf9ff).
+
 ## Språk
 
 - Svenska i UI och commit-meddelanden.
