@@ -258,6 +258,28 @@ export const api = {
       body: JSON.stringify({ accountName, platform }),
     }).then(handleResponse),
 
+  // Account roster — alarms when an account that's normally present is missing from an import
+  getAccountRoster: (platform) => {
+    const params = platform ? `?platform=${platform}` : '';
+    return fetchWithRetry(`/api/account-roster${params}`).then(handleResponse);
+  },
+  retireAccount: (accountName, platform, note) =>
+    fetch('/api/account-roster/retire', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountName, platform, note }),
+    }).then(handleResponse),
+  reactivateAccount: (accountName, platform) =>
+    fetch('/api/account-roster/reactivate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountName, platform }),
+    }).then(handleResponse),
+  getOpenGaps: (platform) => {
+    const params = platform ? `?platform=${platform}` : '';
+    return fetchWithRetry(`/api/account-roster/gaps${params}`).then(handleResponse);
+  },
+
   // Comparison View
   getComparisonAccounts: () =>
     fetchWithRetry('/api/comparison/accounts').then(handleResponse),

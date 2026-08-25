@@ -20,6 +20,7 @@ import gaListensRouter from './routes/gaListens.js';
 import gaSiteVisitsRouter from './routes/gaSiteVisits.js';
 import accountGroupsRouter from './routes/accountGroups.js';
 import hiddenAccountsRouter from './routes/hiddenAccounts.js';
+import accountRosterRouter from './routes/accountRoster.js';
 import comparisonRouter from './routes/comparison.js';
 import platformTrendsRouter from './routes/platformTrends.js';
 import exportRouter from './routes/export.js';
@@ -81,6 +82,7 @@ app.get('/api/maintenance/backup', backupLimiter, (req, res, next) => {
 app.use('/api/maintenance', requireAdmin, maintenanceRouter);
 
 app.use('/api/hidden-accounts', hiddenAccountsRouter);
+app.use('/api/account-roster', accountRosterRouter);
 app.use('/api/imports', importsRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/accounts', accountsRouter);

@@ -11,12 +11,10 @@ importvägen eller säkerheten** — de innehåller färdig analys som annars g�
 
 - `TASK-saknade-exportmanader.md` — tolv FB-konton saknar hela månader i databasen
   (Kvällspasset ~3,5 mn räckvidd, Naturmorgon ~1,9 mn m.fl.). Kontona finns inte i
-  Metas exportfiler för de månaderna — kräver om-export, inte kodändring. Innehåller
-  åtgärdslista och SQL för att hitta luckorna igen.
-- `TASK-account-roster.md` — kontolista som larmar när konton saknas i en import,
-  med val "används inte längre" / "komplettera senare". Designad och mätt mot 38
-  verkliga exportfiler; fångar 9 av 10 kända luckor. Hade fångat de tolv i
-  `TASK-saknade-exportmanader.md` när de uppstod.
+  Metas exportfiler för de månaderna — kräver om-export, inte kodändring. De 38
+  kända luckmånaderna är seedade i `account_gaps` (migration 011) och syns i appen
+  under Importhantering → Öppna luckor. Innehåller fortfarande åtgärdslista och SQL
+  för att hitta NYA luckor.
 - `TASK-security-hardening.md` — femfasig säkerhetshärdning.
 
 Ta bort TASK-filen när uppgiften är gjord (jfr commit 43cf9ff).
