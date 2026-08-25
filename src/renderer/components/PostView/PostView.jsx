@@ -11,6 +11,7 @@ import { Button } from '../ui/button';
 import { formatValue, formatDate, formatDateHuman, DISPLAY_NAMES, ENGAGEMENT_INFO } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
 import ProfileIcon from '../ui/ProfileIcon';
+import { FB_ONLY_FIELDS, NON_FB_FIELDS } from '@/utils/fieldPlatforms';
 
 const ALL_ACCOUNTS = 'all_accounts';
 
@@ -40,8 +41,7 @@ const POST_VIEW_AVAILABLE_FIELDS = {
   'post_type': 'Typ'
 };
 
-const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks'];
-const IG_ONLY_FIELDS = ['saves', 'follows'];
+// Plattformslistorna importeras från fieldPlatforms (en sanningskälla).
 
 const getDisplayName = (field) => POST_VIEW_AVAILABLE_FIELDS[field] || DISPLAY_NAMES[field] || field;
 
@@ -189,7 +189,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
   const renderFieldValue = (post, field) => {
     const plat = post.platform;
     if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
-    if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
+    if (NON_FB_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
     return formatValue(post[field]);
   };
 
@@ -225,7 +225,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
           if (['account_name', 'description', 'publish_time', 'post_type'].includes(field)) continue;
           const displayName = getDisplayName(field);
           if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { row[displayName] = 'N/A'; continue; }
-          if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') { row[displayName] = 'N/A'; continue; }
+          if (NON_FB_FIELDS.includes(field) && plat === 'facebook') { row[displayName] = 'N/A'; continue; }
           row[displayName] = formatValue(post[field]);
         }
         return row;
@@ -273,7 +273,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
           if (['account_name', 'description', 'publish_time', 'post_type'].includes(field)) continue;
           const displayName = getDisplayName(field);
           if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { row[displayName] = 'N/A'; continue; }
-          if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') { row[displayName] = 'N/A'; continue; }
+          if (NON_FB_FIELDS.includes(field) && plat === 'facebook') { row[displayName] = 'N/A'; continue; }
           row[displayName] = formatValue(post[field]);
         }
         return row;

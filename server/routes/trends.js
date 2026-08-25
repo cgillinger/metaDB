@@ -83,16 +83,21 @@ function buildAccountFilter(pairs, tableAlias = '') {
   return { sql: `(${conditions.join(' OR ')})`, params };
 }
 
+// The hidden*Filter fragments start with 'AND ' for template interpolation;
+// strip that when composing a conditions array instead.
+const stripAnd = (fragment) => fragment.replace(/^AND\s+/, '');
+
 /**
- * Read a monthly account-level table (account_reach / account_viewers) with the
- * same filtering the dedicated metric branches use. Only account_viewers_spliced
- * goes through here — the existing branches keep their own byte-identical code so
- * their behaviour is provably unchanged.
+ * Read a monthly account-level table (account_reach / account_viewers /
+ * ig_account_reach) with shared filtering: optional account names, hidden-account
+ * exclusion, optional month list. Serves both the dedicated metric branches and
+ * the spliced metric, so the spliced line can never read the same tables through
+ * different filtering than its source metrics.
  *
  * table/valueColumn/alias are hardcoded literals from the call site; only names and
  * months come from the request, and both are bound as parameters.
  */
-function queryMonthlyAccountTable(db, { table, valueColumn, alias, names, monthsParam }) {
+function queryMonthlyAccountTable(db, { table, valueColumn, alias, hiddenFilter, names, monthsParam }) {
   const conditions = [];
   const params = [];
 
@@ -101,7 +106,7 @@ function queryMonthlyAccountTable(db, { table, valueColumn, alias, names, months
     params.push(...names);
   }
 
-  conditions.push(hiddenReachFilter(alias).slice(4));
+  conditions.push(stripAnd(hiddenFilter(alias)));
 
   if (monthsParam) {
     const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
@@ -119,6 +124,52 @@ function queryMonthlyAccountTable(db, { table, valueColumn, alias, names, months
   `).all(...params);
 }
 
+/**
+ * Serve one monthly account-level table as a complete trends response.
+ * account_reach, account_viewers and ig_account_reach all share this shape:
+ * one raw value per account and month, missing months rendered as 0.
+ */
+function monthlyAccountTableResponse(req, res, { metric, table, valueColumn, alias, hiddenFilter, platform }) {
+  const db = getDb();
+  const granularity = req.query.granularity === 'week' ? 'week' : 'month';
+  const accountPairs = parseAccountKeys(req.query.accountKeys);
+  const names = accountPairs.map(p => p.name);
+
+  const rows = queryMonthlyAccountTable(db, {
+    table, valueColumn, alias, hiddenFilter, names, monthsParam: req.query.months,
+  });
+
+  const monthSet = new Set();
+  const byAccount = {};
+  for (const row of rows) {
+    monthSet.add(row.period);
+    if (!byAccount[row.account_name]) {
+      byAccount[row.account_name] = {
+        account_name: row.account_name,
+        platform,
+        is_collab: false,
+        dataMap: {},
+      };
+    }
+    byAccount[row.account_name].dataMap[row.period] = row.value;
+  }
+
+  // Prefer the full period span so months without data still appear on the
+  // x-axis as zero values. Fall back to months with data when no period filter
+  // was supplied.
+  const spanMonths = buildMonthSpan(req.query);
+  const months = resolveSeriesMonths(spanMonths, monthSet, granularity);
+  const series = Object.values(byAccount).map(account => ({
+    account_id: account.account_name,
+    account_name: account.account_name,
+    platform: account.platform,
+    is_collab: account.is_collab,
+    data: months.map(m => account.dataMap[m] || 0),
+  }));
+
+  return res.json({ metric, granularity: 'month', months, series });
+}
+
 // GET /api/trends?metric=interactions&accountKeys=name1::facebook||name2::instagram&granularity=month
 router.get('/', (req, res) => {
   const db = getDb();
@@ -128,145 +179,21 @@ router.get('/', (req, res) => {
 
   const accountPairs = parseAccountKeys(req.query.accountKeys);
 
-  // account_reach is served from a separate table (FB only) — validate and handle early
+  // account_reach is served from a separate table (FB only) — handle early
   if (metric === 'account_reach') {
-    const reachConditions = [];
-    const reachParams = [];
-
-    if (accountPairs.length > 0) {
-      // account_reach is always facebook, so just filter by name
-      const names = accountPairs.map(p => p.name);
-      const placeholders = names.map(() => '?').join(',');
-      reachConditions.push(`ar.account_name IN (${placeholders})`);
-      reachParams.push(...names);
-    }
-
-    // Hidden accounts filter
-    reachConditions.push(hiddenReachFilter('ar').slice(4));
-
-    // Period filtering for account_reach
-    const { months: monthsParam } = req.query;
-    if (monthsParam) {
-      const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
-      if (monthList.length > 0) {
-        const placeholders = monthList.map(() => '?').join(',');
-        reachConditions.push(`ar.month IN (${placeholders})`);
-        reachParams.push(...monthList);
-      }
-    }
-
-    const reachWhere = `WHERE ${reachConditions.join(' AND ')}`;
-    const reachQuery = `
-      SELECT
-        ar.month AS period,
-        ar.account_name,
-        ar.reach AS value
-      FROM account_reach ar
-      ${reachWhere}
-      ORDER BY ar.month ASC, ar.account_name ASC
-    `;
-
-    const rows = db.prepare(reachQuery).all(...reachParams);
-
-    const monthSet = new Set();
-    const byAccount = {};
-
-    for (const row of rows) {
-      monthSet.add(row.period);
-      const key = row.account_name;
-      if (!byAccount[key]) {
-        byAccount[key] = {
-          account_name: row.account_name,
-          platform: 'facebook',
-          is_collab: false,
-          dataMap: {},
-        };
-      }
-      byAccount[key].dataMap[row.period] = row.value;
-    }
-
-    // Prefer the full period span so that months without reach data still
-    // appear on the x-axis as zero values. Fall back to months with data
-    // when no period filter was supplied.
-    const spanMonths = buildMonthSpan(req.query);
-    const months = resolveSeriesMonths(spanMonths, monthSet, granularity);
-    const series = Object.values(byAccount).map(account => ({
-      account_id: account.account_name,
-      account_name: account.account_name,
-      platform: account.platform,
-      is_collab: account.is_collab,
-      data: months.map(m => account.dataMap[m] || 0),
-    }));
-
-    return res.json({ metric, granularity: 'month', months, series });
+    return monthlyAccountTableResponse(req, res, {
+      metric, table: 'account_reach', valueColumn: 'reach', alias: 'ar',
+      hiddenFilter: hiddenReachFilter, platform: 'facebook',
+    });
   }
 
   // account_viewers: FB unique viewers from account_viewers table (successor to
   // legacy account_reach — mirrors its logic, always a separate series)
   if (metric === 'account_viewers') {
-    const vConditions = [];
-    const vParams = [];
-
-    if (accountPairs.length > 0) {
-      const names = accountPairs.map(p => p.name);
-      const placeholders = names.map(() => '?').join(',');
-      vConditions.push(`av.account_name IN (${placeholders})`);
-      vParams.push(...names);
-    }
-
-    vConditions.push(hiddenReachFilter('av').slice(4));
-
-    const { months: monthsParam } = req.query;
-    if (monthsParam) {
-      const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
-      if (monthList.length > 0) {
-        const placeholders = monthList.map(() => '?').join(',');
-        vConditions.push(`av.month IN (${placeholders})`);
-        vParams.push(...monthList);
-      }
-    }
-
-    const vWhere = `WHERE ${vConditions.join(' AND ')}`;
-    const vQuery = `
-      SELECT
-        av.month AS period,
-        av.account_name,
-        av.viewers AS value
-      FROM account_viewers av
-      ${vWhere}
-      ORDER BY av.month ASC, av.account_name ASC
-    `;
-
-    const rows = db.prepare(vQuery).all(...vParams);
-
-    const monthSet = new Set();
-    const byAccount = {};
-
-    for (const row of rows) {
-      monthSet.add(row.period);
-      const key = row.account_name;
-      if (!byAccount[key]) {
-        byAccount[key] = {
-          account_name: row.account_name,
-          platform: 'facebook',
-          is_collab: false,
-          dataMap: {},
-        };
-      }
-      byAccount[key].dataMap[row.period] = row.value;
-    }
-
-    const spanMonths = buildMonthSpan(req.query);
-    const months = resolveSeriesMonths(spanMonths, monthSet, granularity);
-    const series = Object.values(byAccount).map(account => ({
-      account_id: account.account_name,
-      account_name: account.account_name,
-      platform: account.platform,
-      is_collab: account.is_collab,
-      data: months.map(m => account.dataMap[m] || 0),
-    }));
-
-    return res.json({ metric, granularity: 'month', months, series });
+    return monthlyAccountTableResponse(req, res, {
+      metric, table: 'account_viewers', valueColumn: 'viewers', alias: 'av',
+      hiddenFilter: hiddenReachFilter, platform: 'facebook',
+    });
   }
 
   // account_viewers_spliced: FB unique people across the June 2026 measure switch.
@@ -277,10 +204,12 @@ router.get('/', (req, res) => {
     const monthsParam = req.query.months;
 
     const legacyRows = queryMonthlyAccountTable(db, {
-      table: 'account_reach', valueColumn: 'reach', alias: 'ar', names, monthsParam,
+      table: 'account_reach', valueColumn: 'reach', alias: 'ar',
+      hiddenFilter: hiddenReachFilter, names, monthsParam,
     });
     const viewersRows = queryMonthlyAccountTable(db, {
-      table: 'account_viewers', valueColumn: 'viewers', alias: 'av', names, monthsParam,
+      table: 'account_viewers', valueColumn: 'viewers', alias: 'av',
+      hiddenFilter: hiddenReachFilter, names, monthsParam,
     });
 
     // The axis is the union of both tables — neither measure alone spans the series.
@@ -294,69 +223,10 @@ router.get('/', (req, res) => {
 
   // ig_account_reach: IG reach from ig_account_reach table (mirrors account_reach logic)
   if (metric === 'ig_account_reach') {
-    const igConditions = [];
-    const igParams = [];
-
-    if (accountPairs.length > 0) {
-      const names = accountPairs.map(p => p.name);
-      const placeholders = names.map(() => '?').join(',');
-      igConditions.push(`ar.account_name IN (${placeholders})`);
-      igParams.push(...names);
-    }
-
-    igConditions.push(hiddenIGReachFilter('ar').slice(4));
-
-    const { months: monthsParam } = req.query;
-    if (monthsParam) {
-      const monthList = monthsParam.split(',').map(m => m.trim()).filter(Boolean);
-      if (monthList.length > 0) {
-        const placeholders = monthList.map(() => '?').join(',');
-        igConditions.push(`ar.month IN (${placeholders})`);
-        igParams.push(...monthList);
-      }
-    }
-
-    const igWhere = `WHERE ${igConditions.join(' AND ')}`;
-    const igQuery = `
-      SELECT
-        ar.month AS period,
-        ar.account_name,
-        ar.reach AS value
-      FROM ig_account_reach ar
-      ${igWhere}
-      ORDER BY ar.month ASC, ar.account_name ASC
-    `;
-
-    const rows = db.prepare(igQuery).all(...igParams);
-
-    const monthSet = new Set();
-    const byAccount = {};
-
-    for (const row of rows) {
-      monthSet.add(row.period);
-      const key = row.account_name;
-      if (!byAccount[key]) {
-        byAccount[key] = {
-          account_name: row.account_name,
-          platform: 'instagram',
-          is_collab: false,
-          dataMap: {},
-        };
-      }
-      byAccount[key].dataMap[row.period] = row.value;
-    }
-
-    const spanMonths = buildMonthSpan(req.query);
-    const months = resolveSeriesMonths(spanMonths, monthSet, granularity);
-    const series = Object.values(byAccount).map(account => ({
-      account_id: account.account_name,
-      account_name: account.account_name,
-      platform: account.platform,
-      is_collab: account.is_collab,
-      data: months.map(m => account.dataMap[m] || 0),
-    }));
-
-    return res.json({ metric, granularity: 'month', months, series });
+    return monthlyAccountTableResponse(req, res, {
+      metric, table: 'ig_account_reach', valueColumn: 'reach', alias: 'ar',
+      hiddenFilter: hiddenIGReachFilter, platform: 'instagram',
+    });
   }
 
   // estimated_unique_clicks: computed from posts + account_reach join
