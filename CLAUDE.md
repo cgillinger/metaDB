@@ -45,7 +45,7 @@ Ta bort TASK-filen när uppgiften är gjord (jfr commit 43cf9ff).
 - FB "Unika tittare" (account_viewers) och legacy-reach (account_reach, fryst t.o.m. 2026-05) är OLIKA mått — slå aldrig ihop serierna. Importdetektering via Views_Source-kolumnen.
   - **Undantag (v2.23.0):** trendmåttet `account_viewers_spliced` ritar en visuellt skarvad linje av **råvärden** med provenance per månad (`source`: legacy/viewers, `ghost`: äldre måttet under överlappet) och en "Måttbyte"-markering. Värdena slås aldrig ihop, skalas aldrig och aggregeras aldrig — måttet är avstängt för kontogrupper (NON_SUMMABLE_METRICS) och År-över-år, och finns inte i exporter. Logiken ligger i `server/services/trend/spliceViewers.js`. Ta inte bort det som en "fix" av regeln ovan.
   - Uppmätt nivåskillnad maj 2026 (68 konton, enda överlappsmånaden): median viewers/reach = 0,99, totalt −1,9 %, spridning per konto 0,34–1,56. Serien duger för form över tid, inte för procenträkning tvärs brytpunkten.
-  - Viewers kan backfyllas till 2024-06 (FBFetch-probe 2026-07-01, `page_total_media_view_unique`, API v25.0). `fetch_viewers.py --facebook --month --year-month YYYY-MM`, en månad per körning.
+  - Viewers kan backfyllas till 2024-06 (FBFetch-probe 2026-07-01, `page_total_media_view_unique`, API v25.0). `fetch_viewers.py --facebook --month --year-month YYYY-MM`, en månad per körning. Sedan v2.23.4 tål skarvlogiken icke-sammanhängande backfill (legacy bär linjen fram till den avslutande viewers-sviten), så körordningen spelar ingen roll.
 
 ### Frontend
 - Locale-medveten formatering: toLocaleString('sv-SE') för siffror, localeCompare('sv') för sortering.

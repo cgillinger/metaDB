@@ -119,6 +119,34 @@ test('samma månad ger samma värde med och utan periodfilter', () => {
   assert.equal(filtered.breakpoint_month, null);
 });
 
+test('REGRESSION: partiell backfill får inte blanka legacy-historiken', () => {
+  // Backfill av viewers sker en månad per körning och kan landa i godtycklig
+  // ordning. En tidig backfillad månad (2024-06) följd av en lucka fick tidigare
+  // ALLA legacy-månader efter den att bli hål — år av linje försvann.
+  const axis = ['2024-06', '2024-07', '2024-08', '2026-01', '2026-02'];
+  const legacy = { '2024-06': 90, '2024-07': 100, '2024-08': 110, '2026-01': 120 };
+  const viewers = { '2024-06': 85, '2026-01': 99, '2026-02': 105 };
+  const r = spliceAccountSeries(axis, legacy, viewers);
+  // Viewers vinner där viewers finns; legacy bär mellanmånaderna utan viewers.
+  assert.deepEqual(r.data.map(d => d.source), ['viewers', 'legacy', 'legacy', 'viewers', 'viewers']);
+  assert.deepEqual(r.data.map(d => d.value), [85, 100, 110, 99, 105]);
+  // Måttbytet markeras vid den AVSLUTANDE viewers-svitens start, inte vid den
+  // tidiga backfillade månaden.
+  assert.equal(r.breakpoint_month, '2026-01');
+});
+
+test('legacy-rad efter den avslutande viewers-sviten är fortfarande skugga', () => {
+  // Även med en backfillad tidig viewers-månad får legacy inte återta linjen
+  // inuti/efter den avslutande sviten.
+  const axis = ['2024-06', '2024-07', '2026-01', '2026-02'];
+  const legacy = { '2024-07': 100, '2026-02': 777 };
+  const viewers = { '2024-06': 85, '2026-01': 99 };
+  const r = spliceAccountSeries(axis, legacy, viewers);
+  assert.equal(r.data[3].value, null);
+  assert.equal(r.data[3].source, null);
+  assert.equal(r.data[3].ghost, 777);
+});
+
 test('buildSplicedSeries: unionen av konton ur båda tabellerna', () => {
   const legacyRows = [
     { period: '2025-11', account_name: 'Bara legacy', value: 50 },

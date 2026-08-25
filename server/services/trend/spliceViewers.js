@@ -11,10 +11,35 @@
  * aldrig 0 — en nolla skulle läsas som "noll personer nåddes".
  */
 
+// 'YYYY-MM' → löpande månadsindex, för kalenderintilliggande jämförelser.
+const monthOrdinal = (m) => {
+  const [y, mo] = m.split('-').map(Number);
+  return y * 12 + mo;
+};
+
 /**
- * Provenance är monoton: legacy … brytpunkt … viewers. Legacy-rader som dyker upp
- * EFTER brytpunkten (t.ex. en sen ombackfill) hamnar i `ghost`, aldrig tillbaka i
- * linjen — annars kan kurvan växla fram och tillbaka mellan två måttdefinitioner.
+ * Första månaden i den AVSLUTANDE sammanhängande viewers-sviten (kalendermånader
+ * utan lucka, räknat bakifrån). Det är där det nya måttet tagit över för gott.
+ * @param {string[]} viewersMonths - sorterade 'YYYY-MM'
+ * @returns {string|null}
+ */
+function trailingViewersRunStart(viewersMonths) {
+  if (!viewersMonths.length) return null;
+  let start = viewersMonths[viewersMonths.length - 1];
+  for (let i = viewersMonths.length - 2; i >= 0; i--) {
+    if (monthOrdinal(start) - monthOrdinal(viewersMonths[i]) !== 1) break;
+    start = viewersMonths[i];
+  }
+  return start;
+}
+
+/**
+ * Provenance-regel: viewers vinner alltid där viewers finns. Legacy bär linjen för
+ * månader utan viewers FRAM TILL den avslutande viewers-sviten — så en månadsvis
+ * backfill av viewers (som kan landa i godtycklig ordning och lämna luckor) aldrig
+ * blankar legacy-historiken. Legacy-rader som dyker upp INUTI eller EFTER den
+ * avslutande sviten (t.ex. en sen ombackfill) hamnar i `ghost`, aldrig i linjen —
+ * annars kan kurvan växla tillbaka till den gamla måttdefinitionen efter bytet.
  *
  * @param {string[]} axis - månadsaxel 'YYYY-MM', sorterad
  * @param {Object<string, number>} legacyMap - { 'YYYY-MM': reach }
@@ -35,37 +60,42 @@ export function spliceAccountSeries(axis, legacyMap, viewersMap) {
   const overlap_months = legacyMonths.filter(m => viewers[m] !== undefined);
 
   // Viewers always wins where it exists — the new measure is what counts going
-  // forward, and legacy becomes the shadow. Legacy only carries the line for
-  // months before viewers starts.
+  // forward, and legacy becomes the shadow.
   //
   // This rule must not depend on what the period filter happens to include. An
   // earlier version required a legacy month *before* the first viewers month,
   // which made a filtered view (e.g. 2026 only) silently fall back to legacy for
   // the overlap and draw it as one unmarked line — the exact mixing this metric
   // exists to prevent.
-  let seenViewers = false;
+  //
+  // Legacy-only months keep carrying the line up to the final contiguous viewers
+  // run. An earlier version blanked every legacy-only month after the FIRST
+  // viewers month, which meant a partial month-by-month backfill (one early month
+  // landed, the rest not yet) collapsed years of legacy history into gaps.
+  const switchMonth = trailingViewersRunStart(viewersMonths);
   const data = (axis || []).map(m => {
     const l = legacy[m];
     const v = viewers[m];
 
-    if (v !== undefined) {
-      seenViewers = true;
-      return { value: v, source: 'viewers', ghost: l ?? null };
-    }
-    // Past the switch, a stray legacy row is shadow only — never a continuation
-    // of the line, or the curve would flip between two measure definitions.
-    if (seenViewers) return { value: null, source: null, ghost: l ?? null };
+    if (v !== undefined) return { value: v, source: 'viewers', ghost: l ?? null };
+    // From the final switch onward, a stray legacy row is shadow only — never a
+    // continuation of the line, or the curve would flip back to the old measure.
+    if (switchMonth !== null && m >= switchMonth) return { value: null, source: null, ghost: l ?? null };
     if (l !== undefined) return { value: l, source: 'legacy', ghost: null };
     return { value: null, source: null, ghost: null };
   });
 
-  // Visual breakpoint: the first month on THIS axis where viewers takes over
-  // from a legacy stretch. Null when the axis holds only one of the measures.
+  // Visual breakpoint: the month on THIS axis where the final viewers run takes
+  // over from a legacy stretch. Backfilled viewers months before the switch never
+  // move the marker. Null when the axis holds only one of the measures.
   let breakpoint_month = null;
   let sawLegacy = false;
   for (let i = 0; i < data.length; i++) {
     if (data[i].source === 'legacy') { sawLegacy = true; continue; }
-    if (data[i].source === 'viewers' && sawLegacy) { breakpoint_month = axis[i]; break; }
+    if (data[i].source === 'viewers' && sawLegacy && switchMonth !== null && axis[i] >= switchMonth) {
+      breakpoint_month = axis[i];
+      break;
+    }
   }
 
   let splice_status = 'empty';
