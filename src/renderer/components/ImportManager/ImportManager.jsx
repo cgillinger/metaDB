@@ -55,6 +55,9 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
   const [gapsSortMode, setGapsSortMode] = useState('alphabetical');
   const [gapsViewMode, setGapsViewMode] = useState('account'); // 'account' | 'month'
   const [retiringGapKey, setRetiringGapKey] = useState(null);
+  const [confirmingGapKey, setConfirmingGapKey] = useState(null); // "Publicerade inget i ...?" inline confirm
+  const [gapActionKey, setGapActionKey] = useState(null); // in-flight dismiss/reopen key
+  const [lastDismissedGap, setLastDismissedGap] = useState(null); // { accountName, platform, month } for the "Ångra" row
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [vacuuming, setVacuuming] = useState(false);
@@ -72,6 +75,8 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
 
   const fetchData = async () => {
     setLoading(true);
+    setLastDismissedGap(null);
+    setConfirmingGapKey(null);
     try {
       const [importsData, statsData, coverageData, reachMonthsData, viewersMonthsData, igReachMonthsData, gaMonthsData, gapsData] = await Promise.all([
         api.getImports(),
@@ -123,6 +128,48 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
       console.error('Fel vid avveckling av konto:', error);
     } finally {
       setRetiringGapKey(null);
+    }
+  };
+
+  // Lightweight gaps-only refresh, used after dismiss/reopen so gap_reach
+  // stays correct (recomputed server-side) without refetching the whole page.
+  const refreshGaps = async () => {
+    try {
+      const gapsData = await api.getOpenGaps();
+      setOpenGaps(gapsData.gaps || []);
+    } catch (error) {
+      console.error('Fel vid hämtning av luckor:', error);
+    }
+  };
+
+  const handleDismissGapMonth = async (accountName, platform, month) => {
+    const key = `${accountName}::${platform}::${month}`;
+    setGapActionKey(key);
+    try {
+      await api.dismissGapMonth(accountName, platform, month);
+      setConfirmingGapKey(null);
+      setLastDismissedGap({ accountName, platform, month });
+      await refreshGaps();
+    } catch (error) {
+      console.error('Fel vid markering av lucka:', error);
+    } finally {
+      setGapActionKey(null);
+    }
+  };
+
+  const handleUndoDismissGap = async () => {
+    if (!lastDismissedGap) return;
+    const { accountName, platform, month } = lastDismissedGap;
+    const key = `undo::${accountName}::${platform}::${month}`;
+    setGapActionKey(key);
+    try {
+      await api.reopenGapMonth(accountName, platform, month);
+      setLastDismissedGap(null);
+      await refreshGaps();
+    } catch (error) {
+      console.error('Fel vid återöppning av lucka:', error);
+    } finally {
+      setGapActionKey(null);
     }
   };
 
@@ -551,12 +598,27 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
+            {lastDismissedGap && (
+              <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-green-50 border-green-200 text-xs text-green-800">
+                <span>
+                  {lastDismissedGap.accountName} · {lastDismissedGap.month}: markerad som &quot;inget publicerades&quot;.
+                </span>
+                <button
+                  className="font-medium hover:underline disabled:opacity-50 shrink-0"
+                  disabled={gapActionKey === `undo::${lastDismissedGap.accountName}::${lastDismissedGap.platform}::${lastDismissedGap.month}`}
+                  onClick={handleUndoDismissGap}
+                >
+                  Ångra
+                </button>
+              </div>
+            )}
             {gapsViewMode === 'account' ? (
               <>
                 <p className="text-xs text-muted-foreground">
                   Konton som brukar finnas med i importerna men som saknas för en
                   eller flera månader. Räckvidden kan ändå finnas kvar via Metas
-                  API — det är inläggsstatistiken som saknas här.
+                  API — det är inläggsstatistiken som saknas här. Klicka på en
+                  månad om kontot helt enkelt inte publicerade något då.
                 </p>
                 <div className="space-y-2">
                   {sortedOpenGaps.map(g => {
@@ -573,9 +635,44 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
                             {g.account_name}
                             <PlatformBadge platform={g.platform} />
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            Saknas: {g.months.join(', ')}
-                          </p>
+                          <p className="text-xs text-muted-foreground mb-1">Saknas:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {g.months.map(month => {
+                              const gapKey = `${g.account_name}::${g.platform}::${month}`;
+                              const isConfirming = confirmingGapKey === gapKey;
+                              const isBusy = gapActionKey === gapKey;
+                              return isConfirming ? (
+                                <div
+                                  key={month}
+                                  className="flex items-center gap-1.5 px-2 py-1 rounded border bg-white border-amber-300 text-xs whitespace-nowrap"
+                                >
+                                  <span>Publicerade inget i {month}?</span>
+                                  <button
+                                    className="text-amber-800 font-medium hover:underline disabled:opacity-50"
+                                    disabled={isBusy}
+                                    onClick={() => handleDismissGapMonth(g.account_name, g.platform, month)}
+                                  >
+                                    {isBusy ? 'Sparar…' : 'Inget publicerades'}
+                                  </button>
+                                  <button
+                                    className="text-muted-foreground hover:underline"
+                                    onClick={() => setConfirmingGapKey(null)}
+                                  >
+                                    Avbryt
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  key={month}
+                                  onClick={() => setConfirmingGapKey(gapKey)}
+                                  title="Markera att inget publicerades den här månaden"
+                                  className="px-1.5 py-0.5 rounded border border-amber-300 bg-white text-amber-800 text-xs hover:bg-amber-100 transition-colors"
+                                >
+                                  {month}
+                                </button>
+                              );
+                            })}
+                          </div>
                           {showReach && (
                             <p className="text-xs text-muted-foreground">
                               Räckvidd i luckorna: {reachIncomplete ? '≥' : ''}
@@ -621,14 +718,44 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
                           ({m.accounts.length} {m.accounts.length === 1 ? 'konto' : 'konton'})
                         </span>
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {m.accounts.map((a, i) => (
-                          <React.Fragment key={`${a.account_name}::${a.platform}`}>
-                            {i > 0 && ', '}
-                            {a.account_name}
-                          </React.Fragment>
-                        ))}
-                      </p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {m.accounts.map(a => {
+                          const gapKey = `${a.account_name}::${a.platform}::${m.month}`;
+                          const isConfirming = confirmingGapKey === gapKey;
+                          const isBusy = gapActionKey === gapKey;
+                          return isConfirming ? (
+                            <div
+                              key={gapKey}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded border bg-white border-amber-300 text-xs whitespace-nowrap"
+                            >
+                              <span>Publicerade {a.account_name} inget i {m.month}?</span>
+                              <button
+                                className="text-amber-800 font-medium hover:underline disabled:opacity-50"
+                                disabled={isBusy}
+                                onClick={() => handleDismissGapMonth(a.account_name, a.platform, m.month)}
+                              >
+                                {isBusy ? 'Sparar…' : 'Inget publicerades'}
+                              </button>
+                              <button
+                                className="text-muted-foreground hover:underline"
+                                onClick={() => setConfirmingGapKey(null)}
+                              >
+                                Avbryt
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              key={gapKey}
+                              onClick={() => setConfirmingGapKey(gapKey)}
+                              title="Markera att kontot inte publicerade något den här månaden"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-transparent hover:border-amber-300 hover:bg-amber-100 text-xs text-muted-foreground transition-colors"
+                            >
+                              {a.account_name}
+                              <span className="text-muted-foreground/60">×</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
