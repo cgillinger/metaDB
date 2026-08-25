@@ -10,7 +10,13 @@ export const FB_ONLY_FIELDS = [
   'account_reach', 'account_viewers', 'estimated_unique_clicks',
 ];
 
-export const IG_ONLY_FIELDS = ['saves', 'follows', 'ig_account_reach'];
+// Fält som BARA finns på Instagram. 'saves' hör INTE hit — TikTok-exporter har
+// saves (Lägg till i Favoriter), så saves får aldrig ensamt peka ut Instagram.
+export const IG_ONLY_FIELDS = ['follows', 'ig_account_reach'];
+
+// Fält som saknas i Facebook-exporterna (finns på Instagram och/eller TikTok).
+// Används för att dölja fält under Facebook-chipet och för N/A-celler på FB-rader.
+export const NON_FB_FIELDS = ['saves', ...IG_ONLY_FIELDS];
 
 // TikTok-poster har varken räckvidd per inlägg, totala klick eller länkklick i CSV-export.
 // 'saves' är däremot tillgängligt i TikTok-export (Lägg till i Favoriter) — INTE i denna lista.

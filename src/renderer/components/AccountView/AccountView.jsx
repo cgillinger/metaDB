@@ -23,7 +23,7 @@ import {
 } from '@/utils/columnConfig';
 import { api, downloadFile, downloadExcel, openExternalLink } from '@/utils/apiClient';
 import { daysInMonth } from '@/utils/dateHelpers';
-import { platformFromFields } from '@/utils/fieldPlatforms';
+import { platformFromFields, FB_ONLY_FIELDS, NON_FB_FIELDS } from '@/utils/fieldPlatforms';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
 import ProfileIcon from '../ui/ProfileIcon';
 
@@ -87,8 +87,7 @@ const ACCOUNT_VIEW_AVAILABLE_FIELDS = {
   'estimated_unique_clicks': 'Uppsk. unika klickare',
 };
 
-const FB_ONLY_FIELDS = ['total_clicks', 'link_clicks', 'other_clicks', 'estimated_unique_clicks'];
-const IG_ONLY_FIELDS = ['saves', 'follows'];
+// Plattformslistorna importeras från fieldPlatforms (en sanningskälla).
 
 const FIELDS_WITHOUT_TOTALS = ['average_reach', 'posts_per_day', 'estimated_unique_clicks'];
 
@@ -739,7 +738,7 @@ const AccountView = ({
       return <span>{val != null ? val.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span>;
     }
     if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
-    if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
+    if (NON_FB_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
     if (field === 'estimated_unique_clicks' && plat === 'facebook') {
       const est = estimatedClicksByAccount[account.account_name];
       if (!est || est.upper === null || est.quality === 'suppressed') {
@@ -767,7 +766,7 @@ const AccountView = ({
   const getCellValue = (account, field) => {
     const plat = account.platform;
     if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return null;
-    if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') return null;
+    if (NON_FB_FIELDS.includes(field) && plat === 'facebook') return null;
     return getFieldValue(account, field);
   };
 
@@ -789,7 +788,7 @@ const AccountView = ({
         if (field === 'account_reach' || field === 'ig_account_reach') continue;
         const displayName = getDisplayName(field);
         if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { formatted[displayName] = 'N/A'; continue; }
-        if (IG_ONLY_FIELDS.includes(field) && plat === 'facebook') { formatted[displayName] = 'N/A'; continue; }
+        if (NON_FB_FIELDS.includes(field) && plat === 'facebook') { formatted[displayName] = 'N/A'; continue; }
         formatted[displayName] = formatValue(getFieldValue(account, field));
       }
       if (selectedFields.includes('account_reach')) {

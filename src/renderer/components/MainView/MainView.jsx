@@ -28,7 +28,7 @@ import PlatformTrendView from '../PlatformTrendView';
 import PeriodSelector from '../PeriodSelector';
 import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
-import { FB_ONLY_FIELDS, IG_ONLY_FIELDS, TIKTOK_UNAVAILABLE_FIELDS } from '@/utils/fieldPlatforms';
+import { FB_ONLY_FIELDS, NON_FB_FIELDS, TIKTOK_UNAVAILABLE_FIELDS } from '@/utils/fieldPlatforms';
 
 
 const FIELD_CATEGORIES = [
@@ -147,7 +147,7 @@ function filterFieldsByPlatform(fields, activePlatform) {
   const filtered = {};
   for (const [key, label] of Object.entries(fields)) {
     if (activePlatform === 'instagram' && FB_ONLY_FIELDS.includes(key)) continue;
-    if (activePlatform === 'facebook' && IG_ONLY_FIELDS.includes(key)) continue;
+    if (activePlatform === 'facebook' && NON_FB_FIELDS.includes(key)) continue;
     if (activePlatform === 'tiktok' && TIKTOK_UNAVAILABLE_FIELDS.includes(key)) continue;
     filtered[key] = label;
   }
@@ -202,7 +202,7 @@ const ValueSelector = ({ availableFields, selectedFields, onSelectionChange, act
                 <Label htmlFor={key} className="flex items-center gap-1.5">
                   {availableFields[key]}
                   {activePlatform !== 'tiktok' && FB_ONLY_FIELDS.includes(key) && <PlatformBadge platform="facebook" />}
-                  {activePlatform !== 'tiktok' && IG_ONLY_FIELDS.includes(key) && <PlatformBadge platform="instagram" />}
+                  {activePlatform !== 'tiktok' && NON_FB_FIELDS.includes(key) && <PlatformBadge platform="instagram" />}
                 </Label>
               </div>
             ))}
