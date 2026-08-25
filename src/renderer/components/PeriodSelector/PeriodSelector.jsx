@@ -226,6 +226,8 @@ const PeriodSelector = ({
                       // gaOnly: no posts, only GA data — show "lyssningar" subtitle instead of 0
                       const gaOnly = count === 0 && monthData.has_ga_listens && !monthData.has_facebook && !monthData.has_instagram;
                       const reachOnly = count === 0 && monthData.has_reach && !gaOnly;
+                      // ttOverviewOnly: no posts, only TikTok Översikt daily data — show 'översikt' instead of 0
+                      const ttOverviewOnly = count === 0 && monthData.has_tiktok_overview && !gaOnly && !reachOnly;
 
                       return (
                         <button
@@ -239,7 +241,7 @@ const PeriodSelector = ({
                         >
                           <span className="block">{name}</span>
                           <span className={`block text-xs ${isSelected ? 'opacity-80' : 'text-gray-400'}`}>
-                            {gaOnly ? 'lyssningar' : reachOnly ? 'räckvidd' : count.toLocaleString('sv-SE')}
+                            {gaOnly ? 'lyssningar' : reachOnly ? 'räckvidd' : ttOverviewOnly ? 'översikt' : count.toLocaleString('sv-SE')}
                           </span>
                         </button>
                       );
