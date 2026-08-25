@@ -4,6 +4,9 @@
 > **Repo:** metaDB
 > **Status:** Ej påbörjad. Identifierad 2026-08-24.
 > **Krav:** Får inte avvisa någon filtyp som importeras korrekt idag. Lägg till spärr — ändra inte befintlig parsningslogik.
+> **Förutsättning för:** `TASK-account-roster.md` — rosterns auto-rensning av
+> öppna luckor litar på att en import med data för (konto, månad) verkligen är
+> korrekt. Bygg den här uppgiften **först**, innan rosterns auto-rensning.
 
 ---
 

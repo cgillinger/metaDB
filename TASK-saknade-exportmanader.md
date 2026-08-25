@@ -36,6 +36,11 @@ hade, alltså vad analysen missar.
 | Livsåskådning i P1 | 2024-08 | 19 | — |
 | Terni Generatcia | 2024-07, 2025-03, 2025-07, 2025-08, 2025-12 | 10 | ~1 tn |
 
+**Not:** när `TASK-account-roster.md` byggs seedas raderna ovan in i
+`account_gaps` som statiska `INSERT OR IGNORE`-rader, så listan blir synlig i
+appen (Importhantering → Öppna luckor) i stället för att bara finnas i den här
+filen.
+
 **P4 Extra 2025-11 är redan åtgärdat** (2026-08-24) och ingår inte i listan. Där var
 orsaken en annan: kontot fanns i exporten men Meta lämnade Sidnamn, Sid-id och
 Publiceringstid tomma för dess 111 rader. Appens permalänk-self-healing tillskrev
