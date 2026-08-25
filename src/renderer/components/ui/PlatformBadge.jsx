@@ -13,8 +13,6 @@ const PLATFORM_CONFIG = {
   google_analytics: { label: 'GA', className: 'bg-green-100 text-green-800' },
   ga_listens:       { label: 'GA', subLabel: 'lyssningar', className: 'bg-green-100 text-green-800' },
   ga_site_visits:   { label: 'GA', subLabel: 'besök',      className: 'bg-green-100 text-green-800' },
-  tiktok:           { label: 'TT', className: 'bg-black text-white' },
-  tiktok_overview:  { label: 'TT', subLabel: 'översikt',   className: 'bg-black text-white' },
 };
 
 const PlatformBadge = ({ platform }) => {

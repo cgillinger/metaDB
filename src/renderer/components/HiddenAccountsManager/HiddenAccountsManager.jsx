@@ -12,8 +12,6 @@ const PLATFORM_LABELS = {
   google_analytics: { label: 'GA',        className: 'bg-green-100 text-green-800' },
   ga_listens:       { label: 'GA',        subLabel: 'lyssningar', className: 'bg-green-100 text-green-800' },
   ga_site_visits:   { label: 'GA',        subLabel: 'besök',      className: 'bg-green-100 text-green-800' },
-  tiktok:           { label: 'TikTok',                            className: 'bg-black text-white' },
-  tiktok_overview:  { label: 'TikTok',    subLabel: 'översikt',   className: 'bg-black text-white' },
 };
 
 const PlatformBadge = ({ platform }) => {
@@ -45,13 +43,12 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [accountsRes, hiddenRes, gaRes, gsvRes, igReachAccountsRes, ttOverviewAccountsRes] = await Promise.all([
+      const [accountsRes, hiddenRes, gaRes, gsvRes, igReachAccountsRes] = await Promise.all([
         api.getAccounts({ fields: 'post_count' }),
         api.getHiddenAccounts(),
         api.getGAListensSummary(null, 'desc'),
         api.getGASiteVisitsSummary(null, 'desc'),
         fetch('/api/ig-reach/accounts').then(r => r.json()).catch(() => ({ accounts: [] })),
-        api.getTikTokOverviewAccounts().catch(() => ({ accounts: [] })),
       ]);
 
       const hiddenKeys = new Set(
@@ -84,16 +81,7 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
           post_count: 0,
         }));
 
-      // TikTok Översikt-konton (lagras separat från posts). hidden_accounts.platform
-      // för dessa = 'tiktok_overview' och .account_name = handlen.
-      const ttOverviewAccounts = (ttOverviewAccountsRes.accounts || []).map(a => ({
-        account_name: a.account_username,                   // använd handle som identitet
-        platform: 'tiktok_overview',
-        post_count: a.day_count || 0,                       // antal dagar med data
-        display_name: a.account_name || a.account_username, // för visning i tabellen
-      }));
-
-      const allAccounts = [...(accountsRes.accounts || []), ...gaAccounts, ...gsvAccounts, ...igReachOnlyAccounts, ...ttOverviewAccounts];
+      const allAccounts = [...(accountsRes.accounts || []), ...gaAccounts, ...gsvAccounts, ...igReachOnlyAccounts];
       const visibleAccounts = allAccounts.filter(
         a => !hiddenKeys.has(makeKey(a.account_name, a.platform))
       );
@@ -300,9 +288,7 @@ const HiddenAccountsManager = ({ onImportsChanged }) => {
                         />
                       </TableCell>
                       <TableCell className="font-medium text-sm">
-                        {account.display_name
-                          ? <span>{account.display_name} <span className="text-muted-foreground font-normal">@{account.account_name}</span></span>
-                          : account.account_name}
+                        {account.account_name}
                       </TableCell>
                       <TableCell>
                         <PlatformBadge platform={account.platform} />

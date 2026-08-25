@@ -41,42 +41,6 @@ test('parseCSV without a slugMap leaves empty Sidnamn empty', () => {
   assert.equal(stats.attributedViaPermalink, 0);
 });
 
-// TikTok Video-CSV: handle och post_id extraheras ur Videolänk; engagement-formel
-// per inlägg är likes+comments+shares+saves; tidszonen är redan Stockholm (ingen konvertering).
-const TIKTOK_VIDEO_CSV = [
-  'Videotitel,Videolänk,Publiceringstid,Videovisningar,Gilla-markeringar,Kommentarer,Delningar,Lägg till i Favoriter',
-  'Hej världen,https://www.tiktok.com/@p3dingata/video/7634573645129452822,2026/04/30 15:25:02,196277,8296,44,621,363',
-  ',https://www.tiktok.com/@p3dingata/video/7634530407832128790,2026/04/30 12:37:18,12680,566,4,4,21',
-].join('\n');
-
-test('parseCSV detects TikTok and extracts handle + post_id from URL', () => {
-  const { platform, posts, month } = parseCSV(TIKTOK_VIDEO_CSV, 'tt.csv');
-  assert.equal(platform, 'tiktok');
-  assert.equal(posts.length, 2);
-  assert.equal(month, '2026-04');
-
-  const first = posts.find(p => p.post_id === '7634573645129452822');
-  assert.equal(first.account_username, 'p3dingata');
-  assert.equal(first.permalink, 'https://www.tiktok.com/@p3dingata/video/7634573645129452822');
-  assert.equal(first.publish_time, '2026-04-30 15:25:02'); // slash → dash, ingen TZ-konvertering
-  assert.equal(first.views, 196277);
-  assert.equal(first.likes, 8296);
-  assert.equal(first.comments, 44);
-  assert.equal(first.shares, 621);
-  assert.equal(first.saves, 363);
-  assert.equal(first.interactions, 8296 + 44 + 621);
-  assert.equal(first.engagement, 8296 + 44 + 621 + 363); // TikTok: i+s
-  assert.equal(first.post_type, 'Videor');
-  assert.equal(first.description, 'Hej världen');
-});
-
-test('parseCSV handles empty TikTok title (defensive)', () => {
-  const { posts } = parseCSV(TIKTOK_VIDEO_CSV, 'tt.csv');
-  const empty = posts.find(p => p.post_id === '7634530407832128790');
-  assert.equal(empty.description, null);
-  assert.equal(empty.account_username, 'p3dingata');
-});
-
 // Pacific→Stockholm-konverteringen måste vara oberoende av processens tidszon.
 // Regressionsskydd för TZ-buggen där `new Date(str)` tolkades i serverns lokala
 // tidszon: resultatet var bara korrekt på UTC-servrar, och inlägg nära midnatt

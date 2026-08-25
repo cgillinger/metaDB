@@ -4,7 +4,6 @@ import {
   detectPlatform,
   getMappingsForPlatform,
   normalizeText,
-  parseTikTokVideoUrl,
 } from '../../shared/columnConfig.js';
 
 // Intl.DateTimeFormat construction is the expensive part of the Intl API, so
@@ -174,13 +173,7 @@ export function parseCSV(csvContent, filename, opts = {}) {
   for (const rawRow of result.data) {
     const mapped = mapRow(rawRow, columnMappings, platform);
 
-    if (platform === 'tiktok') {
-      // TikTok-tider exporteras redan i kontots lokala tidszon (Stockholm för SR-konton).
-      // Konvertera bara slash → dash så Date.parse fungerar: "2026/04/30 15:25:02" → "2026-04-30 15:25:02".
-      if (mapped.publish_time) {
-        mapped.publish_time = String(mapped.publish_time).replace(/^(\d{4})\/(\d{2})\/(\d{2})/, '$1-$2-$3');
-      }
-    } else if (mapped.publish_time) {
+    if (mapped.publish_time) {
       // FB/IG: Meta exporterar i Pacific Time → konvertera till Stockholm.
       const original = String(mapped.publish_time);
       mapped.publish_time = convertPacificToStockholm(original);
@@ -189,15 +182,6 @@ export function parseCSV(csvContent, filename, opts = {}) {
       if (mapped.publish_time === null) {
         unparsableCount++;
         if (unparsableDates.length < 3) unparsableDates.push(original);
-      }
-    }
-
-    // TikTok: extrahera handle + post_id ur Videolänk-URL. Permalink är kanonisk identifierare.
-    if (platform === 'tiktok' && mapped.permalink) {
-      const parsed = parseTikTokVideoUrl(String(mapped.permalink));
-      if (parsed) {
-        if (!mapped.post_id) mapped.post_id = parsed.post_id;
-        if (!mapped.account_username) mapped.account_username = parsed.handle;
       }
     }
 
@@ -216,11 +200,6 @@ export function parseCSV(csvContent, filename, opts = {}) {
     if (platform === 'facebook') {
       const totalClicks = safeInt(mapped.total_clicks);
       engagement = interactions + totalClicks;
-    } else if (platform === 'tiktok') {
-      // TikTok per-inlägg: gilla + kommentarer + delningar + favoriter (saves).
-      // Inga "follows" per inlägg på TikTok — det är ett kontomått i Översikt-CSV.
-      const saves = safeInt(mapped.saves);
-      engagement = interactions + saves;
     } else {
       const saves = safeInt(mapped.saves);
       const follows = safeInt(mapped.follows);
@@ -234,14 +213,8 @@ export function parseCSV(csvContent, filename, opts = {}) {
       'Links': 'Länkar', 'Link': 'Länkar',
       'Text': 'Status', 'Live': 'Live',
     };
-    let normalizedType;
-    if (platform === 'tiktok') {
-      // TikTok-CSV saknar typkolumn — alla inlägg är videor per definition.
-      normalizedType = 'Videor';
-    } else {
-      const rawType = mapped.post_type || null;
-      normalizedType = rawType && POST_TYPE_MAP[rawType] ? POST_TYPE_MAP[rawType] : rawType;
-    }
+    const rawType = mapped.post_type || null;
+    const normalizedType = rawType && POST_TYPE_MAP[rawType] ? POST_TYPE_MAP[rawType] : rawType;
 
     // Collect date for month derivation. publish_time is a Stockholm wall-clock
     // string at this point — use it directly instead of round-tripping through

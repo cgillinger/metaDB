@@ -132,9 +132,6 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
     fetchPosts();
   }, [account, platform, periodParams]);
 
-  // TikTok rapporterar ingen räckvidd per inlägg (alltid 0), så golv-/viral-
-  // analysen är meningslös där och hoppas över helt.
-  const isTikTok = account.platform === 'tiktok';
   const params = VIRAL_PARAMS[account.platform === 'facebook' ? 'FB' : 'IG'];
 
   // Kontots egna inlägg (samma namn + plattform).
@@ -144,36 +141,6 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
   );
 
   const analysis = useMemo(() => {
-    // TikTok: hoppa över all golv-/viral-beräkning — visa bara inläggspunkterna.
-    if (isTikTok) {
-      const points = accountPosts
-        .map(p => {
-          const t = new Date(p.publish_time).getTime();
-          if (isNaN(t)) return null;
-          return {
-            date: t,
-            reach: p.reach,
-            viral: false,
-            postType: p.post_type,
-            description: p.description,
-          };
-        })
-        .filter(Boolean);
-      return {
-        med: null,
-        floor: [],
-        threshold: undefined,
-        rel: reliability(accountPosts, TUNT),
-        share: 0,
-        trend: '→',
-        peerMed: null,
-        peerCount: 0,
-        band: null,
-        points,
-        floorPoints: [],
-      };
-    }
-
     const med = periodMedian(accountPosts);
     const floor = weeklyFloor(accountPosts);
     const threshold = viralThreshold(med, params);
@@ -225,7 +192,7 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
     const floorPoints = floor.map(w => ({ date: w.date, median: w.median }));
 
     return { med, floor, threshold, rel, share, trend, peerMed, peerCount: peerMedians.length, band, points, floorPoints };
-  }, [accountPosts, allPosts, account, params, isTikTok]);
+  }, [accountPosts, allPosts, account, params]);
 
   const { xMin, xMax } = periodWindow(periodParams);
 
@@ -237,12 +204,9 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
     periodDays = ts.length >= 2 ? Math.max(1, (Math.max(...ts) - Math.min(...ts)) / 86400000) : 1;
   }
   const cadence = accountPosts.length / periodDays;
-  const verdict = isTikTok ? null : statusVerdict(analysis.band, analysis.share, cadence);
+  const verdict = statusVerdict(analysis.band, analysis.share, cadence);
 
-  const platformLabel =
-    account.platform === 'facebook' ? 'Facebook'
-      : account.platform === 'tiktok' ? 'TikTok'
-        : 'Instagram';
+  const platformLabel = account.platform === 'facebook' ? 'Facebook' : 'Instagram';
   const kStr = params.k.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const thresholdText =
     `Viral-tröskel: ${formatK(analysis.threshold)}  ` +
@@ -306,39 +270,33 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
     <div>
       {header}
 
-      {/* Status-mening — vyns huvudbudskap (golv/viral gäller inte TikTok) */}
-      {!isTikTok && (
-        <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 mb-4">
-          <div className="text-xs uppercase tracking-wide text-primary/70 mb-1">Status</div>
-          <div className="text-lg font-bold text-primary">
-            {verdict
-              ? verdict
-              : 'Golvnivå kan inte klassas (för få jämförbara konton) – se golvtalet nedan.'}
-          </div>
+      {/* Status-mening — vyns huvudbudskap */}
+      <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 mb-4">
+        <div className="text-xs uppercase tracking-wide text-primary/70 mb-1">Status</div>
+        <div className="text-lg font-bold text-primary">
+          {verdict
+            ? verdict
+            : 'Golvnivå kan inte klassas (för få jämförbara konton) – se golvtalet nedan.'}
         </div>
-      )}
+      </div>
 
-      {/* Nyckeltal — de räckviddsbaserade rutorna döljs för TikTok */}
+      {/* Nyckeltal */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        {!isTikTok && (
-          <>
-            <StatBox
-              label="Median (period)"
-              value={formatK(med)}
-              hint={<InfoTooltip text="Medianräckvidd över valda perioden, alla posttyper poolade. Detta är kontots golv." />}
-            />
-            <StatBox
-              label="Viralandel"
-              value={formatPercent(share)}
-              hint={<InfoTooltip text="Andel av total räckvidd som kommer från virala inlägg (Σ räckvidd virala / Σ räckvidd alla). Mäter om kontot bygger på viraler – inte antal orange punkter." />}
-            />
-            <StatBox
-              label="Golvtrend"
-              value={<span className="inline-flex items-center gap-1"><TrendIcon trend={trend} /> {trend}</span>}
-              hint={<InfoTooltip text="Golvets riktning: veckomedianen i periodens början jämfört med slutet." />}
-            />
-          </>
-        )}
+        <StatBox
+          label="Median (period)"
+          value={formatK(med)}
+          hint={<InfoTooltip text="Medianräckvidd över valda perioden, alla posttyper poolade. Detta är kontots golv." />}
+        />
+        <StatBox
+          label="Viralandel"
+          value={formatPercent(share)}
+          hint={<InfoTooltip text="Andel av total räckvidd som kommer från virala inlägg (Σ räckvidd virala / Σ räckvidd alla). Mäter om kontot bygger på viraler – inte antal orange punkter." />}
+        />
+        <StatBox
+          label="Golvtrend"
+          value={<span className="inline-flex items-center gap-1"><TrendIcon trend={trend} /> {trend}</span>}
+          hint={<InfoTooltip text="Golvets riktning: veckomedianen i periodens början jämfört med slutet." />}
+        />
         <StatBox
           label="Underlag"
           value={`${rel.n} / ${rel.weeks}`}
@@ -347,15 +305,13 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
       </div>
 
       {/* Viral-tröskel i klartext + beskrivande golvnivå */}
-      {!isTikTok && (
-        <div className="rounded-lg border bg-white p-4 mb-4 space-y-2">
-          <div className="font-medium text-foreground">{thresholdText}</div>
-          <div className="text-sm text-muted-foreground flex items-start gap-1">
-            {floorComparisonText}
-            <InfoTooltip text="Golvnivån jämförs mot medianen av jämförbara kontons golv (samma plattform + samma kategori riks/lokalt). OBS: kategorin är grov – ett litet konto kan ha lågt golv på grund av publikstorlek, inte kvalitet. 'Lågt golv' betyder aldrig dålig redaktion." />
-          </div>
+      <div className="rounded-lg border bg-white p-4 mb-4 space-y-2">
+        <div className="font-medium text-foreground">{thresholdText}</div>
+        <div className="text-sm text-muted-foreground flex items-start gap-1">
+          {floorComparisonText}
+          <InfoTooltip text="Golvnivån jämförs mot medianen av jämförbara kontons golv (samma plattform + samma kategori riks/lokalt). OBS: kategorin är grov – ett litet konto kan ha lågt golv på grund av publikstorlek, inte kvalitet. 'Lågt golv' betyder aldrig dålig redaktion." />
         </div>
-      )}
+      </div>
 
       {/* Tillförlitlighetsnotis (blockerar inte) */}
       <div className="text-sm mb-4">
@@ -369,13 +325,9 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
 
       {/* Punktdiagram */}
       <div className="mb-2">
-        <h3 className="text-base font-semibold text-foreground">
-          {isTikTok ? 'Inlägg över tid' : 'Räckvidd per inlägg'}
-        </h3>
+        <h3 className="text-base font-semibold text-foreground">Räckvidd per inlägg</h3>
         <p className="text-sm text-muted-foreground">
-          {isTikTok
-            ? 'Varje punkt är ett inlägg, x-axeln visar när det publicerades. TikTok rapporterar inte räckvidd per inlägg, så golv- och viral-analys visas inte här.'
-            : 'Varje punkt är ett inlägg. Höjden visar inläggets räckvidd, x-axeln när det publicerades.'}
+          Varje punkt är ett inlägg. Höjden visar inläggets räckvidd, x-axeln när det publicerades.
         </p>
       </div>
       <PostScatter
@@ -384,7 +336,7 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
         threshold={analysis.threshold}
         xMin={xMin}
         xMax={xMax}
-        floorLabel={isTikTok ? undefined : `Golv ~${formatK(med)}`}
+        floorLabel={`Golv ~${formatK(med)}`}
       />
     </div>
   );

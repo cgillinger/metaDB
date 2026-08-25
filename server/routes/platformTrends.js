@@ -44,8 +44,8 @@ function buildP4ExcludeFilter(alias) {
 router.get('/', (req, res) => {
   try {
     const { platform, group = 'all', months } = req.query;
-    if (!platform || !['facebook', 'instagram', 'tiktok'].includes(platform)) {
-      return res.status(400).json({ error: 'platform must be facebook, instagram or tiktok' });
+    if (!platform || !['facebook', 'instagram'].includes(platform)) {
+      return res.status(400).json({ error: 'platform must be facebook or instagram' });
     }
 
     const db = getDb();

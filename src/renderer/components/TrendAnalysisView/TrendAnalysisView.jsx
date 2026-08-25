@@ -20,7 +20,6 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
-import { TIKTOK_UNAVAILABLE_FIELDS } from '@/utils/fieldPlatforms';
 import { breakpointIndex, ghostRuns, distinctBreakpointIndexes } from './splicedLine.js';
 import { daysInMonth } from '@/utils/dateHelpers';
 import { calculateNiceYAxis } from '@/utils/chartAxis';
@@ -124,14 +123,6 @@ const CHART_COLORS = [
 // Metrics that cannot be meaningfully summed across accounts in a group
 const NON_SUMMABLE_METRICS = new Set([
   'reach', 'average_reach', 'account_reach', 'account_viewers', 'account_viewers_spliced', 'ig_account_reach', 'posts_per_day', 'estimated_unique_clicks',
-]);
-
-// När TikTok är aktiv plattform saknar dessa mått data i TikTok-exporterna och
-// döljs ur datapunkt-väljaren. Bygger på den delade fältlistan (fieldPlatforms)
-// plus de trend-specifika härledda måtten som inte finns som fält.
-const TIKTOK_UNAVAILABLE_METRICS = new Set([
-  ...TIKTOK_UNAVAILABLE_FIELDS,
-  'account_viewers_spliced', 'avg_daily_link_clicks',
 ]);
 
 // Mått som begränsar vilka konton som kan väljas (jfr filteredAccountList).
@@ -1245,7 +1236,6 @@ const TrendAnalysisView = ({
                 <div className="space-y-3 max-h-64 overflow-y-auto border rounded-md p-3 bg-gray-50">
                   {METRIC_CATEGORIES.map(category => {
                     const visibleMetrics = category.metrics.filter(m => {
-                      if (platform === 'tiktok' && TIKTOK_UNAVAILABLE_METRICS.has(m.key)) return false;
                       if (m.platform === 'facebook' && !hasFacebook) return false;
                       if (m.platform === 'instagram' && !hasInstagram) return false;
                       return true;
@@ -1280,7 +1270,7 @@ const TrendAnalysisView = ({
                                 />
                                 <span className="text-sm flex items-center gap-1.5">
                                   {m.label}
-                                  {platform !== 'tiktok' && m.platform && <PlatformBadge platform={m.platform} />}
+                                  {m.platform && <PlatformBadge platform={m.platform} />}
                                 </span>
                               </Label>
                             );
