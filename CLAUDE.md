@@ -9,11 +9,6 @@ metaDB är en self-hosted analysapp som aggregerar data från Meta Business Suit
 Uppskjutet arbete ligger i `TASK-*.md` i repo-roten. **Läs dem innan du tar dig an
 importvägen eller säkerheten** — de innehåller färdig analys som annars görs om.
 
-- `TASK-import-guard-daily-breakdown.md` — spärr mot FB-exporter med daglig
-  nedbrytning. Sådana filer glider igenom importen idag och ger `views = 0` plus
-  interaktioner från en enskild dag i stället för månadstotalen. Tyst felaktig data,
-  alltså värre än en tom lucka. Innehåller bevis från torrkörning, detekteringsregel
-  och testfall.
 - `TASK-saknade-exportmanader.md` — tolv FB-konton saknar hela månader i databasen
   (Kvällspasset ~3,5 mn räckvidd, Naturmorgon ~1,9 mn m.fl.). Kontona finns inte i
   Metas exportfiler för de månaderna — kräver om-export, inte kodändring. Innehåller
