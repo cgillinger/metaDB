@@ -314,8 +314,8 @@ export function FileUploader({ onImportComplete, onCancel }) {
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
               Listan sparas automatiskt — du hittar den när som helst under
-              Importhantering → Öppna luckor. Du behöver inte anteckna eller
-              göra något direkt.
+              fliken Databas, kortet Öppna luckor. Du behöver inte anteckna
+              eller göra något direkt.
             </p>
             <div className="space-y-2">
               {missingAccountsReport.map(m => {
