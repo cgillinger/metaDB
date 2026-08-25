@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../ui/table';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import {
   FileText,
   Trash2,
@@ -51,6 +52,7 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
   const [igReachMonths, setIgReachMonths] = useState([]);
   const [gaListensMonths, setGaListensMonths] = useState([]);
   const [openGaps, setOpenGaps] = useState([]);
+  const [gapsSortMode, setGapsSortMode] = useState('alphabetical');
   const [retiringGapKey, setRetiringGapKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -122,6 +124,25 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
       setRetiringGapKey(null);
     }
   };
+
+  const GAPS_SORT_LABELS = {
+    alphabetical: 'Bokstavsordning',
+    months: 'Flest saknade månader',
+    reach: 'Störst räckvidd i luckorna',
+  };
+
+  const sortedOpenGaps = useMemo(() => {
+    const byName = (a, b) => a.account_name.localeCompare(b.account_name, 'sv');
+    const sorted = [...openGaps];
+    if (gapsSortMode === 'months') {
+      sorted.sort((a, b) => b.months.length - a.months.length || byName(a, b));
+    } else if (gapsSortMode === 'reach') {
+      sorted.sort((a, b) => (b.gap_reach || 0) - (a.gap_reach || 0) || byName(a, b));
+    } else {
+      sorted.sort(byName);
+    }
+    return sorted;
+  }, [openGaps, gapsSortMode]);
 
   const handleVacuum = async () => {
     setVacuuming(true);
@@ -467,11 +488,24 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
       {/* Open account gaps — accounts that are normally present but missing from the imports */}
       {openGaps.length > 0 && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
             <CardTitle className="text-lg flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600" />
               Öppna luckor
             </CardTitle>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Sortera efter</span>
+              <Select value={gapsSortMode} onValueChange={setGapsSortMode}>
+                <SelectTrigger className="w-56 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(GAPS_SORT_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
@@ -480,8 +514,10 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
               API — det är inläggsstatistiken som saknas här.
             </p>
             <div className="space-y-2">
-              {openGaps.map(g => {
+              {sortedOpenGaps.map(g => {
                 const key = `${g.account_name}::${g.platform}`;
+                const showReach = gapsSortMode === 'reach';
+                const reachIncomplete = showReach && g.gap_reach_known < g.months.length;
                 return (
                   <div
                     key={key}
@@ -495,6 +531,15 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
                       <p className="text-xs text-muted-foreground">
                         Saknas: {g.months.join(', ')}
                       </p>
+                      {showReach && (
+                        <p className="text-xs text-muted-foreground">
+                          Räckvidd i luckorna: {reachIncomplete ? '≥' : ''}
+                          {(g.gap_reach || 0).toLocaleString('sv-SE')}
+                          {reachIncomplete && (
+                            <span> (varav {g.gap_reach_known} av {g.months.length} månader har räckviddsdata)</span>
+                          )}
+                        </p>
+                      )}
                     </div>
                     <Button
                       variant="outline"

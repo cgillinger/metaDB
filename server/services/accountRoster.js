@@ -270,11 +270,43 @@ export function processImportRoster(db, platform, month, importId, accountNames)
 
 // --- Open gaps for the UI (the "Öppna luckor" card) ----------------------------
 
+/** Reach table per platform — facebook and instagram only; other platforms have none. */
+const REACH_TABLE_BY_PLATFORM = {
+  facebook: 'account_reach',
+  instagram: 'ig_account_reach',
+};
+
+/**
+ * Sum of monthly reach for one account's gap months, plus how many of those
+ * months actually had reach data (account_reach is frozen through 2026-05,
+ * so many recent gap months contribute 0 known). Used as a prioritization
+ * measure — summing different months' audiences, not the same-month
+ * SUM-vs-AVG reach rule (CLAUDE.md) that applies within a single month.
+ * @returns {{ gap_reach: number, gap_reach_known: number }}
+ */
+function sumGapReach(db, accountName, platform, months) {
+  const table = REACH_TABLE_BY_PLATFORM[platform];
+  if (!table || months.length === 0) return { gap_reach: 0, gap_reach_known: 0 };
+
+  const placeholders = months.map(() => '?').join(', ');
+  const rows = db.prepare(
+    `SELECT reach FROM ${table} WHERE account_name = ? AND month IN (${placeholders})`
+  ).all(accountName, ...months);
+
+  const gap_reach = rows.reduce((sum, r) => sum + (r.reach || 0), 0);
+  return { gap_reach, gap_reach_known: rows.length };
+}
+
 /**
  * Unresolved gaps, grouped per account, with retired accounts filtered out
  * (join against roster status — the row in account_gaps is never deleted).
+ * Each account also carries gap_reach (sum of reach across its unresolved
+ * gap months, for client-side sorting by "störst räckvidd i luckorna") and
+ * gap_reach_known (how many of those months had reach data at all — always
+ * <= months.length; account_reach is frozen through 2026-05 so many recent
+ * months contribute 0/unknown). Sorting itself happens client-side.
  * @param {string} [platform]
- * @returns {Array<{account_name: string, platform: string, months: string[]}>}
+ * @returns {Array<{account_name: string, platform: string, months: string[], gap_reach: number, gap_reach_known: number}>}
  */
 export function listOpenGaps(platform) {
   const db = getDb();
@@ -301,5 +333,9 @@ export function listOpenGaps(platform) {
     }
     byAccount.get(key).months.push(row.month);
   }
-  return [...byAccount.values()];
+
+  return [...byAccount.values()].map(entry => ({
+    ...entry,
+    ...sumGapReach(db, entry.account_name, entry.platform, entry.months),
+  }));
 }
