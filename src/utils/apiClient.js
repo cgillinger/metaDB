@@ -279,6 +279,18 @@ export const api = {
     const params = platform ? `?platform=${platform}` : '';
     return fetchWithRetry(`/api/account-roster/gaps${params}`).then(handleResponse);
   },
+  dismissGapMonth: (accountName, platform, month) =>
+    fetch('/api/account-roster/gaps/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountName, platform, month }),
+    }).then(handleResponse),
+  reopenGapMonth: (accountName, platform, month) =>
+    fetch('/api/account-roster/gaps/reopen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountName, platform, month }),
+    }).then(handleResponse),
 
   // Comparison View
   getComparisonAccounts: () =>

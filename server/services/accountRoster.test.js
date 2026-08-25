@@ -13,6 +13,7 @@ const { getDb, closeDb } = await import('../db/connection.js');
 const {
   processImportRoster, listOpenGaps, retireAccount, listRoster,
   getScopedHistory, getScopedOpenGapAccounts,
+  dismissGapMonth, reopenGapMonth, registerGaps, autoResolveGaps,
 } = await import('./accountRoster.js');
 
 const db = getDb(); // runs schema + migrations (incl. 011) on the empty temp DB
@@ -275,4 +276,101 @@ test('gap_reach: konto utan räckviddsdata alls ger gap_reach = 0 och gap_reach_
   assert.ok(row);
   assert.equal(row.gap_reach, 0);
   assert.equal(row.gap_reach_known, 0);
+});
+
+// --- Manual dismiss / reopen: "kontot publicerade helt enkelt inget" ------
+
+function gapRow(accountName, platform, month) {
+  return db.prepare(
+    'SELECT resolved_at, resolution FROM account_gaps WHERE account_name = ? AND platform = ? AND month = ?'
+  ).get(accountName, platform, month);
+}
+
+test('dismissGapMonth stänger en olöst lucka med resolution=no_posts', () => {
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Dismiss Konto A', 'facebook', '2025-09')"
+  ).run();
+
+  const changes = dismissGapMonth('Dismiss Konto A', 'facebook', '2025-09');
+  assert.equal(changes, 1);
+
+  const row = gapRow('Dismiss Konto A', 'facebook', '2025-09');
+  assert.ok(row.resolved_at, 'resolved_at ska sättas');
+  assert.equal(row.resolution, 'no_posts');
+
+  // Ska försvinna ur Öppna luckor.
+  const gaps = listOpenGaps('facebook');
+  assert.ok(!gaps.find(g => g.account_name === 'Dismiss Konto A'));
+});
+
+test('dismissGapMonth på en redan löst rad ändrar ingenting', () => {
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Dismiss Konto B', 'facebook', '2025-10')"
+  ).run();
+  dismissGapMonth('Dismiss Konto B', 'facebook', '2025-10');
+  const before = gapRow('Dismiss Konto B', 'facebook', '2025-10');
+
+  const changes = dismissGapMonth('Dismiss Konto B', 'facebook', '2025-10');
+  assert.equal(changes, 0);
+
+  const after = gapRow('Dismiss Konto B', 'facebook', '2025-10');
+  assert.deepEqual(after, before);
+});
+
+test('reopenGapMonth öppnar en no_posts-rad men INTE en imported-rad', () => {
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Reopen Konto', 'facebook', '2025-11')"
+  ).run();
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Imported Konto', 'facebook', '2025-11')"
+  ).run();
+  dismissGapMonth('Reopen Konto', 'facebook', '2025-11');
+  db.prepare(
+    "UPDATE account_gaps SET resolved_at = datetime('now'), resolution = 'imported' WHERE account_name = 'Imported Konto' AND platform = 'facebook' AND month = '2025-11'"
+  ).run();
+
+  const reopened = reopenGapMonth('Reopen Konto', 'facebook', '2025-11');
+  assert.equal(reopened, 1);
+  const reopenedRow = gapRow('Reopen Konto', 'facebook', '2025-11');
+  assert.equal(reopenedRow.resolved_at, null);
+  assert.equal(reopenedRow.resolution, null);
+
+  const untouched = reopenGapMonth('Imported Konto', 'facebook', '2025-11');
+  assert.equal(untouched, 0);
+  const importedRow = gapRow('Imported Konto', 'facebook', '2025-11');
+  assert.ok(importedRow.resolved_at, 'imported-raden ska förbli löst');
+  assert.equal(importedRow.resolution, 'imported');
+});
+
+test('auto-resolve sätter resolution=imported när en senare import fyller luckan', () => {
+  const importId = makeImport('facebook', '2026-05', 70);
+  makePost(importId, 'facebook', 'Auto Resolve Konto', '2026-05');
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Auto Resolve Konto', 'facebook', '2026-05')"
+  ).run();
+
+  const resolved = autoResolveGaps(db, 'facebook', importId);
+  assert.ok(resolved >= 1);
+
+  const row = gapRow('Auto Resolve Konto', 'facebook', '2026-05');
+  assert.ok(row.resolved_at);
+  assert.equal(row.resolution, 'imported');
+});
+
+test('dismissad lucka återregistreras inte av registerGaps (INSERT OR IGNORE)', () => {
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Ateruppstar Inte Konto', 'facebook', '2026-06')"
+  ).run();
+  dismissGapMonth('Ateruppstar Inte Konto', 'facebook', '2026-06');
+
+  const before = gapRow('Ateruppstar Inte Konto', 'facebook', '2026-06');
+  assert.equal(before.resolution, 'no_posts');
+
+  registerGaps(db, 'facebook', '2026-06', null, [{ account_name: 'Ateruppstar Inte Konto' }]);
+
+  const after = gapRow('Ateruppstar Inte Konto', 'facebook', '2026-06');
+  assert.deepEqual(after, before, 'INSERT OR IGNORE ska inte röra den befintliga (dismissade) raden');
+
+  const gaps = listOpenGaps('facebook');
+  assert.ok(!gaps.find(g => g.account_name === 'Ateruppstar Inte Konto'), 'ska förbli borta ur Öppna luckor');
 });

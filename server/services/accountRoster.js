@@ -208,7 +208,7 @@ export function autoResolveGaps(db, platform, importId) {
   ).all(importId);
 
   const stmt = db.prepare(
-    `UPDATE account_gaps SET resolved_at = datetime('now')
+    `UPDATE account_gaps SET resolved_at = datetime('now'), resolution = 'imported'
      WHERE account_name = ? AND platform = ? AND month = ? AND resolved_at IS NULL`
   );
 
@@ -219,6 +219,39 @@ export function autoResolveGaps(db, platform, importId) {
     resolved += info.changes;
   }
   return resolved;
+}
+
+/**
+ * Manually dismisses one (account, platform, month) gap because the account
+ * genuinely published nothing that month — not a real gap. Only touches an
+ * unresolved row; already-resolved rows (either path) are left untouched.
+ * Does not affect account_gaps registration: registerGaps still uses
+ * INSERT OR IGNORE against UNIQUE(account_name, platform, month), so a
+ * dismissed row is never re-created by a later import.
+ * @returns {number} rows changed (0 or 1)
+ */
+export function dismissGapMonth(accountName, platform, month) {
+  const db = getDb();
+  const info = db.prepare(
+    `UPDATE account_gaps SET resolved_at = datetime('now'), resolution = 'no_posts'
+     WHERE account_name = ? AND platform = ? AND month = ? AND resolved_at IS NULL`
+  ).run(accountName, platform, month);
+  return info.changes;
+}
+
+/**
+ * Reopens a gap previously dismissed via dismissGapMonth ("Ångra"). Only
+ * touches rows with resolution = 'no_posts' — an 'imported' row (closed by
+ * an actual import) is never reopened by this, by design.
+ * @returns {number} rows changed (0 or 1)
+ */
+export function reopenGapMonth(accountName, platform, month) {
+  const db = getDb();
+  const info = db.prepare(
+    `UPDATE account_gaps SET resolved_at = NULL, resolution = NULL
+     WHERE account_name = ? AND platform = ? AND month = ? AND resolution = 'no_posts'`
+  ).run(accountName, platform, month);
+  return info.changes;
 }
 
 // --- Composite: an import's full roster handling ---------------------------
