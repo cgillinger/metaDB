@@ -11,6 +11,7 @@ const PERMALINK_OVERRIDES = {};
 import { redetectAllCollabs } from '../services/collabDetector.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { hiddenPostsFilter, hiddenGAFilter, hiddenSiteVisitsFilter } from '../services/hiddenAccounts.js';
+import { processImportRoster } from '../services/accountRoster.js';
 
 const router = Router();
 
@@ -334,7 +335,14 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
       db.prepare('UPDATE imports SET row_count = ? WHERE id = ?')
         .run(actualPostCount, importId);
 
-      return { importId, inserted, updated, actualPostCount };
+      // Account roster: register this file's account list, detect accounts
+      // that are normally present but missing from it, register/auto-resolve
+      // gaps — all in the same transaction as the import itself.
+      // Never blocks the import.
+      const accountNames = [...new Set(parsed.posts.map(p => p.account_name).filter(Boolean))];
+      const roster = processImportRoster(db, parsed.platform, parsed.month, importId, accountNames);
+
+      return { importId, inserted, updated, actualPostCount, roster };
     })();
 
     // Re-run collab detection across all data
@@ -358,6 +366,7 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
         postsInserted: result.inserted,
         postsUpdated: result.updated,
         collabDetection: collabResult,
+        missingAccounts: result.roster.missingAccounts,
       },
     });
   } catch (err) {

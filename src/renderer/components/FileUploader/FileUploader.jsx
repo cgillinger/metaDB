@@ -8,6 +8,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   PlusCircle,
   X,
   RefreshCw
@@ -28,6 +29,9 @@ export function FileUploader({ onImportComplete, onCancel }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [batchResult, setBatchResult] = useState(null);
+  const [missingAccountsReport, setMissingAccountsReport] = useState([]); // accounts alarming in this import batch
+  const [retiringKeys, setRetiringKeys] = useState(new Set()); // begäran pågår
+  const [retiredKeys, setRetiredKeys] = useState(new Set()); // klarmarkerade som "används inte längre"
   const fileInputRef = useRef(null);
   const addFiles = useCallback(async (newFiles) => {
     const csvFiles = Array.from(newFiles).filter(
@@ -180,9 +184,12 @@ export function FileUploader({ onImportComplete, onCancel }) {
 
     setIsProcessing(true);
     setBatchResult(null);
+    setMissingAccountsReport([]);
+    setRetiredKeys(new Set());
 
     let succeeded = 0;
     let failed = 0;
+    const missingAccounts = []; // accumulated across all files in this batch
 
     for (const entry of pendingFiles) {
       setFiles(prev => prev.map(f =>
@@ -227,6 +234,10 @@ export function FileUploader({ onImportComplete, onCancel }) {
             platform: result.import?.platform,
           } : f
         ));
+        const platform = result.import?.platform;
+        for (const m of result.stats?.missingAccounts || []) {
+          missingAccounts.push({ ...m, platform, key: `${m.account_name}::${platform}` });
+        }
       } catch (err) {
         failed++;
         setFiles(prev => prev.map(f =>
@@ -239,11 +250,39 @@ export function FileUploader({ onImportComplete, onCancel }) {
     setBatchResult(batchRes);
     setIsProcessing(false);
 
-    if (succeeded > 0) {
+    // Dedupe: several files in the same batch can flag the same account.
+    const dedupedMissing = [...new Map(missingAccounts.map(m => [m.key, m])).values()];
+    setMissingAccountsReport(dedupedMissing);
+
+    // The alarm needs time to be read — don't advance automatically when
+    // there are accounts to act on.
+    if (succeeded > 0 && dedupedMissing.length === 0) {
       setTimeout(() => {
         onImportComplete();
       }, 1500);
     }
+  };
+
+  const handleRetireAccount = async (accountName, platform, key) => {
+    setRetiringKeys(prev => new Set(prev).add(key));
+    try {
+      await api.retireAccount(accountName, platform);
+      setRetiredKeys(prev => new Set(prev).add(key));
+    } catch (err) {
+      console.error('Fel vid avveckling av konto:', err);
+    } finally {
+      setRetiringKeys(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+
+  const handleDismissMissingAccount = (key) => {
+    // "Komplettera senare" — makes no server call. The gap is already
+    // registered by the import; this just closes the row in the panel.
+    setMissingAccountsReport(prev => prev.filter(m => m.key !== key));
   };
 
   const pendingCount = files.filter(f => f.status === FILE_STATUS.PENDING).length;
@@ -262,6 +301,70 @@ export function FileUploader({ onImportComplete, onCancel }) {
             {batchResult.failed > 0 && ` ${batchResult.failed} fil(er) misslyckades.`}
           </AlertDescription>
         </Alert>
+      )}
+
+      {missingAccountsReport.length > 0 && (
+        <Card className="border-amber-300">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2 text-amber-800">
+              <AlertTriangle className="w-5 h-5" />
+              {missingAccountsReport.length} konto{missingAccountsReport.length !== 1 ? 'n' : ''} som brukar finnas med saknas i filen
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Listan sparas automatiskt — du hittar den när som helst under
+              Importhantering → Öppna luckor. Du behöver inte anteckna eller
+              göra något direkt.
+            </p>
+            <div className="space-y-2">
+              {missingAccountsReport.map(m => {
+                const isRetired = retiredKeys.has(m.key);
+                const isRetiring = retiringKeys.has(m.key);
+                return (
+                  <div
+                    key={m.key}
+                    className={`flex items-center justify-between gap-3 p-3 rounded-md border text-sm ${
+                      isRetired ? 'bg-gray-50 border-gray-200' : 'bg-amber-50 border-amber-200'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{m.account_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Fanns i {m.seenIn} av {m.of} senaste{m.lastSeen ? ` · senast sedd ${m.lastSeen}` : ''}
+                      </p>
+                    </div>
+                    {isRetired ? (
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">Markerat som avvecklat</span>
+                    ) : (
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isRetiring}
+                          onClick={() => handleRetireAccount(m.account_name, m.platform, m.key)}
+                        >
+                          {isRetiring ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                          Används inte längre
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDismissMissingAccount(m.key)}
+                        >
+                          Komplettera senare
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end pt-1">
+              <Button size="sm" onClick={onImportComplete}>Klart, gå vidare</Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <Card>

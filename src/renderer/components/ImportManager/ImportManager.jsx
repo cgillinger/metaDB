@@ -18,6 +18,8 @@ import {
   Pencil,
   FolderOpen,
   FileSpreadsheet,
+  AlertTriangle,
+  EyeOff,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
 import GroupCreateDialog from '../AccountGroups/GroupCreateDialog';
@@ -48,6 +50,8 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
   const [viewersMonths, setViewersMonths] = useState([]);
   const [igReachMonths, setIgReachMonths] = useState([]);
   const [gaListensMonths, setGaListensMonths] = useState([]);
+  const [openGaps, setOpenGaps] = useState([]);
+  const [retiringGapKey, setRetiringGapKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [vacuuming, setVacuuming] = useState(false);
@@ -66,16 +70,17 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [importsData, statsData, coverageData, reachMonthsData, viewersMonthsData, igReachMonthsData, gaMonthsData] = await Promise.all([
+      const [importsData, statsData, coverageData, reachMonthsData, viewersMonthsData, igReachMonthsData, gaMonthsData, gapsData] = await Promise.all([
         api.getImports(),
-        // Stats får inte fälla hela laddningen — importlistan ska visas ändå,
-        // stats-korten renderas då tomma via sina ?.-fallbacks.
+        // Stats must not fail the whole load — the import list should still
+        // show; the stats cards then render empty via their ?. fallbacks.
         api.getStats().catch(() => null),
         api.getCoverage().catch(() => null),
         api.getReachMonths().catch(() => ({ months: [] })),
         api.getViewersMonths().catch(() => ({ months: [] })),
         api.getIGReachMonths().catch(() => ({ months: [] })),
         api.getGAListensMonths().catch(() => ({ months: [] })),
+        api.getOpenGaps().catch(() => ({ gaps: [] })),
       ]);
       setImports(importsData);
       setStats(statsData);
@@ -84,6 +89,7 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
       setViewersMonths(viewersMonthsData.months || []);
       setIgReachMonths(igReachMonthsData.months || []);
       setGaListensMonths(gaMonthsData.months || []);
+      setOpenGaps(gapsData.gaps || []);
     } catch (error) {
       console.error('Fel vid hämtning av importdata:', error);
     } finally {
@@ -101,6 +107,19 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
       if (onImportsChanged) onImportsChanged();
     } catch (error) {
       console.error('Fel vid borttagning av import:', error);
+    }
+  };
+
+  const handleRetireGapAccount = async (accountName, platform) => {
+    const key = `${accountName}::${platform}`;
+    setRetiringGapKey(key);
+    try {
+      await api.retireAccount(accountName, platform);
+      setOpenGaps(prev => prev.filter(g => !(g.account_name === accountName && g.platform === platform)));
+    } catch (error) {
+      console.error('Fel vid avveckling av konto:', error);
+    } finally {
+      setRetiringGapKey(null);
     }
   };
 
@@ -441,6 +460,64 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Open account gaps — accounts that are normally present but missing from the imports */}
+      {openGaps.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              Öppna luckor
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Konton som brukar finnas med i importerna men som saknas för en
+              eller flera månader. Räckvidden kan ändå finnas kvar via Metas
+              API — det är inläggsstatistiken som saknas här.
+            </p>
+            <div className="space-y-2">
+              {openGaps.map(g => {
+                const key = `${g.account_name}::${g.platform}`;
+                return (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between gap-3 p-3 rounded-md border bg-amber-50 border-amber-200 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium truncate flex items-center gap-1.5">
+                        {g.account_name}
+                        <PlatformBadge platform={g.platform} />
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Saknas: {g.months.join(', ')}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-shrink-0"
+                      disabled={retiringGapKey === key}
+                      onClick={() => handleRetireGapAccount(g.account_name, g.platform)}
+                    >
+                      {retiringGapKey === key
+                        ? <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                        : <EyeOff className="w-3 h-3 mr-1" />}
+                      Används inte längre
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground pt-1 border-t">
+              Vill du komplettera en lucka: exportera hela riks- eller
+              lokaltgruppen från Meta Business Suite, inte en enskild sida.
+              En enskild-sida-export har gett dagsuppdelad statistik i stället
+              för en inläggsexport, vilket ger felaktig data.
+            </p>
           </CardContent>
         </Card>
       )}
