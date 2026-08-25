@@ -53,6 +53,7 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
   const [gaListensMonths, setGaListensMonths] = useState([]);
   const [openGaps, setOpenGaps] = useState([]);
   const [gapsSortMode, setGapsSortMode] = useState('alphabetical');
+  const [gapsViewMode, setGapsViewMode] = useState('account'); // 'account' | 'month'
   const [retiringGapKey, setRetiringGapKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -143,6 +144,25 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
     }
     return sorted;
   }, [openGaps, gapsSortMode]);
+
+  // Invert openGaps (per konto -> months) to per månad -> konton, for the
+  // "Per månad" view: which accounts to select for a Meta Business Suite
+  // re-export of a given month.
+  const gapsByMonth = useMemo(() => {
+    const byMonth = new Map();
+    for (const g of openGaps) {
+      for (const month of g.months) {
+        if (!byMonth.has(month)) byMonth.set(month, []);
+        byMonth.get(month).push({ account_name: g.account_name, platform: g.platform });
+      }
+    }
+    return [...byMonth.entries()]
+      .map(([month, accounts]) => ({
+        month,
+        accounts: [...accounts].sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv')),
+      }))
+      .sort((a, b) => b.month.localeCompare(a.month));
+  }, [openGaps]);
 
   const handleVacuum = async () => {
     setVacuuming(true);
@@ -493,70 +513,127 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
               <AlertTriangle className="w-4 h-4 text-amber-600" />
               Öppna luckor
             </CardTitle>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">Sortera efter</span>
-              <Select value={gapsSortMode} onValueChange={setGapsSortMode}>
-                <SelectTrigger className="w-56 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(GAPS_SORT_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* View mode: per account (default) vs per month, for re-export planning */}
+              <div className="inline-flex rounded-md border overflow-hidden">
+                {[
+                  { value: 'account', label: 'Per konto' },
+                  { value: 'month', label: 'Per månad' },
+                ].map((opt, i) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setGapsViewMode(opt.value)}
+                    className={`px-3 py-1.5 text-sm transition-colors ${i > 0 ? 'border-l' : ''} ${
+                      gapsViewMode === opt.value
+                        ? 'bg-blue-50 text-blue-800 font-medium'
+                        : 'bg-white text-muted-foreground hover:bg-gray-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {gapsViewMode === 'account' && (
+                <>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">Sortera efter</span>
+                  <Select value={gapsSortMode} onValueChange={setGapsSortMode}>
+                    <SelectTrigger className="w-56 h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(GAPS_SORT_LABELS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Konton som brukar finnas med i importerna men som saknas för en
-              eller flera månader. Räckvidden kan ändå finnas kvar via Metas
-              API — det är inläggsstatistiken som saknas här.
-            </p>
-            <div className="space-y-2">
-              {sortedOpenGaps.map(g => {
-                const key = `${g.account_name}::${g.platform}`;
-                const showReach = gapsSortMode === 'reach';
-                const reachIncomplete = showReach && g.gap_reach_known < g.months.length;
-                return (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between gap-3 p-3 rounded-md border bg-amber-50 border-amber-200 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium truncate flex items-center gap-1.5">
-                        {g.account_name}
-                        <PlatformBadge platform={g.platform} />
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Saknas: {g.months.join(', ')}
-                      </p>
-                      {showReach && (
-                        <p className="text-xs text-muted-foreground">
-                          Räckvidd i luckorna: {reachIncomplete ? '≥' : ''}
-                          {(g.gap_reach || 0).toLocaleString('sv-SE')}
-                          {reachIncomplete && (
-                            <span> (varav {g.gap_reach_known} av {g.months.length} månader har räckviddsdata)</span>
+            {gapsViewMode === 'account' ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Konton som brukar finnas med i importerna men som saknas för en
+                  eller flera månader. Räckvidden kan ändå finnas kvar via Metas
+                  API — det är inläggsstatistiken som saknas här.
+                </p>
+                <div className="space-y-2">
+                  {sortedOpenGaps.map(g => {
+                    const key = `${g.account_name}::${g.platform}`;
+                    const showReach = gapsSortMode === 'reach';
+                    const reachIncomplete = showReach && g.gap_reach_known < g.months.length;
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between gap-3 p-3 rounded-md border bg-amber-50 border-amber-200 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-medium truncate flex items-center gap-1.5">
+                            {g.account_name}
+                            <PlatformBadge platform={g.platform} />
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Saknas: {g.months.join(', ')}
+                          </p>
+                          {showReach && (
+                            <p className="text-xs text-muted-foreground">
+                              Räckvidd i luckorna: {reachIncomplete ? '≥' : ''}
+                              {(g.gap_reach || 0).toLocaleString('sv-SE')}
+                              {reachIncomplete && (
+                                <span> (varav {g.gap_reach_known} av {g.months.length} månader har räckviddsdata)</span>
+                              )}
+                            </p>
                           )}
-                        </p>
-                      )}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-shrink-0"
-                      disabled={retiringGapKey === key}
-                      onClick={() => handleRetireGapAccount(g.account_name, g.platform)}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-shrink-0"
+                          disabled={retiringGapKey === key}
+                          onClick={() => handleRetireGapAccount(g.account_name, g.platform)}
+                        >
+                          {retiringGapKey === key
+                            ? <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                            : <EyeOff className="w-3 h-3 mr-1" />}
+                          Används inte längre
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Månad för månad: vilka konton som ska väljas när samma månad
+                  om-exporteras från Meta Business Suite.
+                </p>
+                <div className="space-y-2">
+                  {gapsByMonth.map(m => (
+                    <div
+                      key={m.month}
+                      className="p-3 rounded-md border bg-amber-50 border-amber-200 text-sm"
                     >
-                      {retiringGapKey === key
-                        ? <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                        : <EyeOff className="w-3 h-3 mr-1" />}
-                      Används inte längre
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
+                      <p className="font-medium">
+                        {m.month}
+                        <span className="text-xs text-muted-foreground font-normal ml-1.5">
+                          ({m.accounts.length} {m.accounts.length === 1 ? 'konto' : 'konton'})
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {m.accounts.map((a, i) => (
+                          <React.Fragment key={`${a.account_name}::${a.platform}`}>
+                            {i > 0 && ', '}
+                            {a.account_name}
+                          </React.Fragment>
+                        ))}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
             <p className="text-xs text-muted-foreground pt-1 border-t">
               Vill du komplettera en lucka: exportera hela riks- eller
               lokaltgruppen från Meta Business Suite, inte en enskild sida.
