@@ -25,6 +25,15 @@ const COLOR_VIEWS = '#378ADD';
 const COLOR_REACH = '#1D9E75';
 const COLOR_POSTS = '#B4B2A9';
 
+// En sanningskälla för seriernas nyckel, etikett och färg — används av både
+// Chart.js-dataseten och kryssrutorna i teckenförklaringen. Ordningen är
+// datasetens index i grafen.
+const SERIES = [
+  { key: 'views', label: 'Visningar / inlägg', color: COLOR_VIEWS, swatch: 'dot' },
+  { key: 'reach', label: 'Räckvidd / inlägg', color: COLOR_REACH, swatch: 'dot' },
+  { key: 'posts', label: 'Antal inlägg', color: COLOR_POSTS, swatch: 'dash' },
+];
+
 const monthName = (monthKey) => {
   const [, m] = monthKey.split('-').map(Number);
   return MONTH_NAMES_SV[m - 1] || monthKey;
@@ -157,6 +166,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
   });
 
   const canvasRef = useRef(null);
+  const chartRef = useRef(null);
 
   // Fetch aggregated data when platform, group or period changes.
   // Stale-flag guards against out-of-order responses on rapid filter changes:
@@ -221,11 +231,13 @@ const PlatformTrendView = ({ periodParams = {} }) => {
       type: 'line',
       data: {
         labels,
+        // Alla tre dataseten skapas alltid — kryssrutorna togglar synlighet via
+        // setDatasetVisibility i effekten nedan, utan att grafen byggs om.
         datasets: [
-          visibleSeries.views && {
-            label: 'Visningar / inlägg',
+          {
+            label: SERIES[0].label,
             data: months.map(m => m.avg_views),
-            borderColor: COLOR_VIEWS,
+            borderColor: SERIES[0].color,
             backgroundColor: 'rgba(55, 138, 221, 0.06)',
             fill: true,
             borderWidth: 2.5,
@@ -234,10 +246,10 @@ const PlatformTrendView = ({ periodParams = {} }) => {
             pointHoverRadius: 6,
             yAxisID: 'y',
           },
-          visibleSeries.reach && {
-            label: 'Räckvidd / inlägg',
+          {
+            label: SERIES[1].label,
             data: months.map(m => m.avg_reach),
-            borderColor: COLOR_REACH,
+            borderColor: SERIES[1].color,
             fill: false,
             borderWidth: 2,
             tension: 0.35,
@@ -245,10 +257,10 @@ const PlatformTrendView = ({ periodParams = {} }) => {
             pointHoverRadius: 6,
             yAxisID: 'y',
           },
-          visibleSeries.posts && {
-            label: 'Antal inlägg',
+          {
+            label: SERIES[2].label,
             data: months.map(m => m.post_count),
-            borderColor: COLOR_POSTS,
+            borderColor: SERIES[2].color,
             borderDash: [6, 4],
             fill: false,
             borderWidth: 1.5,
@@ -257,7 +269,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
             pointHoverRadius: 3,
             yAxisID: 'y1',
           },
-        ].filter(Boolean),
+        ],
       },
       options: {
         responsive: true,
@@ -284,7 +296,6 @@ const PlatformTrendView = ({ periodParams = {} }) => {
           y1: {
             type: 'linear',
             position: 'right',
-            display: visibleSeries.posts,
             title: { display: true, text: 'Antal inlägg' },
             grid: { drawOnChartArea: false },
             ticks: {
@@ -296,7 +307,22 @@ const PlatformTrendView = ({ periodParams = {} }) => {
     };
 
     const chart = new Chart(canvasRef.current, config);
-    return () => chart.destroy();
+    chartRef.current = chart;
+    return () => {
+      chartRef.current = null;
+      chart.destroy();
+    };
+  }, [months]);
+
+  // Kryssrutorna styr dataset-synlighet på den levande instansen. Körs även efter
+  // en ombyggnad (months i deps) så synligheten återappliceras på den nya grafen.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    SERIES.forEach((s, i) => chart.setDatasetVisibility(i, visibleSeries[s.key]));
+    // Utan Antal inlägg ska inte en tom högeraxel stå kvar.
+    chart.options.scales.y1.display = visibleSeries.posts;
+    chart.update();
   }, [months, visibleSeries]);
 
   const footerRange = months.length > 0
@@ -373,36 +399,20 @@ const PlatformTrendView = ({ periodParams = {} }) => {
 
       {/* Legend + kryssrutor: kryssa ur/i vilka serier som ritas i grafen */}
       <div className="flex gap-4 text-xs text-muted-foreground flex-wrap">
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={visibleSeries.views}
-            onChange={() => setVisibleSeries(v => ({ ...v, views: !v.views }))}
-            className="h-3.5 w-3.5 accent-blue-600"
-          />
-          <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_VIEWS }} />
-          Visningar / inlägg
-        </label>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={visibleSeries.reach}
-            onChange={() => setVisibleSeries(v => ({ ...v, reach: !v.reach }))}
-            className="h-3.5 w-3.5 accent-blue-600"
-          />
-          <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_REACH }} />
-          Räckvidd / inlägg
-        </label>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={visibleSeries.posts}
-            onChange={() => setVisibleSeries(v => ({ ...v, posts: !v.posts }))}
-            className="h-3.5 w-3.5 accent-blue-600"
-          />
-          <span className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: COLOR_POSTS }} />
-          Antal inlägg
-        </label>
+        {SERIES.map(s => (
+          <label key={s.key} className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={visibleSeries[s.key]}
+              onChange={() => setVisibleSeries(v => ({ ...v, [s.key]: !v[s.key] }))}
+              className="h-3.5 w-3.5 accent-blue-600"
+            />
+            {s.swatch === 'dash'
+              ? <span className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: s.color }} />
+              : <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />}
+            {s.label}
+          </label>
+        ))}
       </div>
 
       {/* Chart */}
