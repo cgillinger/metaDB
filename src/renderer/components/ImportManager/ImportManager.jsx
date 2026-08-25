@@ -762,10 +762,10 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
               </>
             )}
             <p className="text-xs text-muted-foreground pt-1 border-t">
-              Vill du komplettera en lucka: exportera hela riks- eller
-              lokaltgruppen från Meta Business Suite, inte en enskild sida.
-              En enskild-sida-export har gett dagsuppdelad statistik i stället
-              för en inläggsexport, vilket ger felaktig data.
+              Vill du komplettera en lucka: exportera från inläggsvyn
+              (Innehåll) i Meta Business Suite — inte från videostatistiken,
+              som ger dagsuppdelad data. Det går bra att välja bara de konton
+              som saknas; kontrollera att filen har en Visningar-kolumn.
             </p>
           </CardContent>
         </Card>

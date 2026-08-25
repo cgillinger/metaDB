@@ -71,11 +71,17 @@ likadana ut. Kontrollera före import:
 
 Importen har ingen spärr mot detta ännu — se `TASK-import-guard-daily-breakdown.md`.
 
-**Observerat 2026-08-24:** vid export av en enskild sida (Radio Romano) gav Meta
-dagsuppdelad videostatistik i stället för inläggsexport — 224 rader, 8 reels, ingen
-`Visningar`-kolumn. Att lägga till Radio Sweden i urvalet ändrade ingenting: filen kom
-tillbaka med samma 8 Radio Romano-inlägg och Radio Sweden helt frånvarande. Exportera
-därför hellre hela riks- eller lokaltgruppen än enskilda sidor.
+**Observerat 2026-08-24, mekanism klarlagd 2026-08-25:** vid export av en enskild
+sida (Radio Romano) gav Meta dagsuppdelad videostatistik i stället för
+inläggsexport — 224 rader, 8 reels, ingen `Visningar`-kolumn. Slutsatsen då var
+att exportera hela gruppen i stället. **Det var fel förklaring:** 2026-08-25
+verifierades att ett urval på tre sidor (Kvällspasset, Naturmorgon, Vaken)
+exporterat från **inläggsvyn (Innehåll)** ger korrekt inläggsexport (105
+kolumner, `Visningar`, kvot 1,0). Avgörande är alltså **vilken vy exporten görs
+från** — inläggsvyn kontra videostatistiken — inte antalet valda sidor. Riktade
+småexporter är att föredra för luckfyllnad: de lyfter inte övriga kontons
+befintliga inlägg till dagens visningsnivåer (se "Not om om-import" nedan).
+Importspärren (`assertNotDailyBreakdown`, v2.25.0) fångar fel filtyp oavsett.
 
 ## Så här hittas luckorna igen
 
