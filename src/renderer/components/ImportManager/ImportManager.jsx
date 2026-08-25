@@ -762,10 +762,11 @@ const ImportManager = ({ onImportsChanged, accountGroups = [], onGroupsChanged }
               </>
             )}
             <p className="text-xs text-muted-foreground pt-1 border-t">
-              Vill du komplettera en lucka: exportera från inläggsvyn
-              (Innehåll) i Meta Business Suite — inte från videostatistiken,
-              som ger dagsuppdelad data. Det går bra att välja bara de konton
-              som saknas; kontrollera att filen har en Visningar-kolumn.
+              Vill du komplettera en lucka: exportera från Meta Business
+              Suite med statistikläget Livstid — inte Daglig, som ger en rad
+              per inlägg och dag och saknar Visningar. Det går bra att välja
+              bara de konton som saknas; kontrollera att filen har en
+              Visningar-kolumn.
             </p>
           </CardContent>
         </Card>

@@ -69,19 +69,19 @@ likadana ut. Kontrollera före import:
   att varje inlägg upprepas en gång per dag.
 - `Datum`-kolumnen finns i **båda** typerna och duger inte som skiljelinje.
 
-Importen har ingen spärr mot detta ännu — se `TASK-import-guard-daily-breakdown.md`.
+Importen har en spärr mot detta sedan v2.25.0 (`assertNotDailyBreakdown` i
+`server/services/csvProcessor.js`) — fel filtyp avvisas med klarspråksfel.
 
-**Observerat 2026-08-24, mekanism klarlagd 2026-08-25:** vid export av en enskild
-sida (Radio Romano) gav Meta dagsuppdelad videostatistik i stället för
-inläggsexport — 224 rader, 8 reels, ingen `Visningar`-kolumn. Slutsatsen då var
-att exportera hela gruppen i stället. **Det var fel förklaring:** 2026-08-25
-verifierades att ett urval på tre sidor (Kvällspasset, Naturmorgon, Vaken)
-exporterat från **inläggsvyn (Innehåll)** ger korrekt inläggsexport (105
-kolumner, `Visningar`, kvot 1,0). Avgörande är alltså **vilken vy exporten görs
-från** — inläggsvyn kontra videostatistiken — inte antalet valda sidor. Riktade
-småexporter är att föredra för luckfyllnad: de lyfter inte övriga kontons
-befintliga inlägg till dagens visningsnivåer (se "Not om om-import" nedan).
-Importspärren (`assertNotDailyBreakdown`, v2.25.0) fångar fel filtyp oavsett.
+**Mekanismen klarlagd 2026-08-25 (Christians A/B-test):** den dagsuppdelade
+filtypen styrs av **statistikläget i Metas exportdialog — "Daglig" kontra
+"Livstid"**. Samma tre sidor, samma månad (april 2026): Daglig gav 26 kolumner
+utan `Visningar` och 600 rader (20 inlägg × 30 dagar); Livstid gav 116 kolumner
+med `Visningar` och 94 rader = 94 unika inlägg (kvot 1,0). Två tidigare
+förklaringar hann vara fel på vägen: "enskild sida ger fel typ" (24/8, Radio
+Romano) och "fel vy" (25/8) — sidurval och vy spelar ingen roll, det är
+Daglig/Livstid-valet. **Vid om-export: välj Livstid.** Riktade småexporter är
+att föredra för luckfyllnad: de lyfter inte övriga kontons befintliga inlägg
+till dagens visningsnivåer (se "Not om om-import" nedan).
 
 ## Så här hittas luckorna igen
 
