@@ -3,8 +3,9 @@
 > **Status:** Designad 2026-08-24, reviderad 2026-08-25 efter granskning. Ej påbörjad.
 > **Repo:** metaDB
 > **Krav:** Importen får aldrig blockeras — datan som finns är alltid värd att ha.
-> **Förutsättning:** `TASK-import-guard-daily-breakdown.md` byggs **först** — se
-> punkt 6 i Design nedan.
+> **Förutsättning:** Importspärren mot daglig nedbrytning är byggd
+> (`assertNotDailyBreakdown` i `server/services/csvProcessor.js`, 2026-08-25) —
+> se punkt 6 i Design nedan. Auto-rensningen i punkt 4 kan nu byggas.
 
 ---
 
@@ -308,6 +309,7 @@ roster.
   åtgärdslista. De 38 kända luckmånaderna seedas in i `account_gaps` när den här
   uppgiften byggs (punkt 2 ovan), så listan blir synlig i appen i stället för att
   bara finnas i den filen.
-- `TASK-import-guard-daily-breakdown.md` — spärr mot fel filtyp.
-  **Förutsättning för den här uppgiften, byggs först** (punkt 6 ovan) — annars
-  kan auto-rensningen stänga en lucka med tyst felaktig data.
+- Spärren mot fel filtyp (tidigare `TASK-import-guard-daily-breakdown.md`) är
+  byggd — `assertNotDailyBreakdown` i `server/services/csvProcessor.js`,
+  2026-08-25. Var förutsättningen för den här uppgiften (punkt 6 ovan); nu
+  uppfylld, auto-rensningen kan byggas.

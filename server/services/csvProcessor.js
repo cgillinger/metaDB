@@ -3,6 +3,7 @@ import { resolveAccountFromPermalink } from './permalinkResolver.js';
 import {
   detectPlatform,
   getMappingsForPlatform,
+  findMatchingColumnKey,
   normalizeText,
 } from '../../shared/columnConfig.js';
 
@@ -89,6 +90,55 @@ function sanitizeText(str) {
 }
 
 /**
+ * Facebook exposes two CSV shapes that look almost identical: a per-post
+ * export (one row per post) and a per-post *daily breakdown* (one row per
+ * post per day). The importer must reject the latter — Visningar is absent
+ * from that export entirely, so every post gets views = 0, and dedup
+ * collapses the ~28 daily rows down to a single day's interactions instead
+ * of the month total. Silently wrong data, worse than a visible gap.
+ * See TASK-import-guard-daily-breakdown.md.
+ *
+ * Facebook-only — must not run for Instagram, which never has this shape.
+ *
+ * Two signals, both must agree before rejecting (an AND, not an OR): a
+ * missing Visningar column on its own is not unusual in a small/partial
+ * export (existing unit-test fixtures in this file rely on that), but
+ * combined with a low unique-post_id/row ratio it reliably means "this is
+ * the same handful of posts repeated once per day", never a legitimate
+ * post export.
+ * 1. Visningar (views) column missing entirely.
+ * 2. Unique Publicerings-id (post_id) / row count far below 1 (< 0.5) —
+ *    a real post export is ~1:1, a daily breakdown is ~1:28.
+ */
+function assertNotDailyBreakdown(headers, rows, columnMappings) {
+  const hasViewsColumn = headers.some(
+    (h) => findMatchingColumnKey(h, columnMappings) === 'views'
+  );
+
+  const postIdHeader = headers.find(
+    (h) => findMatchingColumnKey(h, columnMappings) === 'post_id'
+  );
+  let idRatio = null;
+  if (postIdHeader && rows.length > 0) {
+    const ids = new Set();
+    for (const row of rows) {
+      const v = row[postIdHeader];
+      if (v !== null && v !== undefined && v !== '') ids.add(v);
+    }
+    idRatio = ids.size / rows.length;
+  }
+
+  const looksLikeDailyBreakdown = !hasViewsColumn && idRatio !== null && idRatio < 0.5;
+  if (!looksLikeDailyBreakdown) return;
+
+  throw new Error(
+    'Filen är en daglig nedbrytning per inlägg, inte en inläggsexport ' +
+    '(kolumnen Visningar saknas och varje inlägg förekommer en gång per dag). ' +
+    'Exportera om från Meta Business Suite och välj inläggsvyn, inte videostatistiken.'
+  );
+}
+
+/**
  * Map a single raw CSV row to internal field names using column mappings.
  */
 function mapRow(rawRow, columnMappings, platform) {
@@ -165,6 +215,13 @@ export function parseCSV(csvContent, filename, opts = {}) {
   }
 
   const columnMappings = getMappingsForPlatform(platform);
+
+  // Facebook-only guard — see assertNotDailyBreakdown above. Must run
+  // before post building so no posts are constructed from a rejected file.
+  if (platform === 'facebook') {
+    assertNotDailyBreakdown(headers, result.data, columnMappings);
+  }
+
   const posts = [];
   const dates = [];
   const unparsableDates = [];
