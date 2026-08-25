@@ -219,3 +219,60 @@ test('regression: processImportRoster stör inte en helt vanlig import utan rost
   assert.deepEqual(result.missingAccounts, []);
   assert.equal(result.gapsRegistered, 0);
 });
+
+// --- gap_reach: "störst räckvidd i luckorna" sorting measure --------------
+
+test('gap_reach: FB-konto med räckvidd i alla luckmånader summerar och gap_reach_known = months.length', () => {
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Reach Konto A', 'facebook', '2026-04')"
+  ).run();
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Reach Konto A', 'facebook', '2026-05')"
+  ).run();
+  db.prepare(
+    "INSERT INTO account_reach (account_name, month, reach) VALUES ('Reach Konto A', '2026-04', 10000)"
+  ).run();
+  db.prepare(
+    "INSERT INTO account_reach (account_name, month, reach) VALUES ('Reach Konto A', '2026-05', 15000)"
+  ).run();
+
+  const gaps = listOpenGaps('facebook');
+  const row = gaps.find(g => g.account_name === 'Reach Konto A');
+  assert.ok(row);
+  assert.equal(row.gap_reach, 25000);
+  assert.equal(row.gap_reach_known, 2);
+  assert.equal(row.gap_reach_known, row.months.length);
+});
+
+test('gap_reach: IG-konto med räckvidd för bara en av två luckmånader ger gap_reach_known < months.length', () => {
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Reach Konto B', 'instagram', '2026-04')"
+  ).run();
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Reach Konto B', 'instagram', '2026-06')"
+  ).run();
+  db.prepare(
+    "INSERT INTO ig_account_reach (account_name, month, reach) VALUES ('Reach Konto B', '2026-04', 5000)"
+  ).run();
+  // No ig_account_reach row for 2026-06 — that month is "unknown".
+
+  const gaps = listOpenGaps('instagram');
+  const row = gaps.find(g => g.account_name === 'Reach Konto B');
+  assert.ok(row);
+  assert.equal(row.gap_reach, 5000);
+  assert.equal(row.gap_reach_known, 1);
+  assert.equal(row.months.length, 2);
+  assert.ok(row.gap_reach_known < row.months.length);
+});
+
+test('gap_reach: konto utan räckviddsdata alls ger gap_reach = 0 och gap_reach_known = 0', () => {
+  db.prepare(
+    "INSERT INTO account_gaps (account_name, platform, month) VALUES ('Reach Konto C', 'facebook', '2026-07')"
+  ).run();
+
+  const gaps = listOpenGaps('facebook');
+  const row = gaps.find(g => g.account_name === 'Reach Konto C');
+  assert.ok(row);
+  assert.equal(row.gap_reach, 0);
+  assert.equal(row.gap_reach_known, 0);
+});
