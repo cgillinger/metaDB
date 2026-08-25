@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '@/utils/apiClient';
+import { TIKTOK_UNAVAILABLE_FIELDS } from '@/utils/fieldPlatforms';
 import { breakpointIndex, ghostRuns, distinctBreakpointIndexes } from './splicedLine.js';
 import { daysInMonth } from '@/utils/dateHelpers';
 import { calculateNiceYAxis } from '@/utils/chartAxis';
@@ -126,10 +127,17 @@ const NON_SUMMABLE_METRICS = new Set([
 ]);
 
 // När TikTok är aktiv plattform saknar dessa mått data i TikTok-exporterna och
-// döljs ur datapunkt-väljaren (jfr TIKTOK_UNAVAILABLE_FIELDS i MainView).
+// döljs ur datapunkt-väljaren. Bygger på den delade fältlistan (fieldPlatforms)
+// plus de trend-specifika härledda måtten som inte finns som fält.
 const TIKTOK_UNAVAILABLE_METRICS = new Set([
-  'average_reach', 'account_reach', 'account_viewers', 'account_viewers_spliced', 'ig_account_reach', 'follows',
-  'total_clicks', 'link_clicks', 'avg_daily_link_clicks', 'other_clicks', 'estimated_unique_clicks',
+  ...TIKTOK_UNAVAILABLE_FIELDS,
+  'account_viewers_spliced', 'avg_daily_link_clicks',
+]);
+
+// Mått som begränsar vilka konton som kan väljas (jfr filteredAccountList).
+const METRIC_RESTRICTED_ACCOUNTS = new Set([
+  'account_viewers_spliced', 'account_reach', 'estimated_unique_clicks',
+  'account_viewers', 'ig_account_reach',
 ]);
 
 const MONTH_NAMES_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
@@ -244,6 +252,8 @@ const TrendAnalysisView = ({
   const yoyKey = selectedAccounts.length === 1 ? selectedAccounts[0] : null;
   // YoY can't render the estimated-clicks band shape.
   const yoyUnsupported = isYoY && !gaListensMode && !gaSiteVisitsMode && YOY_UNSUPPORTED_METRICS.has(selectedMetric);
+  // One shared flag for every spliced-metric render branch, so the guards can't drift apart.
+  const isSplicedMetricActive = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced';
 
   // Detect platforms from account list
   const { hasFacebook, hasInstagram } = useMemo(() => {
@@ -925,42 +935,20 @@ const TrendAnalysisView = ({
     return accountListWithGroups;
   }, [accountListWithGroups, selectedMetric, igReachAccountNames, fbReachAccountNames, fbViewersAccountNames]);
 
-  // When metric changes to a platform-specific metric, remove incompatible accounts from selection
+  // When metric changes to a platform-specific metric, remove incompatible accounts
+  // from the selection. Prunes against filteredAccountList — the same list the picker
+  // renders — so the two can never encode different eligibility rules. Returns the
+  // previous array untouched when nothing is pruned, so the fetch effect (which has
+  // selectedAccounts in its deps) doesn't re-fire on an identical selection.
   useEffect(() => {
-    if (!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced') {
-      const splicedKeys = new Set(
-        accountListWithGroups
-          .filter(a => a._isGroup || (a.platform === 'facebook' &&
-            (fbReachAccountNames.has(a.account_name) || fbViewersAccountNames.has(a.account_name))))
-          .map(a => a.key)
-      );
-      setSelectedAccounts(prev => prev.filter(k => splicedKeys.has(k)));
-    }
-    if (!gaListensMode && !gaSiteVisitsMode && (selectedMetric === 'account_reach' || selectedMetric === 'estimated_unique_clicks')) {
-      const fbKeys = new Set(
-        accountListWithGroups
-          .filter(a => a._isGroup || (a.platform === 'facebook' && fbReachAccountNames.has(a.account_name)))
-          .map(a => a.key)
-      );
-      setSelectedAccounts(prev => prev.filter(k => fbKeys.has(k)));
-    }
-    if (!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers') {
-      const fbvKeys = new Set(
-        accountListWithGroups
-          .filter(a => a._isGroup || (a.platform === 'facebook' && fbViewersAccountNames.has(a.account_name)))
-          .map(a => a.key)
-      );
-      setSelectedAccounts(prev => prev.filter(k => fbvKeys.has(k)));
-    }
-    if (!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'ig_account_reach') {
-      const igKeys = new Set(
-        accountListWithGroups
-          .filter(a => a._isGroup || (a.platform === 'instagram' && igReachAccountNames.has(a.account_name)))
-          .map(a => a.key)
-      );
-      setSelectedAccounts(prev => prev.filter(k => igKeys.has(k)));
-    }
-  }, [gaListensMode, gaSiteVisitsMode, selectedMetric, accountListWithGroups, igReachAccountNames, fbReachAccountNames, fbViewersAccountNames]);
+    if (gaListensMode || gaSiteVisitsMode) return;
+    if (!METRIC_RESTRICTED_ACCOUNTS.has(selectedMetric)) return;
+    const allowedKeys = new Set(filteredAccountList.map(a => a.key));
+    setSelectedAccounts(prev => {
+      const next = prev.filter(k => allowedKeys.has(k));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [gaListensMode, gaSiteVisitsMode, selectedMetric, filteredAccountList]);
 
   // Accounts whose spliced series never reaches the new measure — usually a name change
   // in the source, since the two tables are matched on account_name.
@@ -1021,6 +1009,13 @@ const TrendAnalysisView = ({
     && visibleSelectableKeys.every(k => selectedAccounts.includes(k));
 
   const handleToggleAllAccounts = () => {
+    // Without an active search, "Avmarkera alla" clears the WHOLE selection —
+    // including keys orphaned by a platform-chip change and disabled groups,
+    // which are drawn and counted but impossible to untick one by one.
+    if (allAccountsSelected && !accountSearchQuery) {
+      setSelectedAccounts([]);
+      return;
+    }
     const visible = new Set(visibleSelectableKeys);
     setSelectedAccounts(current =>
       allAccountsSelected
@@ -1375,7 +1370,7 @@ const TrendAnalysisView = ({
             </Alert>
           )}
 
-          {selectedMetric === 'account_viewers_spliced' && !gaListensMode && !gaSiteVisitsMode && (
+          {isSplicedMetricActive && !isYoY && (
             <Alert className="py-2 border-amber-300 bg-amber-50 text-amber-900">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
@@ -1438,7 +1433,7 @@ const TrendAnalysisView = ({
               )}
 
               {/* What the two line styles mean. Colour-neutral — each account keeps its own hue. */}
-              {!isYoY && !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced' && (
+              {!isYoY && isSplicedMetricActive && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <svg width="26" height="8" aria-hidden="true"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" strokeWidth="2.5" strokeDasharray="7 4" strokeOpacity="0.45" /></svg>
@@ -1502,7 +1497,7 @@ const TrendAnalysisView = ({
                   {displayChartLines.map((line, lineIndex) => {
                     if (line.points.length < 1) return null;
                     const isEstimated = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'estimated_unique_clicks';
-                    const isSpliced = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced';
+                    const isSpliced = isSplicedMetricActive;
                     // Render null values as gaps (line breaks) in the estimated-clicks metric,
                     // the spliced metric and YoY mode, so missing months don't crash to the baseline.
                     const allowGaps = isEstimated || isYoY || isSpliced;
@@ -1512,7 +1507,15 @@ const TrendAnalysisView = ({
                     const pathPoints = line.points.map((point, index) => {
                       const x = 70 + (index / Math.max(1, displayMonths.length - 1)) * 860;
                       if (allowGaps && point.value === null) {
-                        return { x, y: null, yLower: null, point };
+                        // Hole months keep their ghost value — a legacy-only month after
+                        // the measure switch is a gap in the line but still a shadow.
+                        return {
+                          x,
+                          y: null,
+                          yLower: null,
+                          ghostY: isSpliced && point.ghost !== null && point.ghost !== undefined ? toY(point.ghost) : null,
+                          point,
+                        };
                       }
                       return {
                         x,
@@ -1647,7 +1650,7 @@ const TrendAnalysisView = ({
 
                   {/* Measure-switch markers. The breakpoint is per account, so several can
                       coexist; only the earliest is labelled to avoid a thicket of text. */}
-                  {!gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced' && !isYoY &&
+                  {isSplicedMetricActive && !isYoY &&
                     distinctBreakpointIndexes(displayChartLines, displayMonths).map((i, n) => {
                       const x = 70 + (i / Math.max(1, displayMonths.length - 1)) * 860;
                       const right = x > 800;
@@ -1663,7 +1666,7 @@ const TrendAnalysisView = ({
                     })}
 
                   {hoveredDataPoint && (() => {
-                    const isSplicedTooltip = !gaListensMode && !gaSiteVisitsMode && selectedMetric === 'account_viewers_spliced';
+                    const isSplicedTooltip = isSplicedMetricActive;
                     const tooltipWidth = 240, tooltipHeight = isSplicedTooltip ? 124 : 88;
                     let tooltipX = mousePosition.x + 15, tooltipY = mousePosition.y - 45;
                     if (tooltipX + tooltipWidth > 980) tooltipX = mousePosition.x - tooltipWidth - 15;
