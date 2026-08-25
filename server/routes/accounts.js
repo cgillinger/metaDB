@@ -233,7 +233,7 @@ router.get('/', (req, res) => {
   const hasPostAccounts = accounts.length > 0;
   // Reach-only accounts are platform-specific (FB/IG). When a specific platform
   // is requested, only fold in reach-only accounts of THAT platform — otherwise a
-  // TikTok (or FB) view would list every IG reach-only account with zeroed metrics.
+  // FB view would list every IG reach-only account with zeroed metrics.
   const reqPlatform = req.query.platform;
   const shouldIncludeReachOnly = req.query.includeReachOnly === 'true' || !hasPostAccounts;
   if (shouldIncludeReachOnly && reachMonthsAvailable.length > 0 && (!reqPlatform || reqPlatform === 'facebook')) {

@@ -10,7 +10,7 @@ import { buildSlugToAccount } from '../services/permalinkResolver.js';
 const PERMALINK_OVERRIDES = {};
 import { redetectAllCollabs } from '../services/collabDetector.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
-import { hiddenPostsFilter, hiddenGAFilter, hiddenSiteVisitsFilter, hiddenTikTokOverviewFilter } from '../services/hiddenAccounts.js';
+import { hiddenPostsFilter, hiddenGAFilter, hiddenSiteVisitsFilter } from '../services/hiddenAccounts.js';
 
 const router = Router();
 
@@ -50,8 +50,7 @@ router.get('/coverage', (req, res) => {
       strftime('%Y-%m', publish_time) AS month,
       COUNT(*) AS post_count,
       SUM(CASE WHEN platform = 'facebook' THEN 1 ELSE 0 END) AS fb_count,
-      SUM(CASE WHEN platform = 'instagram' THEN 1 ELSE 0 END) AS ig_count,
-      SUM(CASE WHEN platform = 'tiktok' THEN 1 ELSE 0 END) AS tt_count
+      SUM(CASE WHEN platform = 'instagram' THEN 1 ELSE 0 END) AS ig_count
     FROM posts
     WHERE publish_time IS NOT NULL
     ${hiddenPostsFilter()} -- Hidden accounts filter
@@ -112,38 +111,19 @@ router.get('/coverage', (req, res) => {
     // ga_site_visits may not exist yet
   }
 
-  // Count distinct TikTok-konton med Översikt-data per månad
-  let tiktokOverviewCountMap = new Map();
-  try {
-    const ttCountRows = db.prepare(`
-      SELECT month, COUNT(DISTINCT account_username) AS tiktok_overview_count
-      FROM tiktok_account_daily
-      WHERE 1=1
-      ${hiddenTikTokOverviewFilter()}
-      GROUP BY month
-    `).all();
-    for (const r of ttCountRows) tiktokOverviewCountMap.set(r.month, r.tiktok_overview_count);
-  } catch (e) {
-    // tiktok_account_daily kanske inte finns ännu
-  }
-
   const months = postRows.map(r => ({
     month: r.month,
     post_count: r.post_count,
     fb_count: r.fb_count,
     ig_count: r.ig_count,
-    tt_count: r.tt_count || 0,
     has_facebook: r.fb_count > 0,
     has_instagram: r.ig_count > 0,
-    has_tiktok: (r.tt_count || 0) > 0,
     has_reach: reachMonthSet.has(r.month),
     has_ig_reach: igReachMonthSet.has(r.month),
     has_ga_listens: gaListensCountMap.has(r.month),
     ga_listens_count: gaListensCountMap.get(r.month) || 0,
     has_ga_site_visits: gaSiteVisitsCountMap.has(r.month),
     ga_site_visits_count: gaSiteVisitsCountMap.get(r.month) || 0,
-    has_tiktok_overview: tiktokOverviewCountMap.has(r.month),
-    tiktok_overview_count: tiktokOverviewCountMap.get(r.month) || 0,
   }));
 
   // Add reach-only months (no posts, but have account reach data)
@@ -155,18 +135,14 @@ router.get('/coverage', (req, res) => {
         post_count: 0,
         fb_count: 0,
         ig_count: 0,
-        tt_count: 0,
         has_facebook: true,
         has_instagram: false,
-        has_tiktok: false,
         has_reach: true,
         has_ig_reach: igReachMonthSet.has(reachMonth),
         has_ga_listens: gaListensCountMap.has(reachMonth),
         ga_listens_count: gaListensCountMap.get(reachMonth) || 0,
         has_ga_site_visits: gaSiteVisitsCountMap.has(reachMonth),
         ga_site_visits_count: gaSiteVisitsCountMap.get(reachMonth) || 0,
-        has_tiktok_overview: tiktokOverviewCountMap.has(reachMonth),
-        tiktok_overview_count: tiktokOverviewCountMap.get(reachMonth) || 0,
       });
     }
   }
@@ -180,18 +156,14 @@ router.get('/coverage', (req, res) => {
         post_count: 0,
         fb_count: 0,
         ig_count: 0,
-        tt_count: 0,
         has_facebook: false,
         has_instagram: true,
-        has_tiktok: false,
         has_reach: false,
         has_ig_reach: true,
         has_ga_listens: gaListensCountMap.has(igMonth),
         ga_listens_count: gaListensCountMap.get(igMonth) || 0,
         has_ga_site_visits: gaSiteVisitsCountMap.has(igMonth),
         ga_site_visits_count: gaSiteVisitsCountMap.get(igMonth) || 0,
-        has_tiktok_overview: tiktokOverviewCountMap.has(igMonth),
-        tiktok_overview_count: tiktokOverviewCountMap.get(igMonth) || 0,
       });
     }
   }
@@ -205,18 +177,14 @@ router.get('/coverage', (req, res) => {
         post_count: 0,
         fb_count: 0,
         ig_count: 0,
-        tt_count: 0,
         has_facebook: false,
         has_instagram: false,
-        has_tiktok: false,
         has_reach: false,
         has_ig_reach: false,
         has_ga_listens: true,
         ga_listens_count: gaCount,
         has_ga_site_visits: gaSiteVisitsCountMap.has(gaMonth),
         ga_site_visits_count: gaSiteVisitsCountMap.get(gaMonth) || 0,
-        has_tiktok_overview: tiktokOverviewCountMap.has(gaMonth),
-        tiktok_overview_count: tiktokOverviewCountMap.get(gaMonth) || 0,
       });
     }
   }
@@ -230,43 +198,14 @@ router.get('/coverage', (req, res) => {
         post_count: 0,
         fb_count: 0,
         ig_count: 0,
-        tt_count: 0,
         has_facebook: false,
         has_instagram: false,
-        has_tiktok: false,
         has_reach: false,
         has_ig_reach: false,
         has_ga_listens: false,
         ga_listens_count: 0,
         has_ga_site_visits: true,
         ga_site_visits_count: gsvCount,
-        has_tiktok_overview: tiktokOverviewCountMap.has(gsvMonth),
-        tiktok_overview_count: tiktokOverviewCountMap.get(gsvMonth) || 0,
-      });
-    }
-  }
-
-  // Lägg till månader som BARA finns i tiktok_account_daily (ingen annan källa)
-  const coveredWithGsv = new Set([...coveredMonths, ...gaSiteVisitsCountMap.keys()]);
-  for (const [ttMonth, ttCount] of tiktokOverviewCountMap) {
-    if (!coveredWithGsv.has(ttMonth)) {
-      months.push({
-        month: ttMonth,
-        post_count: 0,
-        fb_count: 0,
-        ig_count: 0,
-        tt_count: 0,
-        has_facebook: false,
-        has_instagram: false,
-        has_tiktok: false,
-        has_reach: false,
-        has_ig_reach: false,
-        has_ga_listens: false,
-        ga_listens_count: 0,
-        has_ga_site_visits: false,
-        ga_site_visits_count: 0,
-        has_tiktok_overview: true,
-        tiktok_overview_count: ttCount,
       });
     }
   }
@@ -297,28 +236,6 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
     // from their permalink (shared resolver). Overrides empty for now (0 unresolved).
     const slugMap = buildSlugToAccount(db);
     const parsed = parseCSV(csvContent, req.file.originalname, { slugMap, overrides: PERMALINK_OVERRIDES });
-
-    // TikTok Video-CSV saknar konto-namn ("Sidnamn") helt. Användaren bifogar display-namn
-    // via form-fältet `tiktokAccountName`. Om det saknas: försök slå upp tidigare lagrat
-    // display-namn för handlen; sista utvägen = använd handlen som account_name.
-    if (parsed.platform === 'tiktok') {
-      let providedName = (req.body.tiktokAccountName || '').trim();
-      if (!providedName && parsed.posts.length > 0) {
-        // Försök hitta tidigare display-namn för samma handle
-        const handle = parsed.posts.find(p => p.account_username)?.account_username;
-        if (handle) {
-          const prior = db.prepare(
-            "SELECT account_name FROM posts WHERE platform = 'tiktok' AND account_username = ? AND account_name IS NOT NULL AND account_name <> '' LIMIT 1"
-          ).get(handle);
-          if (prior?.account_name) providedName = prior.account_name;
-        }
-      }
-      for (const p of parsed.posts) {
-        if (!p.account_name || p.account_name === '') {
-          p.account_name = providedName || p.account_username || null;
-        }
-      }
-    }
 
     // Insert import record and posts in a transaction
     const result = db.transaction(() => {

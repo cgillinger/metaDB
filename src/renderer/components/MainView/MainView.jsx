@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import AccountView from '../AccountView';
 import ScatterExplorerView from '../AccountView/ScatterExplorerView';
-import TikTokOverviewKontoView from '../AccountView/TikTokOverviewKontoView';
 import PostView from '../PostView';
 import PostTypeView from '../PostTypeView';
 import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
@@ -28,7 +27,7 @@ import PlatformTrendView from '../PlatformTrendView';
 import PeriodSelector from '../PeriodSelector';
 import PlatformBadge from '../ui/PlatformBadge';
 import { api } from '@/utils/apiClient';
-import { FB_ONLY_FIELDS, NON_FB_FIELDS, TIKTOK_UNAVAILABLE_FIELDS } from '@/utils/fieldPlatforms';
+import { FB_ONLY_FIELDS, NON_FB_FIELDS } from '@/utils/fieldPlatforms';
 
 
 const FIELD_CATEGORIES = [
@@ -47,33 +46,6 @@ const FIELD_CATEGORIES = [
   {
     label: 'Publicering',
     fields: ['post_count', 'posts_per_day'],
-  },
-];
-
-// TikTok Översikt-läge (Per konto): separat fält-set + kategoriindelning.
-// Mätvärdena kommer från tiktok_account_daily (sidvisningar per dag), inte posts.
-const TIKTOK_OVERVIEW_AVAILABLE_FIELDS = {
-  video_views: 'Sidvisningar (sum)',
-  avg_daily_reach: 'Räckvidd / dag (snitt)',
-  profile_views: 'Profilvisningar (sum)',
-  new_followers: 'Nya följare',
-  lost_followers: 'Tappade följare',
-  net_follower_growth: 'Nettotillväxt',
-  daily_engagement_sum: 'Dagsengagemang (sum)',
-};
-
-const TIKTOK_OVERVIEW_FIELD_CATEGORIES = [
-  {
-    label: 'Räckvidd & visningar',
-    fields: ['video_views', 'avg_daily_reach', 'profile_views'],
-  },
-  {
-    label: 'Följare',
-    fields: ['new_followers', 'lost_followers', 'net_follower_growth'],
-  },
-  {
-    label: 'Engagemang',
-    fields: ['daily_engagement_sum'],
   },
 ];
 
@@ -130,11 +102,10 @@ const TREND_ANALYSIS_AVAILABLE_FIELDS = {
 
 // Tint the whole view in the active platform's colour so an active chip filter is
 // impossible to miss. Same colour language as PlatformBadge: FB blue, IG pink,
-// TikTok black, GA green. 'all' stays neutral.
+// GA green. 'all' stays neutral.
 const PLATFORM_THEME = {
   facebook:       { tint: 'bg-blue-50/70 border-blue-200',   chip: 'bg-blue-600 text-white border-blue-600',   hover: 'hover:border-blue-400' },
   instagram:      { tint: 'bg-pink-50/70 border-pink-200',   chip: 'bg-pink-600 text-white border-pink-600',   hover: 'hover:border-pink-400' },
-  tiktok:         { tint: 'bg-gray-100 border-gray-300',     chip: 'bg-black text-white border-black',         hover: 'hover:border-black/60' },
   ga_listens:     { tint: 'bg-green-50/70 border-green-200', chip: 'bg-green-600 text-white border-green-600', hover: 'hover:border-green-400' },
   ga_site_visits: { tint: 'bg-green-50/70 border-green-200', chip: 'bg-green-600 text-white border-green-600', hover: 'hover:border-green-400' },
 };
@@ -148,7 +119,6 @@ function filterFieldsByPlatform(fields, activePlatform) {
   for (const [key, label] of Object.entries(fields)) {
     if (activePlatform === 'instagram' && FB_ONLY_FIELDS.includes(key)) continue;
     if (activePlatform === 'facebook' && NON_FB_FIELDS.includes(key)) continue;
-    if (activePlatform === 'tiktok' && TIKTOK_UNAVAILABLE_FIELDS.includes(key)) continue;
     filtered[key] = label;
   }
   return filtered;
@@ -165,11 +135,6 @@ const EngagementLegend = ({ activePlatform }) => (
     {(!activePlatform || activePlatform === 'mixed' || activePlatform === 'instagram') && (
       <p className="text-muted-foreground">
         <span className="font-medium text-foreground">Instagram:</span> gilla + kommentarer + delningar + sparade + följare
-      </p>
-    )}
-    {activePlatform === 'tiktok' && (
-      <p className="text-muted-foreground">
-        <span className="font-medium text-foreground">TikTok:</span> gilla + kommentarer + delningar + favoriter (per inlägg)
       </p>
     )}
   </div>
@@ -201,8 +166,8 @@ const ValueSelector = ({ availableFields, selectedFields, onSelectionChange, act
                 />
                 <Label htmlFor={key} className="flex items-center gap-1.5">
                   {availableFields[key]}
-                  {activePlatform !== 'tiktok' && FB_ONLY_FIELDS.includes(key) && <PlatformBadge platform="facebook" />}
-                  {activePlatform !== 'tiktok' && NON_FB_FIELDS.includes(key) && <PlatformBadge platform="instagram" />}
+                  {FB_ONLY_FIELDS.includes(key) && <PlatformBadge platform="facebook" />}
+                  {NON_FB_FIELDS.includes(key) && <PlatformBadge platform="instagram" />}
                 </Label>
               </div>
             ))}
@@ -216,7 +181,6 @@ const ValueSelector = ({ availableFields, selectedFields, onSelectionChange, act
 const PLATFORM_TITLE = {
   facebook: 'Facebook Statistik',
   instagram: 'Instagram Statistik',
-  tiktok: 'TikTok Statistik',
   mixed: 'Meta Statistik',
   null: 'Meta Statistik'
 };
@@ -233,10 +197,6 @@ const MainView = ({ onShowUploader }) => {
   // True when at least one month of GA listening data is available
   const [hasGAListens, setHasGAListens] = useState(false);
   const [hasGASiteVisits, setHasGASiteVisits] = useState(false);
-  const [hasTikTokOverview, setHasTikTokOverview] = useState(false);
-  // Per konto-läge för TikTok: 'overview' (Översikt-CSV per dag) eller 'video'
-  // (Video-CSV/posts per inlägg). Default 'overview' när Översikt-data finns.
-  const [tiktokKontoMode, setTiktokKontoMode] = useState('overview');
   // Account groups — persists across view switches
   const [accountGroups, setAccountGroups] = useState([]);
 
@@ -250,19 +210,17 @@ const MainView = ({ onShowUploader }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult, ttOverviewMonthsResult] = await Promise.all([
+        const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult] = await Promise.all([
           api.getStats(),
           api.getImports(),
           api.getCoverage().catch(() => ({ months: [] })),
           api.getGAListensMonths().catch(() => ({ months: [] })),
           api.getGASiteVisitsMonths().catch(() => ({ months: [] })),
-          api.getTikTokOverviewMonths().catch(() => ({ months: [] })),
         ]);
         setStats(statsData);
         setImports(importsData);
         setHasGAListens((gaMonthsResult.months || []).length > 0);
         setHasGASiteVisits((gsvMonthsResult.months || []).length > 0);
-        setHasTikTokOverview((ttOverviewMonthsResult.months || []).length > 0);
 
         const months = coverageResult.months || [];
         setCoverageData(months);
@@ -307,21 +265,18 @@ const MainView = ({ onShowUploader }) => {
     const platforms = new Set(imports.map(i => i.platform));
     const hasFacebook = platforms.has('facebook');
     const hasInstagram = platforms.has('instagram');
-    const hasTikTok = platforms.has('tiktok');
-    const platformCount = [hasFacebook, hasInstagram, hasTikTok].filter(Boolean).length;
+    const platformCount = [hasFacebook, hasInstagram].filter(Boolean).length;
     const hasMixed = platformCount >= 2;
 
     let detected = null;
     if (hasMixed) detected = 'mixed';
     else if (hasFacebook) detected = 'facebook';
     else if (hasInstagram) detected = 'instagram';
-    else if (hasTikTok) detected = 'tiktok';
 
     const fbPosts = imports.filter(i => i.platform === 'facebook').reduce((s, i) => s + i.row_count, 0);
     const igPosts = imports.filter(i => i.platform === 'instagram').reduce((s, i) => s + i.row_count, 0);
-    const ttPosts = imports.filter(i => i.platform === 'tiktok').reduce((s, i) => s + i.row_count, 0);
 
-    return { detected, hasMixed, hasFacebook, hasInstagram, hasTikTok, fbPosts, igPosts, ttPosts };
+    return { detected, hasMixed, hasFacebook, hasInstagram, fbPosts, igPosts };
   }, [imports]);
 
   const activePlatform = platformInfo.hasMixed
@@ -334,13 +289,7 @@ const MainView = ({ onShowUploader }) => {
   // Active platform theme — null when no chip filter is applied ('all').
   const platformTheme = PLATFORM_THEME[platformFilter] || null;
 
-  // Är vi i Per konto + TikTok Översikt-läge? Då används en helt egen field-uppsättning.
-  const isTikTokOverviewMode =
-    activeView === 'account' && platformFilter === 'tiktok' && hasTikTokOverview && tiktokKontoMode === 'overview';
-
   const getAvailableFields = () => {
-    if (isTikTokOverviewMode) return TIKTOK_OVERVIEW_AVAILABLE_FIELDS;
-
     let fields;
     if (activeView === 'account') fields = ACCOUNT_VIEW_AVAILABLE_FIELDS;
     else if (activeView === 'trend_analysis') fields = TREND_ANALYSIS_AVAILABLE_FIELDS;
@@ -359,12 +308,12 @@ const MainView = ({ onShowUploader }) => {
 
   // selectedFields is the user's standing choice and is never pruned when the
   // platform or view changes — pruning it lost the selection for good, so
-  // stepping through TikTok (whose Översikt mode shares no field names) and back
-  // left the table empty. What the current mode can actually show is derived.
+  // stepping between views and back left the table empty. What the current mode
+  // can actually show is derived.
   const availableFields = useMemo(
     () => getAvailableFields(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeView, activePlatform, periodMode, isTikTokOverviewMode]
+    [activeView, activePlatform, periodMode]
   );
 
   const visibleSelectedFields = useMemo(
@@ -383,20 +332,18 @@ const MainView = ({ onShowUploader }) => {
 
   const handleImportsChanged = async () => {
     try {
-      const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult, ttOverviewMonthsResult] = await Promise.all([
+      const [statsData, importsData, coverageResult, gaMonthsResult, gsvMonthsResult] = await Promise.all([
         api.getStats(),
         api.getImports(),
         api.getCoverage().catch(() => ({ months: [] })),
         api.getGAListensMonths().catch(() => ({ months: [] })),
         api.getGASiteVisitsMonths().catch(() => ({ months: [] })),
-        api.getTikTokOverviewMonths().catch(() => ({ months: [] })),
       ]);
       setStats(statsData);
       setImports(importsData);
       setCoverageData(coverageResult.months || []);
       setHasGAListens((gaMonthsResult.months || []).length > 0);
       setHasGASiteVisits((gsvMonthsResult.months || []).length > 0);
-      setHasTikTokOverview((ttOverviewMonthsResult.months || []).length > 0);
     } catch (error) {
       console.error('Fel vid uppdatering:', error);
     }
@@ -423,12 +370,6 @@ const MainView = ({ onShowUploader }) => {
       return coverageData
         .filter(m => (m.ig_count ?? 0) > 0 || m.has_ig_reach)
         .map(m => ({ ...m, post_count: m.ig_count ?? 0 }));
-    }
-    if (platformFilter === 'tiktok') {
-      // TikTok-månader: poster (Video-CSV) eller Översikt-data
-      return coverageData
-        .filter(m => (m.tt_count ?? 0) > 0 || m.has_tiktok_overview)
-        .map(m => ({ ...m, post_count: m.tt_count ?? 0 }));
     }
     if (platformFilter === 'ga_listens') {
       // Display the number of programmes with listening data for the month
@@ -521,7 +462,7 @@ const MainView = ({ onShowUploader }) => {
         </div>
       </div>
 
-      {(platformInfo.hasMixed || hasGAListens || hasGASiteVisits || platformInfo.hasTikTok || hasTikTokOverview) && (
+      {(platformInfo.hasMixed || hasGAListens || hasGASiteVisits) && (
         <div className={`flex items-center gap-2 flex-wrap rounded-lg transition-colors ${
           platformTheme ? 'bg-white/70 border border-white/80 p-2' : ''
         }`}>
@@ -536,7 +477,7 @@ const MainView = ({ onShowUploader }) => {
                   : `${CHIP_INACTIVE} hover:border-primary/60`
               }`}
             >
-              Alla ({platformInfo.fbPosts + platformInfo.igPosts + platformInfo.ttPosts})
+              Alla ({platformInfo.fbPosts + platformInfo.igPosts})
             </button>
           )}
           {platformInfo.hasFacebook && platformInfo.hasMixed && (
@@ -561,18 +502,6 @@ const MainView = ({ onShowUploader }) => {
               }`}
             >
               Instagram ({platformInfo.igPosts})
-            </button>
-          )}
-          {(platformInfo.hasTikTok || hasTikTokOverview) && (
-            <button
-              onClick={() => setPlatformFilter('tiktok')}
-              className={`${CHIP_BASE} ${
-                platformFilter === 'tiktok'
-                  ? PLATFORM_THEME.tiktok.chip
-                  : `${CHIP_INACTIVE} ${PLATFORM_THEME.tiktok.hover}`
-              }`}
-            >
-              TikTok{platformInfo.hasTikTok ? ` (${platformInfo.ttPosts})` : ''}
             </button>
           )}
           {/* Unified Google Analytics button — shown when either GA source has data */}
@@ -617,14 +546,13 @@ const MainView = ({ onShowUploader }) => {
               selectedFields={visibleSelectedFields}
               onSelectionChange={handleFieldSelectionChange}
               activePlatform={activePlatform}
-              categories={isTikTokOverviewMode ? TIKTOK_OVERVIEW_FIELD_CATEGORIES : FIELD_CATEGORIES}
+              categories={FIELD_CATEGORIES}
             />
             {visibleSelectedFields.includes('engagement') && (
               <EngagementLegend activePlatform={activePlatform} />
             )}
-            {/* Scatter (räckvidd per inlägg) bygger på posts-data — bara meningsfullt
-                i Video-CSV-läget, inte i Översikt-läget (där det inte finns inlägg). */}
-            {activeView === 'account' && !isTikTokOverviewMode && (
+            {/* Scatter (räckvidd per inlägg) bygger på posts-data. */}
+            {activeView === 'account' && (
               <div className="mt-4 border-t pt-4 px-4">
                 <Button variant="outline" onClick={() => openScatter(null)}>
                   <ScatterChart className="w-4 h-4 mr-2" />
@@ -676,60 +604,17 @@ const MainView = ({ onShowUploader }) => {
 
         <TabsContent value="account">
           <PeriodSummary />
-          {platformFilter === 'tiktok' && hasTikTokOverview && (
-            <Card className="mb-3">
-              <CardContent className="pt-4 pb-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-sm font-medium text-muted-foreground">Vy:</span>
-                  <div className="inline-flex rounded-md border overflow-hidden">
-                    <button
-                      onClick={() => setTiktokKontoMode('overview')}
-                      className={`px-3 py-1.5 text-sm transition-colors ${
-                        tiktokKontoMode === 'overview'
-                          ? 'bg-black text-white font-medium'
-                          : 'bg-white text-muted-foreground hover:bg-gray-50'
-                      }`}
-                    >
-                      Översikt (per dag)
-                    </button>
-                    <button
-                      onClick={() => setTiktokKontoMode('video')}
-                      className={`px-3 py-1.5 text-sm border-l transition-colors ${
-                        tiktokKontoMode === 'video'
-                          ? 'bg-black text-white font-medium'
-                          : 'bg-white text-muted-foreground hover:bg-gray-50'
-                      }`}
-                    >
-                      Inlägg-aggregat (per video)
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted-foreground flex-1 min-w-[280px]">
-                    {tiktokKontoMode === 'overview'
-                      ? 'Sidans daglig statistik (Översikt-CSV). "Sidvisningar" = alla videovisningar på sidan per dag, inkl. äldre videor som tittas på under perioden.'
-                      : 'Inläggsstatistik per video (Video-CSV). "Visningar" = ackumulerade visningar för videor publicerade i perioden, oavsett när visningen skedde.'}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          {isTikTokOverviewMode ? (
-            <TikTokOverviewKontoView
-              selectedFields={visibleSelectedFields}
-              periodParams={periodParams}
-            />
-          ) : (
-            <AccountView
-              selectedFields={visibleSelectedFields}
-              platform={apiPlatform}
-              periodParams={periodParams}
-              gaListensMode={platformFilter === 'ga_listens'}
-              gaSiteVisitsMode={platformFilter === 'ga_site_visits'}
-              accountGroups={accountGroups}
-              onGroupsChanged={refreshAccountGroups}
-              onPlatformChange={setPlatformFilter}
-              onOpenScatter={openScatter}
-            />
-          )}
+          <AccountView
+            selectedFields={visibleSelectedFields}
+            platform={apiPlatform}
+            periodParams={periodParams}
+            gaListensMode={platformFilter === 'ga_listens'}
+            gaSiteVisitsMode={platformFilter === 'ga_site_visits'}
+            accountGroups={accountGroups}
+            onGroupsChanged={refreshAccountGroups}
+            onPlatformChange={setPlatformFilter}
+            onOpenScatter={openScatter}
+          />
         </TabsContent>
 
         <TabsContent value="post">

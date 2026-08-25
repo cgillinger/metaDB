@@ -1,6 +1,6 @@
 /**
  * DescriptionCell — visar truncerad beskrivning som klickbar yta;
- * klick öppnar Dialog med full text. Stöder mycket långa TikTok-beskrivningar
+ * klick öppnar Dialog med full text. Stöder mycket långa beskrivningar
  * (1500+ tecken) som inte får plats inline.
  */
 import React, { useState } from 'react';

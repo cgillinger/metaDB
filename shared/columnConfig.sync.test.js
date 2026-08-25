@@ -14,10 +14,7 @@ test('src/utils/columnConfig re-exports the same references as shared/columnConf
   for (const name of [
     'getValue',
     'detectPlatform',
-    'isTikTokOverviewCSV',
     'getMappingsForPlatform',
-    'getTikTokOverviewMappings',
-    'parseTikTokVideoUrl',
     'normalizeText'
   ]) {
     assert.strictEqual(client[name], shared[name], `${name} must be the same reference`);

@@ -12,7 +12,7 @@ test('IG-only-fält ger instagram', () => {
   assert.equal(platformFromFields(['views', 'follows']), 'instagram');
 });
 
-test('saves pekar inte ut en plattform — finns på både IG och TikTok', () => {
+test('saves pekar inte ut en plattform', () => {
   assert.equal(platformFromFields(['saves']), null);
   assert.equal(platformFromFields(['views', 'saves']), null);
   assert.ok(NON_FB_FIELDS.includes('saves'), 'saves saknas ändå på Facebook');

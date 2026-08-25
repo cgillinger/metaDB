@@ -344,7 +344,6 @@ const PlatformTrendView = ({ periodParams = {} }) => {
           options={[
             { value: 'facebook', label: 'Facebook' },
             { value: 'instagram', label: 'Instagram' },
-            { value: 'tiktok', label: 'TikTok' },
           ]}
         />
       </div>
