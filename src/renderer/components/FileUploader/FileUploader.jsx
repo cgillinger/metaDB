@@ -32,6 +32,9 @@ export function FileUploader({ onImportComplete, onCancel }) {
   const [missingAccountsReport, setMissingAccountsReport] = useState([]); // accounts alarming in this import batch
   const [retiringKeys, setRetiringKeys] = useState(new Set()); // begäran pågår
   const [retiredKeys, setRetiredKeys] = useState(new Set()); // klarmarkerade som "används inte längre"
+  const [noPostsBusyKeys, setNoPostsBusyKeys] = useState(new Set()); // begäran pågår
+  const [noPostsKeys, setNoPostsKeys] = useState(new Set()); // klarmarkerade som "inga inlägg i perioden"
+  const [renamedAccountsReport, setRenamedAccountsReport] = useState([]); // renames auto-merged in this batch
   const fileInputRef = useRef(null);
   const addFiles = useCallback(async (newFiles) => {
     const csvFiles = Array.from(newFiles).filter(
@@ -186,10 +189,13 @@ export function FileUploader({ onImportComplete, onCancel }) {
     setBatchResult(null);
     setMissingAccountsReport([]);
     setRetiredKeys(new Set());
+    setNoPostsKeys(new Set());
+    setRenamedAccountsReport([]);
 
     let succeeded = 0;
     let failed = 0;
     const missingAccounts = []; // accumulated across all files in this batch
+    const renamedAccounts = []; // renames auto-merged across all files in this batch
 
     for (const entry of pendingFiles) {
       setFiles(prev => prev.map(f =>
@@ -235,8 +241,12 @@ export function FileUploader({ onImportComplete, onCancel }) {
           } : f
         ));
         const platform = result.import?.platform;
+        const month = result.import?.month;
         for (const m of result.stats?.missingAccounts || []) {
-          missingAccounts.push({ ...m, platform, key: `${m.account_name}::${platform}` });
+          missingAccounts.push({ ...m, platform, month, key: `${m.account_name}::${platform}` });
+        }
+        for (const r of result.stats?.renamedAccounts || []) {
+          renamedAccounts.push({ ...r, platform, key: `${r.account_id}::${r.oldName}::${platform}` });
         }
       } catch (err) {
         failed++;
@@ -253,10 +263,12 @@ export function FileUploader({ onImportComplete, onCancel }) {
     // Dedupe: several files in the same batch can flag the same account.
     const dedupedMissing = [...new Map(missingAccounts.map(m => [m.key, m])).values()];
     setMissingAccountsReport(dedupedMissing);
+    const dedupedRenamed = [...new Map(renamedAccounts.map(r => [r.key, r])).values()];
+    setRenamedAccountsReport(dedupedRenamed);
 
     // The alarm needs time to be read — don't advance automatically when
-    // there are accounts to act on.
-    if (succeeded > 0 && dedupedMissing.length === 0) {
+    // there are accounts to act on or renames to take note of.
+    if (succeeded > 0 && dedupedMissing.length === 0 && dedupedRenamed.length === 0) {
       setTimeout(() => {
         onImportComplete();
       }, 1500);
@@ -274,6 +286,24 @@ export function FileUploader({ onImportComplete, onCancel }) {
       setRetiringKeys(prev => {
         const next = new Set(prev);
         next.delete(key);
+        return next;
+      });
+    }
+  };
+
+  const handleNoPostsThisPeriod = async (m) => {
+    setNoPostsBusyKeys(prev => new Set(prev).add(m.key));
+    try {
+      // The gap row for the file's month was just registered by the import;
+      // this resolves it as 'no_posts' (same action as in Öppna luckor).
+      await api.dismissGapMonth(m.account_name, m.platform, m.month);
+      setNoPostsKeys(prev => new Set(prev).add(m.key));
+    } catch (err) {
+      console.error('Fel vid markering av inga inlägg:', err);
+    } finally {
+      setNoPostsBusyKeys(prev => {
+        const next = new Set(prev);
+        next.delete(m.key);
         return next;
       });
     }
@@ -303,6 +333,32 @@ export function FileUploader({ onImportComplete, onCancel }) {
         </Alert>
       )}
 
+      {renamedAccountsReport.length > 0 && (
+        <Alert className="bg-blue-50 border-blue-200">
+          <RefreshCw className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800">
+            {renamedAccountsReport.length} konto{renamedAccountsReport.length !== 1 ? 'n har' : ' har'} bytt namn hos Meta
+          </AlertTitle>
+          <AlertDescription className="text-blue-700">
+            Historiken har slagits ihop automatiskt under det nya namnet:
+            <ul className="mt-1 list-disc list-inside">
+              {renamedAccountsReport.map(r => (
+                <li key={r.key}>
+                  <span className="line-through opacity-70">{r.oldName}</span>
+                  {' → '}
+                  <span className="font-medium">{r.newName}</span>
+                </li>
+              ))}
+            </ul>
+            {missingAccountsReport.length === 0 && (
+              <div className="flex justify-end pt-2">
+                <Button size="sm" onClick={onImportComplete}>Klart, gå vidare</Button>
+              </div>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {missingAccountsReport.length > 0 && (
         <Card className="border-amber-300">
           <CardHeader className="pb-2">
@@ -321,11 +377,14 @@ export function FileUploader({ onImportComplete, onCancel }) {
               {missingAccountsReport.map(m => {
                 const isRetired = retiredKeys.has(m.key);
                 const isRetiring = retiringKeys.has(m.key);
+                const isNoPosts = noPostsKeys.has(m.key);
+                const isNoPostsBusy = noPostsBusyKeys.has(m.key);
+                const isSettled = isRetired || isNoPosts;
                 return (
                   <div
                     key={m.key}
                     className={`flex items-center justify-between gap-3 p-3 rounded-md border text-sm ${
-                      isRetired ? 'bg-gray-50 border-gray-200' : 'bg-amber-50 border-amber-200'
+                      isSettled ? 'bg-gray-50 border-gray-200' : 'bg-amber-50 border-amber-200'
                     }`}
                   >
                     <div className="min-w-0">
@@ -334,18 +393,29 @@ export function FileUploader({ onImportComplete, onCancel }) {
                         Fanns i {m.seenIn} av {m.of} senaste{m.lastSeen ? ` · senast sedd ${m.lastSeen}` : ''}
                       </p>
                     </div>
-                    {isRetired ? (
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">Markerat som avvecklat</span>
+                    {isSettled ? (
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {isRetired ? 'Markerat som avvecklat' : 'Markerat: inga inlägg i perioden'}
+                      </span>
                     ) : (
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={isRetiring}
+                          disabled={isRetiring || isNoPostsBusy}
                           onClick={() => handleRetireAccount(m.account_name, m.platform, m.key)}
                         >
                           {isRetiring ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
                           Används inte längre
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isRetiring || isNoPostsBusy || !m.month}
+                          onClick={() => handleNoPostsThisPeriod(m)}
+                        >
+                          {isNoPostsBusy ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                          Publicerade inget i perioden
                         </Button>
                         <Button
                           variant="ghost"
