@@ -37,12 +37,12 @@ function makeImport(platform, month, seqOverride) {
   return info.lastInsertRowid;
 }
 
-function makePost(importId, platform, accountName, month) {
+function makePost(importId, platform, accountName, month, accountId = null) {
   postSeq++;
   db.prepare(`
-    INSERT INTO posts (import_id, post_id, account_name, platform, publish_time)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(importId, `p${postSeq}`, accountName, platform, `${month}-15 10:00:00`);
+    INSERT INTO posts (import_id, post_id, account_name, account_id, platform, publish_time)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(importId, `p${postSeq}`, accountName, accountId, platform, `${month}-15 10:00:00`);
 }
 
 // A five-account "riks" group posts every month; used across several tests.
@@ -373,4 +373,159 @@ test('dismissad lucka återregistreras inte av registerGaps (INSERT OR IGNORE)',
 
   const gaps = listOpenGaps('facebook');
   assert.ok(!gaps.find(g => g.account_name === 'Ateruppstar Inte Konto'), 'ska förbli borta ur Öppna luckor');
+});
+
+// --- Rename detection (account_id identity, migration 013) ------------------
+
+const IG_GROUP = ['IG Alpha', 'IG Bravo', 'IG Charlie', 'IG Delta'];
+
+test('namnbyte hos Meta: samma account_id under nytt namn slås ihop i stället för att larma', () => {
+  const ID = 'ig-rename-777';
+  // 6 historical IG imports where the account posts under its OLD name.
+  for (let i = 1; i <= 6; i++) {
+    const importId = makeImport('instagram', `2025-0${i}`);
+    for (const name of IG_GROUP) makePost(importId, 'instagram', name, `2025-0${i}`);
+    makePost(importId, 'instagram', 'Gamla Namnet', `2025-0${i}`, ID);
+    processImportRoster(db, 'instagram', `2025-0${i}`, importId, [
+      ...IG_GROUP.map(n => ({ name: n })),
+      { name: 'Gamla Namnet', id: ID },
+    ]);
+  }
+  // An open gap under the old name (as if the account had been missed earlier).
+  registerGaps(db, 'instagram', '2025-06', null, [{ account_name: 'Gamla Namnet' }]);
+
+  // 7th import: the same id returns under a NEW name.
+  const importId = makeImport('instagram', '2025-07');
+  for (const name of IG_GROUP) makePost(importId, 'instagram', name, '2025-07');
+  makePost(importId, 'instagram', 'Nya Namnet', '2025-07', ID);
+  const result = processImportRoster(db, 'instagram', '2025-07', importId, [
+    ...IG_GROUP.map(n => ({ name: n })),
+    { name: 'Nya Namnet', id: ID, username: 'nyanamnet' },
+  ]);
+
+  // The rename is reported, and the old name does NOT alarm as missing.
+  assert.deepEqual(result.renamedAccounts, [
+    { account_id: ID, oldName: 'Gamla Namnet', newName: 'Nya Namnet' },
+  ]);
+  assert.equal(result.missingAccounts.length, 0);
+
+  // Posts merged onto the new name.
+  const postNames = db.prepare(
+    'SELECT DISTINCT account_name FROM posts WHERE account_id = ?'
+  ).all(ID).map(r => r.account_name);
+  assert.deepEqual(postNames, ['Nya Namnet']);
+
+  // Roster: exactly one row for the account, new name, id filled.
+  const rosterRows = db.prepare(
+    "SELECT account_name, account_id FROM account_roster WHERE account_name IN ('Gamla Namnet', 'Nya Namnet')"
+  ).all();
+  assert.deepEqual(rosterRows, [{ account_name: 'Nya Namnet', account_id: ID }]);
+
+  // import_accounts history rewritten — the old name is gone.
+  const oldIa = db.prepare(
+    "SELECT COUNT(*) AS n FROM import_accounts WHERE account_name = 'Gamla Namnet'"
+  ).get().n;
+  assert.equal(oldIa, 0);
+
+  // The open gap followed the rename and is still open under the new name.
+  const gap = db.prepare(
+    "SELECT account_name, month, resolved_at FROM account_gaps WHERE account_name = 'Nya Namnet' AND month = '2025-06'"
+  ).get();
+  assert.ok(gap, 'luckan ska ligga under nya namnet');
+  assert.equal(gap.resolved_at, null);
+});
+
+test('namnbyte: retirerad status följer med till nya namnet', () => {
+  const ID = 'ig-rename-retired';
+  const importId1 = makeImport('instagram', '2025-08');
+  for (const name of IG_GROUP) makePost(importId1, 'instagram', name, '2025-08');
+  makePost(importId1, 'instagram', 'Pensionerat Gammalt', '2025-08', ID);
+  processImportRoster(db, 'instagram', '2025-08', importId1, [
+    ...IG_GROUP.map(n => ({ name: n })),
+    { name: 'Pensionerat Gammalt', id: ID },
+  ]);
+  retireAccount('Pensionerat Gammalt', 'instagram');
+
+  const importId2 = makeImport('instagram', '2025-09');
+  for (const name of IG_GROUP) makePost(importId2, 'instagram', name, '2025-09');
+  makePost(importId2, 'instagram', 'Pensionerat Nytt', '2025-09', ID);
+  processImportRoster(db, 'instagram', '2025-09', importId2, [
+    ...IG_GROUP.map(n => ({ name: n })),
+    { name: 'Pensionerat Nytt', id: ID },
+  ]);
+
+  const row = db.prepare(
+    "SELECT status FROM account_roster WHERE account_name = 'Pensionerat Nytt' AND platform = 'instagram'"
+  ).get();
+  assert.equal(row.status, 'retired');
+});
+
+test('guard: två konton som förekommit i samma import slås ALDRIG ihop trots delat id', () => {
+  const SHARED = 'ig-shared-id';
+  // 'Real A' and 'Real B' post together (data-error: same id on both).
+  for (let i = 1; i <= 2; i++) {
+    const importId = makeImport('instagram', `2025-1${i}`);
+    makePost(importId, 'instagram', 'Real A', `2025-1${i}`, SHARED);
+    makePost(importId, 'instagram', 'Real B', `2025-1${i}`, SHARED);
+    for (const name of IG_GROUP) makePost(importId, 'instagram', name, `2025-1${i}`);
+    processImportRoster(db, 'instagram', `2025-1${i}`, importId, [
+      ...IG_GROUP.map(n => ({ name: n })),
+      { name: 'Real A', id: SHARED },
+      { name: 'Real B', id: SHARED },
+    ]);
+  }
+  // Next import has only 'Real B' — co-occurrence guard must block a merge.
+  const importId = makeImport('instagram', '2026-01');
+  for (const name of IG_GROUP) makePost(importId, 'instagram', name, '2026-01');
+  makePost(importId, 'instagram', 'Real B', '2026-01', SHARED);
+  const result = processImportRoster(db, 'instagram', '2026-01', importId, [
+    ...IG_GROUP.map(n => ({ name: n })),
+    { name: 'Real B', id: SHARED },
+  ]);
+
+  assert.equal(result.renamedAccounts.length, 0);
+  const aPosts = db.prepare(
+    "SELECT COUNT(*) AS n FROM posts WHERE account_name = 'Real A'"
+  ).get().n;
+  assert.equal(aPosts, 2, 'Real A:s poster ska vara orörda');
+});
+
+test('bakåtkompatibilitet: processImportRoster med ren namn-array fungerar utan rename-detektering', () => {
+  const importId = makeImport('facebook', '2026-02');
+  for (const name of RIKS) makePost(importId, 'facebook', name, '2026-02');
+  const result = processImportRoster(db, 'facebook', '2026-02', importId, RIKS);
+  assert.deepEqual(result.renamedAccounts, []);
+});
+
+test('riktningsspärr: backfill av gammal fil med gammalt namn flippar INTE kanoniskt namn', () => {
+  const ID = 'ig-rename-777'; // same account as the rename test: canonical = 'Nya Namnet'
+  // A stale 2025-03 file resurfaces with the OLD name; the upsert path would
+  // have written posts under it — simulate that too.
+  const importId = makeImport('instagram', '2025-03');
+  for (const name of IG_GROUP) makePost(importId, 'instagram', name, '2025-03');
+  makePost(importId, 'instagram', 'Gamla Namnet', '2025-03', ID);
+  const result = processImportRoster(db, 'instagram', '2025-03', importId, [
+    ...IG_GROUP.map(n => ({ name: n })),
+    { name: 'Gamla Namnet', id: ID, username: 'gamlanamnet' },
+  ]);
+
+  // Reported as a merge onto the CURRENT canonical name, not a rename back.
+  assert.deepEqual(result.renamedAccounts, [
+    { account_id: ID, oldName: 'Gamla Namnet', newName: 'Nya Namnet' },
+  ]);
+  // All posts (including the freshly re-labeled one) sit under the canonical name.
+  const postNames = db.prepare(
+    'SELECT DISTINCT account_name FROM posts WHERE account_id = ?'
+  ).all(ID).map(r => r.account_name);
+  assert.deepEqual(postNames, ['Nya Namnet']);
+  // Roster untouched by the stale name.
+  const stale = db.prepare(
+    "SELECT COUNT(*) AS n FROM account_roster WHERE account_name = 'Gamla Namnet'"
+  ).get().n;
+  assert.equal(stale, 0);
+  // This import's own account list records the canonical name.
+  const ia = db.prepare(
+    'SELECT account_name FROM import_accounts WHERE import_id = ? AND account_id = ?'
+  ).get(importId, ID);
+  assert.equal(ia.account_name, 'Nya Namnet');
 });
