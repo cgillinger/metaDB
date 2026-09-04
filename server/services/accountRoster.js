@@ -13,18 +13,39 @@ const DEFAULT_MIN_SEEN = 4;
 // --- Roster CRUD -----------------------------------------------------------
 
 /**
- * INSERT OR IGNORE a roster row for each account name in an import. Runs
+ * Normalizes the accounts argument: legacy string[] (name only) or
+ * Array<{name, id?, username?}>. Empty names are dropped; ids are stringified.
+ * @returns {Array<{name: string, id: string|null, username: string|null}>}
+ */
+function normalizeAccounts(accounts) {
+  return (accounts || [])
+    .map(a => (typeof a === 'string' ? { name: a } : a))
+    .filter(a => a && a.name)
+    .map(a => ({
+      name: a.name,
+      id: a.id != null && a.id !== '' ? String(a.id) : null,
+      username: a.username || null,
+    }));
+}
+
+/**
+ * INSERT OR IGNORE a roster row for each account in an import, and fill in
+ * account_id on rows that lack one (older rows predate migration 013). Runs
  * inside the import transaction — new accounts show up as 'active' automatically.
  * @param {import('better-sqlite3').Database} db
- * @param {string[]} accountNames
+ * @param {Array<{name: string, id: string|null}>|string[]} accounts
  * @param {string} platform
  */
-export function upsertRosterEntries(db, accountNames, platform) {
-  const stmt = db.prepare(
-    'INSERT OR IGNORE INTO account_roster (account_name, platform) VALUES (?, ?)'
+export function upsertRosterEntries(db, accounts, platform) {
+  const insertStmt = db.prepare(
+    'INSERT OR IGNORE INTO account_roster (account_name, platform, account_id) VALUES (?, ?, ?)'
   );
-  for (const name of accountNames) {
-    if (name) stmt.run(name, platform);
+  const fillIdStmt = db.prepare(
+    'UPDATE account_roster SET account_id = ? WHERE account_name = ? AND platform = ? AND account_id IS NULL'
+  );
+  for (const acc of normalizeAccounts(accounts)) {
+    insertStmt.run(acc.name, platform, acc.id);
+    if (acc.id) fillIdStmt.run(acc.id, acc.name, platform);
   }
 }
 
@@ -71,15 +92,174 @@ export function getRetiredNames(db, platform) {
 // --- import_accounts ---------------------------------------------------------
 
 /**
- * INSERT OR IGNORE a row per account name in the incoming file. Runs inside
+ * INSERT OR IGNORE a row per account in the incoming file. Runs inside
  * the import transaction.
  */
-export function recordImportAccounts(db, importId, accountNames) {
+export function recordImportAccounts(db, importId, accounts) {
   const stmt = db.prepare(
-    'INSERT OR IGNORE INTO import_accounts (import_id, account_name) VALUES (?, ?)'
+    'INSERT OR IGNORE INTO import_accounts (import_id, account_name, account_id) VALUES (?, ?, ?)'
   );
-  for (const name of accountNames) {
-    if (name) stmt.run(importId, name);
+  for (const acc of normalizeAccounts(accounts)) {
+    stmt.run(importId, acc.name, acc.id);
+  }
+}
+
+// --- Rename detection & merge (account_id identity) -------------------------
+
+/**
+ * Name-keyed monthly tables (separate import flows without account_id) that
+ * must follow a rename so the series don't split in the UI. Whitelist map —
+ * table names are never interpolated from input.
+ */
+const NAME_KEYED_TABLES_BY_PLATFORM = {
+  facebook: ['account_reach', 'account_viewers'],
+  instagram: ['ig_account_reach'],
+};
+
+/**
+ * Detects accounts RENAMED at Meta and merges their history onto ONE
+ * canonical name. A candidate is an incoming (account_id, name) whose id is
+ * already known in posts under a different name. Runs inside the import
+ * transaction, AFTER the file's posts are written but BEFORE roster history
+ * is read — so the old name neither raises a false missing-account alarm nor
+ * splits the series (the Radiokören → Swedish Radio Choir case, 2026-09).
+ *
+ * Direction — the newest observation wins:
+ * - file month strictly NEWER than the known name's last post → genuine
+ *   rename: known name folds into the file's name;
+ * - otherwise the file is a backfill carrying a STALE name → the file's name
+ *   folds into the known (current) name instead, which also heals the posts
+ *   the upsert just re-labeled, and the incoming entry is remapped so the
+ *   rest of the roster flow records the canonical name.
+ *
+ * Guards against merging two REAL accounts:
+ * - an id carrying more than one name in the current file is skipped
+ *   (collab-attribution quirks);
+ * - a known name that is itself present in the current file is skipped;
+ * - the two names must never have co-occurred in the same import
+ *   (import_accounts) — genuinely renamed names are temporally disjoint.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} platform
+ * @param {string} month - parsed.month; 'unknown' disables the forward direction.
+ * @param {Array<{name: string, id: string|null, username: string|null}>} incoming
+ *   NOTE: entries may be remapped in place to the canonical name (backfill case).
+ * @returns {Array<{account_id: string, oldName: string, newName: string}>}
+ */
+export function applyAccountRenames(db, platform, month, incoming) {
+  const importedNames = new Set(incoming.map(a => a.name));
+  const namesById = new Map();
+  for (const acc of incoming) {
+    if (!acc.id) continue;
+    if (!namesById.has(acc.id)) namesById.set(acc.id, new Set());
+    namesById.get(acc.id).add(acc.name);
+  }
+
+  const histNamesStmt = db.prepare(`
+    SELECT DISTINCT account_name FROM posts
+    WHERE platform = ? AND account_id = ?
+      AND account_name IS NOT NULL AND account_name != '' AND account_name != ?
+  `);
+  const coOccurStmt = db.prepare(`
+    SELECT 1 FROM import_accounts ia1
+    JOIN import_accounts ia2 ON ia2.import_id = ia1.import_id
+    WHERE ia1.account_name = ? AND ia2.account_name = ?
+    LIMIT 1
+  `);
+  const lastSeenStmt = db.prepare(`
+    SELECT MAX(substr(publish_time, 1, 7)) AS last FROM posts
+    WHERE platform = ? AND account_name = ? AND publish_time IS NOT NULL
+  `);
+
+  const renamed = [];
+  for (const acc of incoming) {
+    if (!acc.id || namesById.get(acc.id).size !== 1) continue;
+    for (const row of histNamesStmt.all(platform, acc.id, acc.name)) {
+      const knownName = row.account_name;
+      if (importedNames.has(knownName)) continue;
+      if (coOccurStmt.get(knownName, acc.name)) continue;
+
+      // On equal months the known name stays canonical (conservative: a
+      // same-month case can be either a fresh rename or a stale re-import,
+      // and keeping the current name is the recoverable choice).
+      const lastSeen = lastSeenStmt.get(platform, knownName)?.last || null;
+      const isGenuineRename =
+        month && month !== 'unknown' && (!lastSeen || month > lastSeen);
+
+      if (isGenuineRename) {
+        mergeRename(db, platform, knownName, acc.name, acc.id, acc.username);
+        renamed.push({ account_id: acc.id, oldName: knownName, newName: acc.name });
+      } else {
+        mergeRename(db, platform, acc.name, knownName, acc.id, null);
+        renamed.push({ account_id: acc.id, oldName: acc.name, newName: knownName });
+        acc.name = knownName; // canonical from here on (roster, import_accounts, detection)
+      }
+    }
+  }
+  return renamed;
+}
+
+/**
+ * Moves every name-keyed row from oldName to newName for one platform.
+ * UPDATE OR IGNORE + DELETE leftovers handles UNIQUE collisions (a row for
+ * the new name already exists — keep it, drop the old duplicate).
+ */
+function mergeRename(db, platform, oldName, newName, accountId, newUsername) {
+  db.prepare(
+    `UPDATE posts SET account_name = ?, account_username = COALESCE(?, account_username)
+     WHERE platform = ? AND account_name = ?`
+  ).run(newName, newUsername, platform, oldName);
+
+  db.prepare(
+    `UPDATE OR IGNORE import_accounts SET account_name = ?, account_id = COALESCE(account_id, ?)
+     WHERE account_name = ? AND import_id IN (SELECT id FROM imports WHERE platform = ?)`
+  ).run(newName, accountId, oldName, platform);
+  db.prepare(
+    `DELETE FROM import_accounts
+     WHERE account_name = ? AND import_id IN (SELECT id FROM imports WHERE platform = ?)`
+  ).run(oldName, platform);
+
+  // Roster: keep the old row's status (a retired account stays retired under
+  // its new name) unless a row for the new name already exists.
+  const newRow = db.prepare(
+    'SELECT id FROM account_roster WHERE account_name = ? AND platform = ?'
+  ).get(newName, platform);
+  if (newRow) {
+    db.prepare('DELETE FROM account_roster WHERE account_name = ? AND platform = ?')
+      .run(oldName, platform);
+    db.prepare('UPDATE account_roster SET account_id = COALESCE(account_id, ?) WHERE id = ?')
+      .run(accountId, newRow.id);
+  } else {
+    db.prepare(
+      'UPDATE account_roster SET account_name = ?, account_id = ? WHERE account_name = ? AND platform = ?'
+    ).run(newName, accountId, oldName, platform);
+  }
+
+  db.prepare(
+    'UPDATE OR IGNORE account_gaps SET account_name = ? WHERE account_name = ? AND platform = ?'
+  ).run(newName, oldName, platform);
+  db.prepare('DELETE FROM account_gaps WHERE account_name = ? AND platform = ?')
+    .run(oldName, platform);
+
+  db.prepare(
+    'UPDATE OR IGNORE hidden_accounts SET account_name = ? WHERE account_name = ? AND platform = ?'
+  ).run(newName, oldName, platform);
+  db.prepare('DELETE FROM hidden_accounts WHERE account_name = ? AND platform = ?')
+    .run(oldName, platform);
+
+  db.prepare('UPDATE OR IGNORE account_group_members SET account_key = ? WHERE account_key = ?')
+    .run(`${newName}::${platform}`, `${oldName}::${platform}`);
+  db.prepare('DELETE FROM account_group_members WHERE account_key = ?')
+    .run(`${oldName}::${platform}`);
+
+  for (const table of NAME_KEYED_TABLES_BY_PLATFORM[platform] || []) {
+    db.prepare(`UPDATE OR IGNORE ${table} SET account_name = ? WHERE account_name = ?`)
+      .run(newName, oldName);
+    db.prepare(`DELETE FROM ${table} WHERE account_name = ?`).run(oldName);
+  }
+  if (platform === 'instagram' && newUsername) {
+    db.prepare('UPDATE ig_account_reach SET ig_username = ? WHERE account_name = ?')
+      .run(newUsername, newName);
   }
 }
 
@@ -269,11 +449,19 @@ export function reopenGapMonth(accountName, platform, month) {
  * @param {string} platform
  * @param {string} month - parsed.month, the file's canonical reporting month.
  * @param {number} importId
- * @param {string[]} accountNames - account names in the incoming file.
- * @returns {{ missingAccounts: Array, gapsRegistered: number, gapsAutoResolved: number }}
+ * @param {Array<{name, id?, username?}>|string[]} accounts - accounts in the
+ *   incoming file; plain names still work but disable rename detection.
+ * @returns {{ missingAccounts: Array, gapsRegistered: number, gapsAutoResolved: number, renamedAccounts: Array }}
  */
-export function processImportRoster(db, platform, month, importId, accountNames) {
-  const importedNames = new Set(accountNames.filter(Boolean));
+export function processImportRoster(db, platform, month, importId, accounts) {
+  const incoming = normalizeAccounts(accounts);
+
+  // Renames first: an id already known under another name is the same account
+  // — merge its history onto the canonical name BEFORE reading history, so
+  // the old name neither alarms as missing nor splits the series. May remap
+  // incoming names (stale backfill), so importedNames is built afterwards.
+  const renamedAccounts = applyAccountRenames(db, platform, month, incoming);
+  const importedNames = new Set(incoming.map(a => a.name));
 
   // History and open gaps are read BEFORE this import is written to
   // account_roster/import_accounts, so it never matches itself.
@@ -281,8 +469,8 @@ export function processImportRoster(db, platform, month, importId, accountNames)
   const openGapAccounts = getScopedOpenGapAccounts(db, platform, importedNames);
   const retired = getRetiredNames(db, platform);
 
-  upsertRosterEntries(db, [...importedNames], platform);
-  recordImportAccounts(db, importId, [...importedNames]);
+  upsertRosterEntries(db, incoming, platform);
+  recordImportAccounts(db, importId, incoming);
 
   const missingAccounts = findMissingAccounts({
     importedNames,
@@ -298,7 +486,7 @@ export function processImportRoster(db, platform, month, importId, accountNames)
   }
   const gapsAutoResolved = autoResolveGaps(db, platform, importId);
 
-  return { missingAccounts, gapsRegistered: missingAccounts.length, gapsAutoResolved };
+  return { missingAccounts, gapsRegistered: missingAccounts.length, gapsAutoResolved, renamedAccounts };
 }
 
 // --- Open gaps for the UI (the "Öppna luckor" card) ----------------------------

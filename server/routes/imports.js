@@ -339,8 +339,19 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
       // that are normally present but missing from it, register/auto-resolve
       // gaps — all in the same transaction as the import itself.
       // Never blocks the import.
-      const accountNames = [...new Set(parsed.posts.map(p => p.account_name).filter(Boolean))];
-      const roster = processImportRoster(db, parsed.platform, parsed.month, importId, accountNames);
+      const accountsByName = new Map();
+      for (const p of parsed.posts) {
+        if (!p.account_name) continue;
+        if (!accountsByName.has(p.account_name)) {
+          accountsByName.set(p.account_name, { name: p.account_name, id: null, username: null });
+        }
+        const acc = accountsByName.get(p.account_name);
+        if (!acc.id && p.account_id) acc.id = String(p.account_id);
+        if (!acc.username && p.account_username) acc.username = p.account_username;
+      }
+      const roster = processImportRoster(
+        db, parsed.platform, parsed.month, importId, [...accountsByName.values()]
+      );
 
       return { importId, inserted, updated, actualPostCount, roster };
     })();
@@ -367,6 +378,7 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
         postsUpdated: result.updated,
         collabDetection: collabResult,
         missingAccounts: result.roster.missingAccounts,
+        renamedAccounts: result.roster.renamedAccounts,
       },
     });
   } catch (err) {
