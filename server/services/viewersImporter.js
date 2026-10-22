@@ -10,6 +10,7 @@
  */
 import Papa from 'papaparse';
 import { getDb } from '../db/connection.js';
+import { nfc } from '../utils/normalizeName.js';
 
 const EXPECTED_METRIC_PREFIX = 'page_total_media_view_unique@';
 
@@ -104,7 +105,7 @@ export function importViewersCSV(csvContent, filename) {
 
   db.transaction(() => {
     for (const row of result.data) {
-      const pageName = (row['Page'] || '').trim();
+      const pageName = nfc((row['Page'] || '').trim());
       const pageId = row['Page ID'] ? String(row['Page ID']).trim() : null;
       const viewers = parseInt(row['Reach'], 10) || 0;
       const status = row['Status'] ? String(row['Status']).trim() : '';

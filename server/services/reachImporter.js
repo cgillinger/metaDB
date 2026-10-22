@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import { getDb } from '../db/connection.js';
+import { nfc } from '../utils/normalizeName.js';
 
 /**
  * Detect if a CSV is an API-level reach export.
@@ -111,7 +112,7 @@ export function importReachCSV(csvContent, month, filename) {
 
   db.transaction(() => {
     for (const row of result.data) {
-      const pageName = (row['Page'] || '').trim();
+      const pageName = nfc((row['Page'] || '').trim());
       const pageId = row['Page ID'] ? String(row['Page ID']).trim() : null;
       const reach = parseInt(row['Reach'], 10) || 0;
       const status = (row['Status'] || '').trim();

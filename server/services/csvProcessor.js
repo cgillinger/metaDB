@@ -6,6 +6,7 @@ import {
   findMatchingColumnKey,
   normalizeText,
 } from '../../shared/columnConfig.js';
+import { nfc } from '../utils/normalizeName.js';
 
 // Intl.DateTimeFormat construction is the expensive part of the Intl API, so
 // cache one formatter per time zone. Only two fixed zones are ever used here,
@@ -284,7 +285,7 @@ export function parseCSV(csvContent, filename, opts = {}) {
     posts.push({
       post_id: String(mapped.post_id || ''),
       account_id: mapped.account_id ? String(mapped.account_id) : null,
-      account_name:     sanitizeText(mapped.account_name || null),
+      account_name:     nfc(sanitizeText(mapped.account_name || null)),
       account_username: sanitizeText(mapped.account_username || null),
       description:      sanitizeText(mapped.description || null),
       publish_time: mapped.publish_time || null,
@@ -345,7 +346,7 @@ export function parseCSV(csvContent, filename, opts = {}) {
       if (!p.permalink) continue;
       const res = resolveAccountFromPermalink(p, opts.slugMap, opts.overrides || {});
       if (res && res.account_name) {
-        p.account_name = res.account_name;
+        p.account_name = nfc(res.account_name);
         if (!p.account_id && res.account_id) p.account_id = String(res.account_id);
         attributedViaPermalink++;
       }

@@ -6,6 +6,7 @@
 import Papa from 'papaparse';
 import { getDb } from '../db/connection.js';
 import { canonicalGaAccountName } from './gaAccountAliases.js';
+import { nfc } from '../utils/normalizeName.js';
 
 /**
  * Find the listens column in a list of headers.
@@ -82,7 +83,7 @@ export function importGaListensCSV(csvContent, month, filename) {
   let skipped = 0;
 
   for (const row of result.data) {
-    const programName = canonicalGaAccountName((row['Programnamn'] || '').trim());
+    const programName = canonicalGaAccountName(nfc((row['Programnamn'] || '').trim()));
     const listens = parseInt(row[listensCol], 10) || 0;
 
     if (!programName) {
@@ -158,6 +159,7 @@ export function deleteGaListensMonth(month) {
 export function deleteGaListensAccounts(accountNames) {
   if (!accountNames || accountNames.length === 0) return { deleted: 0 };
   const db = getDb();
+  accountNames = accountNames.map(nfc);
   const placeholders = accountNames.map(() => '?').join(', ');
   const result = db.prepare(
     `DELETE FROM ga_listens WHERE account_name IN (${placeholders})`
@@ -171,6 +173,7 @@ export function deleteGaListensAccounts(accountNames) {
  * Returns the number of deleted rows.
  */
 export function deleteGaListensByAccount(accountName, months) {
+  accountName = nfc(accountName);
   const db = getDb();
   const placeholders = months.map(() => '?').join(', ');
   const result = db.prepare(

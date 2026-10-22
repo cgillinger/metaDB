@@ -6,6 +6,7 @@
 import Papa from 'papaparse';
 import { getDb } from '../db/connection.js';
 import { canonicalGaAccountName } from './gaAccountAliases.js';
+import { nfc } from '../utils/normalizeName.js';
 
 /**
  * Find the "besök" column in a list of headers (case-insensitive substring match).
@@ -72,7 +73,7 @@ export function importGaSiteVisitsCSV(csvContent, month, filename) {
   let skipped = 0;
 
   for (const row of result.data) {
-    const programName = canonicalGaAccountName((row['Programnamn'] || '').trim());
+    const programName = canonicalGaAccountName(nfc((row['Programnamn'] || '').trim()));
     const visits = parseInt(row[visitsCol], 10) || 0;
 
     if (!programName) {
@@ -146,6 +147,7 @@ export function deleteGaSiteVisitsMonth(month) {
  * Returns the number of deleted rows.
  */
 export function deleteGaSiteVisitsByAccount(accountName, months) {
+  accountName = nfc(accountName);
   const db = getDb();
   const placeholders = months.map(() => '?').join(', ');
   const result = db.prepare(
@@ -162,6 +164,7 @@ export function deleteGaSiteVisitsByAccount(accountName, months) {
 export function deleteGaSiteVisitsAccounts(accountNames) {
   if (!accountNames || accountNames.length === 0) return { deleted: 0 };
   const db = getDb();
+  accountNames = accountNames.map(nfc);
   const placeholders = accountNames.map(() => '?').join(', ');
   const result = db.prepare(
     `DELETE FROM ga_site_visits WHERE account_name IN (${placeholders})`
