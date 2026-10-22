@@ -27,6 +27,9 @@ export function getDb() {
   // Enable foreign keys
   db.pragma('foreign_keys = ON');
 
+  // SQLite has no Unicode normalization; migrations (014) need NFC in SQL.
+  db.function('nfc', { deterministic: true }, s => (s == null ? s : String(s).normalize('NFC')));
+
   // Run initial schema
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schema = fs.readFileSync(schemaPath, 'utf-8');
@@ -77,6 +80,8 @@ function runMigrations(db) {
           JSON.stringify(violations)
         );
       }
+    } catch (err) {
+      throw new Error(`Migration ${file} failed: ${err.message}`, { cause: err });
     } finally {
       db.pragma('foreign_keys = ON');
     }

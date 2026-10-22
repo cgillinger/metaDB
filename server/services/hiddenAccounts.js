@@ -1,6 +1,8 @@
 import { getDb } from '../db/connection.js';
+import { nfc } from '../utils/normalizeName.js';
 
 export function hide(accountName, platform) {
+  accountName = nfc(accountName);
   const db = getDb();
   db.prepare(
     'INSERT OR IGNORE INTO hidden_accounts (account_name, platform) VALUES (?, ?)'
@@ -8,6 +10,7 @@ export function hide(accountName, platform) {
 }
 
 export function unhide(accountName, platform) {
+  accountName = nfc(accountName);
   const db = getDb();
   db.prepare(
     'DELETE FROM hidden_accounts WHERE account_name = ? AND platform = ?'
@@ -22,6 +25,7 @@ export function listHidden() {
 }
 
 export function isHidden(accountName, platform) {
+  accountName = nfc(accountName);
   const db = getDb();
   const row = db.prepare(
     'SELECT 1 FROM hidden_accounts WHERE account_name = ? AND platform = ?'

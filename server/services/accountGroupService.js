@@ -4,6 +4,7 @@
  * Account keys use the composite format "account_name::platform".
  */
 import { getDb } from '../db/connection.js';
+import { nfc } from '../utils/normalizeName.js';
 
 /**
  * Get all account groups, optionally filtered by source.
@@ -61,7 +62,7 @@ export function createAccountGroup(name, source, memberKeys) {
   const result = db.transaction(() => {
     const insert = db.prepare(
       'INSERT INTO account_groups (name, source) VALUES (?, ?)'
-    ).run(name.trim(), source);
+    ).run(nfc(name.trim()), source);
 
     const groupId = insert.lastInsertRowid;
     const memberInsert = db.prepare(
@@ -69,7 +70,7 @@ export function createAccountGroup(name, source, memberKeys) {
     );
 
     for (const key of memberKeys) {
-      memberInsert.run(groupId, key);
+      memberInsert.run(groupId, nfc(key));
     }
 
     return groupId;
@@ -93,7 +94,7 @@ export function updateAccountGroup(id, updates) {
     if (updates.name !== undefined) {
       const trimmed = updates.name.trim();
       if (!trimmed) throw new Error('Gruppnamn krävs.');
-      db.prepare('UPDATE account_groups SET name = ? WHERE id = ?').run(trimmed, id);
+      db.prepare('UPDATE account_groups SET name = ? WHERE id = ?').run(nfc(trimmed), id);
     }
 
     if (updates.members !== undefined) {
@@ -103,7 +104,7 @@ export function updateAccountGroup(id, updates) {
         'INSERT INTO account_group_members (group_id, account_key) VALUES (?, ?)'
       );
       for (const key of updates.members) {
-        insert.run(id, key);
+        insert.run(id, nfc(key));
       }
     }
   })();

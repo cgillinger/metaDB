@@ -5,6 +5,7 @@
  */
 import { getDb } from '../db/connection.js';
 import { jaccardSimilarity, findMissingAccounts } from './roster/missingAccounts.js';
+import { nfc } from '../utils/normalizeName.js';
 
 const JACCARD_THRESHOLD = 0.5;
 const DEFAULT_WINDOW = 6;
@@ -22,7 +23,7 @@ function normalizeAccounts(accounts) {
     .map(a => (typeof a === 'string' ? { name: a } : a))
     .filter(a => a && a.name)
     .map(a => ({
-      name: a.name,
+      name: nfc(a.name),
       id: a.id != null && a.id !== '' ? String(a.id) : null,
       username: a.username || null,
     }));
@@ -62,6 +63,7 @@ export function listRoster(platform) {
 }
 
 export function retireAccount(accountName, platform, note = null) {
+  accountName = nfc(accountName);
   const db = getDb();
   db.prepare(
     `INSERT INTO account_roster (account_name, platform, status, retired_at, note)
@@ -72,6 +74,7 @@ export function retireAccount(accountName, platform, note = null) {
 }
 
 export function reactivateAccount(accountName, platform) {
+  accountName = nfc(accountName);
   const db = getDb();
   db.prepare(
     `INSERT INTO account_roster (account_name, platform, status, retired_at)
@@ -411,6 +414,7 @@ export function autoResolveGaps(db, platform, importId) {
  * @returns {number} rows changed (0 or 1)
  */
 export function dismissGapMonth(accountName, platform, month) {
+  accountName = nfc(accountName);
   const db = getDb();
   const info = db.prepare(
     `UPDATE account_gaps SET resolved_at = datetime('now'), resolution = 'no_posts'
@@ -426,6 +430,7 @@ export function dismissGapMonth(accountName, platform, month) {
  * @returns {number} rows changed (0 or 1)
  */
 export function reopenGapMonth(accountName, platform, month) {
+  accountName = nfc(accountName);
   const db = getDb();
   const info = db.prepare(
     `UPDATE account_gaps SET resolved_at = NULL, resolution = NULL
