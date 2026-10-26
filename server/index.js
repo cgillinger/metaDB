@@ -24,6 +24,7 @@ import accountRosterRouter from './routes/accountRoster.js';
 import comparisonRouter from './routes/comparison.js';
 import platformTrendsRouter from './routes/platformTrends.js';
 import exportRouter from './routes/export.js';
+import crowdtangleRouter from './routes/crowdtangle.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -97,6 +98,7 @@ app.use('/api/account-groups', accountGroupsRouter);
 app.use('/api/comparison', comparisonRouter);
 app.use('/api/platform-trends', platformTrendsRouter);
 app.use('/api/export', exportRouter);
+app.use('/api/crowdtangle', crowdtangleRouter); // Historic CrowdTangle totals (Legacy tab only)
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
