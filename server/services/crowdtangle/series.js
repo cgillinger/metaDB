@@ -95,13 +95,22 @@ export function buildSeries(db, { platform, metric, accounts, from, to }) {
     SELECT account_key, account_name, month, ${spec.ctColumn} AS value
     FROM ct_monthly WHERE platform = ? AND account_key IN (${ph}) ORDER BY month`).all(platform, ...keys);
 
-  const metaRows = platform === 'twitter' ? [] : db.prepare(`
-    SELECT ${platform === 'facebook' ? 'account_id' : 'lower(account_username)'} AS k,
-           substr(publish_time, 1, 7) AS month, ${spec.metadbExpr[platform]} AS value
+  // The CT key only identifies the account; the metaDB side is fetched by account
+  // name. Meta moved most FB pages to a new page id mid-2024 (new Pages
+  // experience), so matching posts on account_id would end every curve there.
+  // The importer keeps one series per account name across that id switch.
+  const keyByName = new Map();
+  for (const key of keys) {
+    const n = names.get(key);
+    if (n && !keyByName.has(n)) keyByName.set(n, key);
+  }
+  const linkedNames = [...keyByName.keys()];
+  const metaRows = platform === 'twitter' || !linkedNames.length ? [] : db.prepare(`
+    SELECT account_name, substr(publish_time, 1, 7) AS month, ${spec.metadbExpr[platform]} AS value
     FROM posts
-    WHERE platform = ? AND ${platform === 'facebook' ? 'account_id' : 'lower(account_username)'} IN (${ph})
+    WHERE platform = ? AND account_name IN (${linkedNames.map(() => '?').join(',')})
       AND publish_time IS NOT NULL
-    GROUP BY k, month`).all(platform, ...keys);
+    GROUP BY account_name, month`).all(platform, ...linkedNames);
 
   const ct = {}, meta = {}, ctName = {};
   for (const r of ctRows) {
@@ -109,7 +118,7 @@ export function buildSeries(db, { platform, metric, accounts, from, to }) {
     if (r.value !== null) ct[r.account_key][r.month] = r.value;
     ctName[r.account_key] = r.account_name; // rows are month-ordered: last wins
   }
-  for (const r of metaRows) (meta[r.k] ??= {})[r.month] = r.value;
+  for (const r of metaRows) (meta[keyByName.get(r.account_name)] ??= {})[r.month] = r.value;
 
   // Axis: requested span, else min..max over everything fetched.
   const all = [...Object.values(ct), ...Object.values(meta)].flatMap(o => Object.keys(o)).sort();
@@ -124,10 +133,18 @@ export function buildSeries(db, { platform, metric, accounts, from, to }) {
     if (hidden.has(name)) continue;
     const s = spliceAccountSeries(axis, ct[key], meta[key]);
     const label = (src) => (src === 'legacy' ? 'crowdtangle' : src === 'viewers' ? 'metadb' : null);
+    // CT is closed-ended (no later backfill), so the switch is simply the first
+    // metaDB month after a CT month. spliceAccountSeries anchors its marker on the
+    // trailing gap-free metaDB run instead, which drops the marker whenever an
+    // account misses a later export month.
+    let breakpoint = null;
+    for (let i = 1; i < s.data.length && !breakpoint; i++) {
+      if (s.data[i].source === 'viewers' && s.data.slice(0, i).some(d => d.source === 'legacy')) breakpoint = axis[i];
+    }
     series.push({
       account_key: key, account_name: name,
       data: s.data.map(d => ({ value: d.value, source: label(d.source), ghost: d.ghost })),
-      breakpoint_month: s.breakpoint_month,
+      breakpoint_month: breakpoint,
       splice_status: s.splice_status === 'legacy_only' ? 'crowdtangle_only'
         : s.splice_status === 'viewers_only' ? 'metadb_only' : s.splice_status,
       overlap_months: s.overlap_months,

@@ -28,6 +28,8 @@ before(async () => {
   ins.run(imp, 'f1', '111', 'Radiosporten', null, '2024-01-05 10:00:00', 'facebook', 5, 2, 50);
   ins.run(imp, 'f2', '111', 'Radiosporten', null, '2024-01-20 10:00:00', 'facebook', 5, 2, 70);
   ins.run(imp, 'f3', '111', 'Radiosporten', null, '2024-02-03 10:00:00', 'facebook', 5, 2, 30);
+  // Same page after Meta's mid-2024 page-id switch: new id, same account name
+  ins.run(imp, 'f4', '999', 'Radiosporten', null, '2024-08-03 10:00:00', 'facebook', 5, 2, 40);
   ins.run(imp, 'i1', '900', 'P3 Nyheter', 'P3Nyheter', '2023-08-05 10:00:00', 'instagram', 10, 4, 99);
   loadRows(db, [
     ct('facebook', '111', 'Radiosporten (gammalt)', '2023-11', 400),
@@ -113,4 +115,12 @@ test('loader: upsert is idempotent and dry-run saves nothing', () => {
   assert.deepEqual(loadRows(db, [row]), { inserted: 1, updated: 0 });
   assert.deepEqual(loadRows(db, [{ ...row, interactions: 2 }]), { inserted: 0, updated: 1 });
   assert.equal(db.prepare("SELECT interactions n FROM ct_monthly WHERE account_key='555'").get().n, 2);
+});
+
+test('series: metaDB side follows the account across a page-id switch', async () => {
+  const { body } = await get('/series?platform=facebook&metric=interactions&accounts=111');
+  const s = body.series[0];
+  const at = (m) => s.data[body.months.indexOf(m)];
+  assert.equal(body.months.at(-1), '2024-08');
+  assert.deepEqual(at('2024-08'), { value: 40, source: 'metadb', ghost: null });
 });
