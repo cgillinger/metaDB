@@ -344,7 +344,7 @@ const TrendAnalysisView = ({
     return [...postGroups, ...sorted];
   }, [accountGroups, accountList]);
 
-  // True when any selected account is a group
+  // Load which accounts have historic CrowdTangle data, for the hint line
   useEffect(() => {
     let cancelled = false;
     Promise.all(['facebook', 'instagram'].map(p => api.getCtAccounts(p))).then(([fb, ig]) => {
@@ -360,6 +360,7 @@ const TrendAnalysisView = ({
     return ctNames[p]?.has(name);
   });
 
+  // True when any selected account is a group
   const hasGroupSelected = selectedAccounts.some(k => k.startsWith('__group__'));
 
   // Auto-switch from non-summable metric when a group is selected

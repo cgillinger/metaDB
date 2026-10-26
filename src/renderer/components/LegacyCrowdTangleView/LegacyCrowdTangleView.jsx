@@ -161,7 +161,11 @@ export default function LegacyCrowdTangleView() {
                     <input type="checkbox" checked={on} onChange={() => toggle(a.account_key)}
                       disabled={!on && selected.length >= MAX_SELECTED} />
                     {on && <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[colorIdx % COLORS.length] }} />}
-                    <span className="flex-1">{a.account_name}</span>
+                    <span className="flex-1">
+                      {a.account_name}
+                      {/* CT has no stable id for IG/Twitter — a handle change splits the series, so show the handle to tell same-named rows apart */}
+                      {platform !== 'facebook' && <span className="ml-1 text-xs text-muted-foreground">@{a.account_key}</span>}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {a.first_month.slice(0, 4)}–{a.last_month.slice(0, 4)}{hasMetadbSide && !a.has_metadb ? ' · endast CrowdTangle' : ''}
                     </span>
