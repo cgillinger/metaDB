@@ -204,6 +204,8 @@ const TrendAnalysisView = ({
   const [igReachAccountNames, setIgReachAccountNames] = useState(new Set());
   const [fbReachAccountNames, setFbReachAccountNames] = useState(new Set());
   const [fbViewersAccountNames, setFbViewersAccountNames] = useState(new Set());
+  // Names (per platform) of accounts that have historic CrowdTangle data — only used for a hint line.
+  const [ctNames, setCtNames] = useState({ facebook: new Set(), instagram: new Set() });
   const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -343,6 +345,21 @@ const TrendAnalysisView = ({
   }, [accountGroups, accountList]);
 
   // True when any selected account is a group
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(['facebook', 'instagram'].map(p => api.getCtAccounts(p))).then(([fb, ig]) => {
+      if (cancelled) return;
+      const names = (r) => new Set(r.accounts.filter(a => a.has_metadb).map(a => a.account_name));
+      setCtNames({ facebook: names(fb), instagram: names(ig) });
+    }).catch(() => {}); // the hint is optional
+    return () => { cancelled = true; };
+  }, []);
+  const showCtHint = !gaListensMode && !gaSiteVisitsMode && selectedAccounts.some(k => {
+    if (k.startsWith('__group__')) return false;
+    const { name, platform: p } = parseAccountKey(k);
+    return ctNames[p]?.has(name);
+  });
+
   const hasGroupSelected = selectedAccounts.some(k => k.startsWith('__group__'));
 
   // Auto-switch from non-summable metric when a group is selected
@@ -1283,6 +1300,12 @@ const TrendAnalysisView = ({
               </div>
             )}
           </div>
+
+          {showCtHint && (
+            <p className="text-xs text-muted-foreground">
+              Längre historik från 2018 finns i fliken Legacy CrowdTangle
+            </p>
+          )}
 
           {(gaSiteVisitsMode || gaListensMode || selectedMetric) && (
             <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-center">

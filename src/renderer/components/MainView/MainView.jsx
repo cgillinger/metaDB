@@ -14,6 +14,7 @@ import {
   Activity,
   ScatterChart,
   ArrowRight,
+  History,
 } from 'lucide-react';
 import AccountView from '../AccountView';
 import ScatterExplorerView from '../AccountView/ScatterExplorerView';
@@ -23,6 +24,7 @@ import TrendAnalysisView from '../TrendAnalysisView/TrendAnalysisView';
 import ImportManager from '../ImportManager/ImportManager';
 import AboutView from '../AboutView/AboutView';
 import ComparisonView from '../ComparisonView';
+import LegacyCrowdTangleView from '../LegacyCrowdTangleView/LegacyCrowdTangleView';
 import PlatformTrendView from '../PlatformTrendView';
 import PeriodSelector from '../PeriodSelector';
 import PlatformBadge from '../ui/PlatformBadge';
@@ -524,7 +526,7 @@ const MainView = ({ onShowUploader }) => {
         </div>
       )}
 
-      {activeView !== 'imports' && filteredCoverageData.length > 0 && (
+      {activeView !== 'imports' && activeView !== 'legacy_crowdtangle' && filteredCoverageData.length > 0 && (
         <PeriodSelector
           availableMonths={filteredCoverageData}
           selectedMonths={selectedMonths}
@@ -537,7 +539,7 @@ const MainView = ({ onShowUploader }) => {
         />
       )}
 
-      {activeView !== 'trend_analysis' && activeView !== 'imports' && activeView !== 'comparison' && activeView !== 'platform_trend' && platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && !scatterState.open && (
+      {activeView !== 'trend_analysis' && activeView !== 'imports' && activeView !== 'comparison' && activeView !== 'legacy_crowdtangle' && activeView !== 'platform_trend' && platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && !scatterState.open && (
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-base font-semibold mb-3">Välj värden att visa</h3>
@@ -592,6 +594,12 @@ const MainView = ({ onShowUploader }) => {
             <BarChart3 className="w-4 h-4 mr-1" />
             Jämförelser
           </TabsTrigger>
+          {platformFilter !== 'ga_listens' && platformFilter !== 'ga_site_visits' && (
+            <TabsTrigger value="legacy_crowdtangle">
+              <History className="w-4 h-4 mr-1" />
+              Legacy CrowdTangle
+            </TabsTrigger>
+          )}
           <TabsTrigger value="imports">
             <Database className="w-4 h-4 mr-1" />
             Databas
@@ -651,6 +659,10 @@ const MainView = ({ onShowUploader }) => {
             accountGroups={accountGroups}
             onGroupsChanged={refreshAccountGroups}
           />
+        </TabsContent>
+
+        <TabsContent value="legacy_crowdtangle">
+          <LegacyCrowdTangleView />
         </TabsContent>
 
         <TabsContent value="imports">
