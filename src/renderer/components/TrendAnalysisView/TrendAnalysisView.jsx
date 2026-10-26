@@ -464,12 +464,19 @@ const TrendAnalysisView = ({
         // Groups are already blocked via NON_SUMMABLE_METRICS; this is belt and braces.
         if (selectedMetric === 'account_viewers_spliced') return null;
         // Sum member series element-wise
-        const summedData = trendData.months.map((_, mIndex) =>
-          entry.memberKeys.reduce((sum, memberKey) => {
-            const s = seriesByKey[memberKey];
-            return sum + (s ? (s.data[mIndex] || 0) : 0);
-          }, 0)
-        );
+        // A null datum means "unknown" (e.g. views Meta did not deliver): skipped in
+        // the sum, and the month stays null if every member is unknown.
+        const summedData = trendData.months.map((_, mIndex) => {
+          let sum = 0;
+          let sawNull = false;
+          let sawValue = false;
+          for (const memberKey of entry.memberKeys) {
+            const v = seriesByKey[memberKey]?.data[mIndex];
+            if (v === null) sawNull = true;
+            else { sum += v || 0; sawValue = true; }
+          }
+          return sawNull && !sawValue ? null : sum;
+        });
         return {
           key: selectedKey,
           account_name: entry.account_name,
@@ -521,7 +528,8 @@ const TrendAnalysisView = ({
           }
           return {
             month: monthKey,
-            value: series.data[mIndex] ?? 0,
+            // null = unknown (kept as a gap); undefined = no data (0, as before).
+            value: series.data[mIndex] === null ? null : (series.data[mIndex] ?? 0),
           };
         }),
       };
@@ -844,8 +852,12 @@ const TrendAnalysisView = ({
           const fetchedMonths = data.months || [];
           for (let i = 0; i < fetchedMonths.length; i++) {
             let sum = 0;
-            for (const s of (data.series || [])) sum += (s.data[i] || 0);
-            dataMap[fetchedMonths[i]] = sum;
+            let known = false;
+            for (const s of (data.series || [])) {
+              if (s.data[i] !== null) known = true; // null = unknown, skipped
+              sum += (s.data[i] || 0);
+            }
+            if (known || (data.series || []).length === 0) dataMap[fetchedMonths[i]] = sum;
           }
           if (selectedMetric === 'avg_daily_link_clicks') {
             for (const m of Object.keys(dataMap)) dataMap[m] = Math.round((dataMap[m] / daysInMonth(m)) * 10) / 10;
@@ -1514,7 +1526,8 @@ const TrendAnalysisView = ({
                     const isSpliced = isSplicedMetricActive;
                     // Render null values as gaps (line breaks) in the estimated-clicks metric,
                     // the spliced metric and YoY mode, so missing months don't crash to the baseline.
-                    const allowGaps = isEstimated || isYoY || isSpliced;
+                    const allowGaps = isEstimated || isYoY || isSpliced
+                      || line.points.some(p => p.value === null);
                     const yRange = displayYAxisConfig.max - displayYAxisConfig.min;
                     const toY = (val) => yRange > 0 ? 450 - ((val - displayYAxisConfig.min) / yRange) * 380 : 450;
 
@@ -1704,7 +1717,7 @@ const TrendAnalysisView = ({
                             : `~${Math.round(upper).toLocaleString('sv-SE')}`;
                           return quality === 'uncertain' ? `${range} ⚠ Hög osäkerhet` : range;
                         })()
-                      : (hoveredDataPoint.value ?? 0).toLocaleString('sv-SE');
+                      : (hoveredDataPoint.value == null ? 'Saknas' : hoveredDataPoint.value.toLocaleString('sv-SE'));
                     return (
                       <g>
                         <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} fill="rgba(0,0,0,0.85)" rx="6" />

@@ -56,7 +56,8 @@ export function median(values) {
  */
 export function periodMedian(posts) {
   if (!posts || posts.length === 0) return 0;
-  return median(posts.map((p) => p.reach));
+  // NULL reach = unknown, not 0: leave such posts out of the median.
+  return median(posts.filter((p) => p.reach != null).map((p) => p.reach));
 }
 
 /**
@@ -70,6 +71,7 @@ export function weeklyFloor(posts) {
   const map = new Map();
 
   for (const post of posts) {
+    if (post.reach == null) continue;
     const d = new Date(post.publish_time);
     if (isNaN(d.getTime())) continue;
 
@@ -122,6 +124,7 @@ export function viralThreshold(med, params) {
  * Gränsfall reach == tröskeln räknas som VIRAL.
  */
 export function isViral(post, med, params) {
+  if (post.reach == null) return false;
   return post.reach >= viralThreshold(med, params);
 }
 
@@ -155,11 +158,11 @@ export function reliability(posts, tunt = TUNT) {
  */
 export function viralShare(posts, med, params) {
   if (!posts || posts.length === 0) return 0;
-  const totalReach = posts.reduce((sum, p) => sum + p.reach, 0);
+  const totalReach = posts.reduce((sum, p) => sum + (p.reach ?? 0), 0);
   if (totalReach === 0) return 0;
   const viralReach = posts
     .filter((p) => isViral(p, med, params))
-    .reduce((sum, p) => sum + p.reach, 0);
+    .reduce((sum, p) => sum + p.reach, 0); // isViral() is false for NULL reach
   if (viralReach === 0) return 0;
   return viralReach / totalReach;
 }

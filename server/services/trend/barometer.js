@@ -18,9 +18,16 @@ export function calcBarometer(months, window) {
   if (months.length < window * 2) return null;
   const recent = months.slice(-window);
   const previous = months.slice(-window * 2, -window);
-  const recentAvg = recent.reduce((s, m) => s + (m.avg_views ?? 0), 0) / window;
-  const prevAvg = previous.reduce((s, m) => s + (m.avg_views ?? 0), 0) / window;
-  if (prevAvg === 0) return null;
+  // Months with unknown views (avg_views NULL) are left out of the window
+  // average instead of counting as 0; a window with no known month → null.
+  const windowAvg = (ms) => {
+    const known = ms.filter(m => m.avg_views != null);
+    if (known.length === 0) return null;
+    return known.reduce((s, m) => s + m.avg_views, 0) / known.length;
+  };
+  const recentAvg = windowAvg(recent);
+  const prevAvg = windowAvg(previous);
+  if (recentAvg === null || prevAvg === null || prevAvg === 0) return null;
   const delta = (recentAvg - prevAvg) / prevAvg;
   const status = delta > 0.10 ? 'rising' : delta < -0.10 ? 'falling' : 'stable';
   return { delta, status, recentAvg, prevAvg };
@@ -37,7 +44,8 @@ export function calcYearOverYear(months) {
   const [year, mon] = current.month.split('-');
   const lastYearMonth = `${parseInt(year, 10) - 1}-${mon}`;
   const previous = months.find(m => m.month === lastYearMonth);
-  if (!previous || previous.avg_views === 0) return null;
+  if (!previous || previous.avg_views == null || previous.avg_views === 0) return null;
+  if (current.avg_views == null) return null;
   const delta = (current.avg_views - previous.avg_views) / previous.avg_views;
   const status = delta > 0.10 ? 'rising' : delta < -0.10 ? 'falling' : 'stable';
   return {

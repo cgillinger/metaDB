@@ -94,7 +94,7 @@ router.get('/', (req, res) => {
     FROM posts
     ${whereClause}
     GROUP BY account_name, platform
-    ORDER BY ${sort} ${order}
+    ORDER BY ${sort} IS NULL, ${sort} ${order}
   `;
 
   const accounts = db.prepare(query).all(...params);
@@ -357,7 +357,11 @@ router.get('/', (req, res) => {
       matchedCount: memberRows.length,
     };
     for (const field of GROUP_SUMMABLE) {
-      agg[field] = memberRows.reduce((sum, a) => sum + (a[field] || 0), 0);
+      // NULL = unknown (e.g. views): skipped in the sum; stays NULL if every member is unknown.
+      const known = memberRows.filter(a => a[field] != null);
+      agg[field] = known.length === 0 && memberRows.length > 0
+        ? null
+        : known.reduce((sum, a) => sum + a[field], 0);
     }
     if (days && days > 0) {
       agg.avg_daily_link_clicks = groupAvgPerDay(memberRows, 'link_clicks', days, 1);

@@ -190,6 +190,8 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
     const plat = post.platform;
     if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') return <span className="text-muted-foreground text-xs">N/A</span>;
     if (NON_FB_FIELDS.includes(field) && plat === 'facebook') return <span className="text-muted-foreground text-xs">N/A</span>;
+    // NULL = unknown (e.g. reach Meta no longer delivers) — never shown as 0.
+    if (post[field] === null || post[field] === undefined) return '–';
     return formatValue(post[field]);
   };
 
@@ -226,7 +228,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
           const displayName = getDisplayName(field);
           if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { row[displayName] = 'N/A'; continue; }
           if (NON_FB_FIELDS.includes(field) && plat === 'facebook') { row[displayName] = 'N/A'; continue; }
-          row[displayName] = formatValue(post[field]);
+          row[displayName] = post[field] == null ? '' : formatValue(post[field]);
         }
         return row;
       });
@@ -274,7 +276,7 @@ const PostView = ({ selectedFields, platform, periodParams = {} }) => {
           const displayName = getDisplayName(field);
           if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { row[displayName] = 'N/A'; continue; }
           if (NON_FB_FIELDS.includes(field) && plat === 'facebook') { row[displayName] = 'N/A'; continue; }
-          row[displayName] = formatValue(post[field]);
+          row[displayName] = post[field] == null ? '' : formatValue(post[field]);
         }
         return row;
       });

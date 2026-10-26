@@ -51,6 +51,7 @@ export function getEstimatedUniqueClicks({ accountNames, months, excludeCollab }
       COUNT(*) AS post_count,
       SUM(p.link_clicks) AS total_link_clicks,
       SUM(p.reach) AS sum_post_reach,
+      SUM(CASE WHEN p.reach IS NULL THEN 1 ELSE 0 END) AS unknown_reach_posts,
       ar.reach AS account_reach
     FROM posts p
     LEFT JOIN account_reach ar
@@ -93,7 +94,9 @@ export function getEstimatedUniqueClicksByAccount(opts = {}) {
       };
     }
     // Endast månader med giltig kontoräckvidd bidrar (täljare och nämnare i takt).
-    if (r.account_reach && r.account_reach > 0) {
+    // Months with posts of unknown (NULL) reach are skipped too: SUM(p.reach)
+    // would be incomplete while link_clicks/post_count are not.
+    if (r.account_reach && r.account_reach > 0 && !r.unknown_reach_posts) {
       const a = agg[r.account_name];
       a.total_link_clicks += r.total_link_clicks || 0;
       a.sum_post_reach += r.sum_post_reach || 0;
@@ -114,7 +117,13 @@ export function getEstimatedUniqueClicksByAccount(opts = {}) {
 }
 
 function computeEstimates(row) {
-  const { total_link_clicks, sum_post_reach, account_reach, post_count } = row;
+  const { total_link_clicks, sum_post_reach, account_reach, post_count, unknown_reach_posts } = row;
+
+  // Guardrail: any post with unknown (NULL) reach makes sum_post_reach a lower
+  // bound, which would understate F and inflate the estimate.
+  if (unknown_reach_posts > 0) {
+    return { ...row, overlap_factor: null, estimated_unique_upper: null, estimated_unique_lower: null, quality: 'suppressed' };
+  }
 
   // Guardrail: saknar account_reach eller post-räckvidd
   if (!account_reach || account_reach <= 0 || !sum_post_reach || sum_post_reach <= 0) {

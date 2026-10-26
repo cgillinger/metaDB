@@ -239,7 +239,7 @@ const PostTypeView = ({ selectedFields, platform, periodParams = {} }) => {
         'Tillförlitlig data': item.post_count >= MIN_POSTS_FOR_RELIABLE_STATS ? 'Ja' : 'Nej'
       };
       for (const field of visibleMetricFields) {
-        row[getDisplayName(field)] = formatValue(item[field]);
+        row[getDisplayName(field)] = item[field] == null ? '' : formatValue(item[field]);
       }
       return row;
     });

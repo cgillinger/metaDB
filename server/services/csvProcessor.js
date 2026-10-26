@@ -223,6 +223,13 @@ export function parseCSV(csvContent, filename, opts = {}) {
     assertNotDailyBreakdown(headers, result.data, columnMappings);
   }
 
+  // A metric column absent from the file means "unknown" (NULL), not 0.
+  // A present column with an empty/zero cell keeps the old 0 behaviour.
+  const hasColumn = (key) =>
+    headers.some((h) => findMatchingColumnKey(h, columnMappings) === key);
+  const hasViewsColumn = hasColumn('views');
+  const hasReachColumn = hasColumn('reach');
+
   const posts = [];
   const dates = [];
   const unparsableDates = [];
@@ -292,8 +299,8 @@ export function parseCSV(csvContent, filename, opts = {}) {
       post_type: normalizedType,
       permalink: mapped.permalink || null,
       platform,
-      views: safeInt(mapped.views),
-      reach: safeInt(mapped.reach),
+      views: hasViewsColumn ? safeInt(mapped.views) : null,
+      reach: hasReachColumn ? safeInt(mapped.reach) : null,
       likes,
       comments,
       shares,

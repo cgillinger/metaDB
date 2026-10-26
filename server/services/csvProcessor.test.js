@@ -176,3 +176,51 @@ test('parseCSV: felmeddelandet för daglig nedbrytning nämner Visningar och vad
     /inläggsvyn/
   );
 });
+
+// --- NULL = unknown: metric columns absent from the file (Meta 2023 re-exports) ---
+test('parseCSV stores views/reach NULL when the columns are absent', () => {
+  // Only one post per id → ratio 1, so the daily-breakdown guard stays quiet.
+  const csv = [
+    'Publicerings-id,Sidnamn,Publiceringstid,Reaktioner,Kommentarer,Delningar',
+    '700,Radio Romano,02/01/2026 12:00,10,2,1',
+    '701,Radio Romano,02/02/2026 12:00,8,1,0',
+  ].join('\n');
+  const { posts } = parseCSV(csv, 'no-metrics.csv');
+  assert.equal(posts.length, 2);
+  for (const p of posts) {
+    assert.equal(p.views, null);
+    assert.equal(p.reach, null);
+  }
+  assert.equal(posts[0].likes, 10); // other fields unchanged
+  assert.equal(posts[0].interactions, 13);
+});
+
+test('parseCSV keeps 0 when the Visningar/Räckvidd columns exist with 0', () => {
+  const csv = [
+    'Publicerings-id,Sidnamn,Publiceringstid,Visningar,Räckvidd,Reaktioner',
+    '710,Radio Romano,02/01/2026 12:00,0,0,3',
+    '711,Radio Romano,02/02/2026 12:00,500,200,4',
+  ].join('\n');
+  const { posts } = parseCSV(csv, 'zeros.csv');
+  const byId = Object.fromEntries(posts.map(p => [p.post_id, p]));
+  assert.equal(byId['710'].views, 0);
+  assert.equal(byId['710'].reach, 0);
+  assert.equal(byId['711'].views, 500);
+  assert.equal(byId['711'].reach, 200);
+});
+
+test('parseCSV: reach column present but views column missing -> only views NULL', () => {
+  const csv = [
+    'Publicerings-id,Sidnamn,Publiceringstid,Räckvidd,Reaktioner',
+    '720,Radio Romano,02/01/2026 12:00,0,3',
+    '721,Radio Romano,02/02/2026 12:00,40,4',
+  ].join('\n');
+  const { posts } = parseCSV(csv, 'reach-only.csv');
+  assert.equal(posts[0].views, null);
+  assert.equal(posts[0].reach, 0);
+  assert.equal(posts[1].reach, 40);
+});
+
+test('parseCSV still rejects the daily breakdown when views column is missing', () => {
+  assert.throws(() => parseCSV(buildDailyBreakdownCsv(), 'daily.csv'), /daglig nedbrytning/);
+});

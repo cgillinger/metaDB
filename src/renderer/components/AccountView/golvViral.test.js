@@ -609,3 +609,24 @@ describe('exporterade konstanter', () => {
     assert.equal(CADENCE_NORMAL, 1.0);
   });
 });
+
+describe('NULL reach = unknown', () => {
+  const posts = [
+    { reach: 100, publish_time: '2026-02-02 10:00:00' },
+    { reach: null, publish_time: '2026-02-03 10:00:00' },
+    { reach: 300, publish_time: '2026-02-04 10:00:00' },
+  ];
+  it('periodMedian ignores NULL posts instead of treating them as 0', () => {
+    assert.equal(periodMedian(posts), 200);
+  });
+  it('weeklyFloor skips NULL posts', () => {
+    const w = weeklyFloor(posts);
+    assert.equal(w.length, 1);
+    assert.equal(w[0].count, 2);
+    assert.equal(w[0].median, 200);
+  });
+  it('isViral is false and viralShare does not crash for NULL reach', () => {
+    assert.equal(isViral({ reach: null }, 100, { bas: 0, k: 1 }), false);
+    assert.equal(viralShare(posts, 150, { bas: 0, k: 1 }), 300 / 400);
+  });
+});

@@ -26,6 +26,9 @@ function resolveSeriesMonths(spanMonths, monthSet, granularity) {
  * Only metrics listed here are accepted; anything else returns 400.
  * account_reach is handled separately (own table, own query path).
  */
+// Post metrics whose per-month value can be NULL ("unknown") rather than 0.
+const UNKNOWN_AWARE_METRICS = new Set(['views', 'reach', 'average_reach']);
+
 const METRIC_SQL_MAP = {
   views:          'SUM(views)',
   reach:          'CAST(ROUND(AVG(reach)) AS INTEGER)',
@@ -384,7 +387,13 @@ router.get('/', (req, res) => {
     account_name: account.account_name,
     platform: account.platform,
     is_collab: account.is_collab,
-    data: months.map(m => account.dataMap[m] || 0),
+    // NULL = unknown (all posts of the month lack views/reach): keep it null for
+    // those metrics so charts draw a gap instead of a false 0.
+    data: months.map(m => (
+      UNKNOWN_AWARE_METRICS.has(metric) && account.dataMap[m] === null
+        ? null
+        : (account.dataMap[m] || 0)
+    )),
   }));
 
   res.json({

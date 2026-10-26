@@ -84,7 +84,7 @@ router.get('/', (req, res) => {
 
   if (noPagination) {
     const data = db.prepare(
-      `SELECT * FROM posts ${whereClause} ORDER BY ${sort} ${order}`
+      `SELECT * FROM posts ${whereClause} ORDER BY ${sort} IS NULL, ${sort} ${order}`
     ).all(...params);
 
     return res.json({
@@ -102,7 +102,7 @@ router.get('/', (req, res) => {
 
   // Fetch page
   const data = db.prepare(
-    `SELECT * FROM posts ${whereClause} ORDER BY ${sort} ${order} LIMIT ? OFFSET ?`
+    `SELECT * FROM posts ${whereClause} ORDER BY ${sort} IS NULL, ${sort} ${order} LIMIT ? OFFSET ?`
   ).all(...params, pageSize, offset);
 
   res.json({

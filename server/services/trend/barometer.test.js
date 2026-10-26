@@ -51,3 +51,18 @@ test('calcBarometer guards thin data and prevAvg 0', () => {
   assert.equal(calcBarometer([{ avg_views: 1 }], 1), null);        // < window*2
   assert.equal(calcBarometer([{ avg_views: 0 }, { avg_views: 5 }], 1), null); // prevAvg 0
 });
+
+test('calcBarometer ignores months with unknown (null) avg_views instead of counting 0', () => {
+  const months = [
+    { avg_views: 100 }, { avg_views: null }, { avg_views: 120 }, { avg_views: 120 },
+  ];
+  const b = calcBarometer(months, 2);
+  assert.equal(b.prevAvg, 100);   // only the known month, not (100+0)/2
+  assert.equal(b.recentAvg, 120);
+  assert.equal(calcBarometer([{ avg_views: null }, { avg_views: null }, { avg_views: 5 }, { avg_views: 5 }], 2), null);
+});
+
+test('calcYearOverYear returns null when either month has unknown avg_views', () => {
+  assert.equal(calcYearOverYear([{ month: '2025-06', avg_views: null }, { month: '2026-06', avg_views: 10 }]), null);
+  assert.equal(calcYearOverYear([{ month: '2025-06', avg_views: 10 }, { month: '2026-06', avg_views: null }]), null);
+});

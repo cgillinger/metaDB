@@ -39,7 +39,8 @@ const monthName = (monthKey) => {
   return MONTH_NAMES_SV[m - 1] || monthKey;
 };
 
-const fmtNum = (v) => Math.round(v ?? 0).toLocaleString('sv-SE');
+// null = unknown (no post that month has the metric) — shown as a dash, never 0.
+const fmtNum = (v) => (v == null ? '—' : Math.round(v).toLocaleString('sv-SE'));
 
 /** Signed percentage string, e.g. "+5%", "−12%", "±0%". */
 const fmtPct = (delta) => {
@@ -207,7 +208,7 @@ const PlatformTrendView = ({ periodParams = {} }) => {
     const prev = months.length > 1 ? months[months.length - 2] : null;
     const prevMonthLabel = prev ? monthName(prev.month) : null;
     const delta = (cur, before) =>
-      prev && before ? (cur - before) / before : null;
+      prev && cur != null && before ? (cur - before) / before : null;
     return {
       prevMonthLabel,
       views: { value: last.avg_views, delta: delta(last.avg_views, prev?.avg_views) },

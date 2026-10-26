@@ -98,9 +98,12 @@ const truncate = (str, maxLen = 60) => {
  *   xMin        – number|undefined  (ms, vänster kant på x-axeln)
  *   xMax        – number|undefined  (ms, höger kant på x-axeln)
  */
-const PostScatter = ({ points = [], floorPoints = [], threshold, xMin, xMax, floorLabel }) => {
+const PostScatter = ({ points: rawPoints = [], floorPoints = [], threshold, xMin, xMax, floorLabel }) => {
   const [hovered, setHovered] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  // Posts with unknown (NULL) reach are not plotted — they must not land at y = 0.
+  const points = (rawPoints || []).filter(p => p.reach != null);
 
   // ── Tomt läge ──────────────────────────────────────────────────────────────
   if (!points || points.length === 0) {

@@ -15,6 +15,8 @@ export function formatDate(date) {
 }
 
 export function formatNumber(number) {
+  // null/undefined = unknown value (e.g. reach Meta no longer delivers), not 0.
+  if (number === null || number === undefined) return '–'
   return new Intl.NumberFormat('sv-SE').format(number)
 }
 

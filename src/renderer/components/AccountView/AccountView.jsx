@@ -789,7 +789,8 @@ const AccountView = ({
         const displayName = getDisplayName(field);
         if (FB_ONLY_FIELDS.includes(field) && plat === 'instagram') { formatted[displayName] = 'N/A'; continue; }
         if (NON_FB_FIELDS.includes(field) && plat === 'facebook') { formatted[displayName] = 'N/A'; continue; }
-        formatted[displayName] = formatValue(getFieldValue(account, field));
+        const exportValue = getFieldValue(account, field);
+        formatted[displayName] = exportValue == null ? '' : formatValue(exportValue);
       }
       if (selectedFields.includes('account_reach')) {
         for (const month of reachMonths) {

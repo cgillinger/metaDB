@@ -107,6 +107,9 @@ const TrendIcon = ({ trend }) => {
 
 const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showHeader = true }) => {
   const [allPosts, setAllPosts] = useState([]);
+  // Posts whose reach Meta no longer delivers (NULL) are left out of every reach
+  // calculation and plot; they still count towards cadence and are reported here.
+  const [unknownReachPosts, setUnknownReachPosts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
 
@@ -121,7 +124,9 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
         const params = { ...periodParams, paginate: 'false' };
         if (platform) params.platform = platform;
         const data = await api.getPosts(params);
-        setAllPosts(data.data || []);
+        const fetched = data.data || [];
+        setAllPosts(fetched.filter(p => p.reach != null));
+        setUnknownReachPosts(fetched.filter(p => p.reach == null));
       } catch (err) {
         console.error('Fel vid hämtning av inlägg för kontodetalj:', err);
         setError(true);
@@ -203,7 +208,10 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
     const ts = accountPosts.map(p => new Date(p.publish_time).getTime()).filter(t => !isNaN(t));
     periodDays = ts.length >= 2 ? Math.max(1, (Math.max(...ts) - Math.min(...ts)) / 86400000) : 1;
   }
-  const cadence = accountPosts.length / periodDays;
+  const unknownReachCount = unknownReachPosts.filter(
+    p => p.account_name === account.account_name && p.platform === account.platform
+  ).length;
+  const cadence = (accountPosts.length + unknownReachCount) / periodDays;
   const verdict = statusVerdict(analysis.band, analysis.share, cadence);
 
   const platformLabel = account.platform === 'facebook' ? 'Facebook' : 'Instagram';
@@ -252,7 +260,9 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
       <div>
         {header}
         <p className="text-center text-muted-foreground py-12">
-          Inga inlägg för {account.account_name} ({platformLabel}) i vald period.
+          {unknownReachCount > 0
+            ? `Meta har inte levererat räckvidd för ${account.account_name}s ${unknownReachCount.toLocaleString('sv-SE')} inlägg i vald period, så det finns inget att visa.`
+            : `Inga inlägg för ${account.account_name} (${platformLabel}) i vald period.`}
         </p>
       </div>
     );
@@ -316,6 +326,9 @@ const AccountDetailView = ({ account, platform, periodParams = {}, onBack, showH
       {/* Tillförlitlighetsnotis (blockerar inte) */}
       <div className="text-sm mb-4">
         <span className="text-muted-foreground">Bygger på {rel.n} inlägg över {rel.weeks} veckor.</span>
+        {unknownReachCount > 0 && (
+          <span className="text-muted-foreground"> {unknownReachCount.toLocaleString('sv-SE')} inlägg saknar räckvidd hos Meta och är utelämnade.</span>
+        )}
         {rel.thin && (
           <div className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
             {rel.message}

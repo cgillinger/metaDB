@@ -112,3 +112,27 @@ test('excludeCollab drops collaborative posts', () => {
   // Without collab: Σreach 300 / ar 100 = F 3, Σlc 1000 → upper 333.
   assert.deepEqual(without, { upper: 333, lower: 222, quality: 'ok' });
 });
+
+test('posts with NULL reach suppress the month (incomplete Σreach would inflate the estimate)', () => {
+  // 4 known posts (Σreach 240) + 1 unknown: without the guard F = 240/100 = 2.4 and
+  // an estimate would be shown although one post's reach is missing.
+  seedPosts('NUL', '2026-02', 4, 60, 200);
+  insPost.run(importId, `p${postSeq++}`, 'NUL', '2026-02-11 12:00:00', null, 200, 0);
+  insReach.run('NUL', '2026-02', 100);
+  const [row] = getEstimatedUniqueClicks({ accountNames: ['NUL'], months: ['2026-02'] });
+  assert.equal(row.quality, 'suppressed');
+  assert.equal(row.estimated_unique_upper, null);
+  assert.equal(row.sum_post_reach, 240);
+  const byAcct = getEstimatedUniqueClicksByAccount({ accountNames: ['NUL'], months: ['2026-02'] });
+  assert.equal(byAcct['NUL'].quality, 'suppressed');
+});
+
+test('multi-month: a month with NULL-reach posts is skipped, complete months still count', () => {
+  seedPosts('NMM', '2026-02', 5, 60, 200);                 // complete: F 3
+  insReach.run('NMM', '2026-02', 100);
+  seedPosts('NMM', '2026-03', 4, 60, 200);
+  insPost.run(importId, `p${postSeq++}`, 'NMM', '2026-03-11 12:00:00', null, 200, 0);
+  insReach.run('NMM', '2026-03', 100);
+  const byAcct = getEstimatedUniqueClicksByAccount({ accountNames: ['NMM'], months: ['2026-02', '2026-03'] });
+  assert.deepEqual(byAcct['NMM'], { upper: 333, lower: 222, quality: 'ok' });
+});

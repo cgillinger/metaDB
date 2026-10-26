@@ -156,7 +156,8 @@ function groupMonthly(groups, accountRows, keyOf, sumFields, avgSpec) {
       for (const [month, row] of Object.entries(months)) {
         const acc = perMonth[month] || (perMonth[month] = { month, _members: 0 });
         acc._members += 1;
-        for (const f of sumFields) acc[f] = (acc[f] || 0) + (row[f] || 0);
+        // NULL = unknown: skip it, and stay NULL if every member is unknown.
+        for (const f of sumFields) if (row[f] != null) acc[f] = (acc[f] || 0) + row[f];
       }
     }
     for (const month of Object.keys(perMonth).sort()) {
@@ -166,7 +167,7 @@ function groupMonthly(groups, accountRows, keyOf, sumFields, avgSpec) {
         month, month_date: monthDate(month),
         member_count: g.members.length,
       };
-      for (const f of sumFields) rec[f] = acc[f] || 0;
+      for (const f of sumFields) rec[f] = acc[f] ?? null;
       rec[avgSpec.out] = avgPerDay(acc[avgSpec.from] || 0, daysInMonth(month), 1);
       out.push(rec);
     }
