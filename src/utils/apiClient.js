@@ -25,6 +25,12 @@ const handleResponse = async (res) => {
 };
 
 export const api = {
+  // Legacy CrowdTangle (historic monthly totals, own tab only)
+  getCtAccounts: (platform) =>
+    fetchWithRetry(`/api/crowdtangle/accounts?${new URLSearchParams({ platform })}`).then(handleResponse),
+  getCtSeries: (params) =>
+    fetchWithRetry(`/api/crowdtangle/series?${new URLSearchParams(params)}`).then(handleResponse),
+
   // Imports
   getImports: () => fetchWithRetry('/api/imports').then(handleResponse),
   uploadCSV: (file) => {
