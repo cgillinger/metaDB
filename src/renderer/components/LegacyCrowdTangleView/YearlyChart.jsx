@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { distinctBreakpointIndexes } from '../TrendAnalysisView/splicedLine.js';
-import { niceYAxis, ctSegments, isCtYearSource, CT_YEAR_SOURCE_LABEL } from './ctChart.js';
+import { niceYAxis, ctSegments, isCtYearSource, CT_YEAR_SOURCE_LABEL, ctYearNotes } from './ctChart.js';
 
 const X0 = 70, X1 = 930, Y_TOP = 70, Y_BOTTOM = 450, X_PAD = 30;
 
@@ -32,7 +32,7 @@ export default function YearlyChart({ years, lines, metricLabel, showMetadbLegen
         {showMetadbLegend && (
           <span className="flex items-center gap-1.5">
             <svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="white" stroke="currentColor" strokeWidth="2" /></svg>
-            Ofullständigt år (hittills i år)
+            Ofullständigt år (hittills i år eller saknade månader)
           </span>
         )}
       </div>
@@ -67,10 +67,11 @@ export default function YearlyChart({ years, lines, metricLabel, showMetadbLegen
               })}
               {pts.filter(p => p.y !== null).map(p => {
                 const ct = isCtYearSource(p.d.source);
+                const hollow = p.d.partial || p.d.incomplete;
                 return (
                   <circle key={p.year} cx={p.x} cy={p.y} r="6"
-                    fill={p.d.partial ? 'white' : line.color} fillOpacity={ct && !p.d.partial ? 0.45 : 1}
-                    stroke={p.d.partial ? line.color : 'white'} strokeWidth={p.d.partial ? 2.5 : 1.5}
+                    fill={hollow ? 'white' : line.color} fillOpacity={ct && !hollow ? 0.45 : 1}
+                    stroke={hollow ? line.color : 'white'} strokeWidth={hollow ? 2.5 : 1.5}
                     className="cursor-pointer"
                     onMouseEnter={() => setHover({ x: p.x, y: p.y, year: p.year, d: p.d, name: line.account_name })} />
                 );
@@ -92,7 +93,8 @@ export default function YearlyChart({ years, lines, metricLabel, showMetadbLegen
         })}
 
         {hover && (() => {
-          const w = 270, h = 90;
+          const notes = ctYearNotes(hover.d);
+          const w = 330, h = 90 + notes.length * 18;
           let tx = hover.x + 15, ty = hover.y - 45;
           if (tx + w > 990) tx = hover.x - w - 15;
           if (ty < 10) ty = hover.y + 15;
@@ -101,9 +103,10 @@ export default function YearlyChart({ years, lines, metricLabel, showMetadbLegen
             <g pointerEvents="none">
               <rect x={tx} y={ty} width={w} height={h} fill="rgba(0,0,0,0.85)" rx="6" />
               <text x={tx + 12} y={ty + 20} fill="white" fontSize="13" fontWeight="bold">{hover.name}</text>
-              <text x={tx + 12} y={ty + 38} fill="white" fontSize="12">{hover.year}{hover.d.partial ? ', hittills i år' : ''}</text>
+              <text x={tx + 12} y={ty + 38} fill="white" fontSize="12">{hover.year}</text>
               <text x={tx + 12} y={ty + 58} fill="white" fontSize="14" fontWeight="bold">{metricLabel}: {hover.d.value.toLocaleString('sv-SE')}</text>
               <text x={tx + 12} y={ty + 76} fill="#d1d5db" fontSize="11">Källa: {CT_YEAR_SOURCE_LABEL[hover.d.source]}</text>
+              {notes.map((t, i) => <text key={i} x={tx + 12} y={ty + 94 + i * 18} fill="#fbbf24" fontSize="11">{t}</text>)}
             </g>
           );
         })()}

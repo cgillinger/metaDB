@@ -4,7 +4,7 @@ import { Input } from '../ui/input';
 import { api } from '@/utils/apiClient';
 import { distinctBreakpointIndexes, ghostRuns } from '../TrendAnalysisView/splicedLine.js';
 import YearlyChart from './YearlyChart.jsx';
-import { niceYAxis, ctMonthLabel, ctSegments, CT_SOURCE_LABEL } from './ctChart.js';
+import { niceYAxis, ctMonthLabel, ctSegments, CT_SOURCE_LABEL, ctLegendEntries, selectedFirst } from './ctChart.js';
 
 const PLATFORMS = [
   { value: 'facebook', label: 'Facebook' },
@@ -25,6 +25,20 @@ const FIRST_YEAR_YEARLY = 2014;
 const X0 = 70, X1 = 930, Y_TOP = 70, Y_BOTTOM = 450;
 
 const selectClass = 'h-10 rounded-md border border-input bg-background px-3 py-2 text-sm';
+
+/** One swatch + name per selected account, in series order. */
+function AccountLegend({ lines }) {
+  return (
+    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" aria-label="Konton i diagrammet">
+      {ctLegendEntries(lines).map(e => (
+        <li key={e.key} className={`flex items-center gap-1.5 ${e.empty ? 'text-muted-foreground' : ''}`}>
+          <span className="inline-block w-4 h-1 rounded" style={{ backgroundColor: e.empty ? '#9ca3af' : e.color }} />
+          {e.name}{e.empty && ' (ingen data i perioden)'}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export default function LegacyCrowdTangleView() {
   const currentYear = new Date().getFullYear();
@@ -91,12 +105,15 @@ export default function LegacyCrowdTangleView() {
   const curFrom = isYear ? yFromYear : fromYear, curTo = isYear ? yToYear : toYear;
   const setCurFrom = isYear ? setYFromYear : setFromYear, setCurTo = isYear ? setYToYear : setToYear;
   const needle = search.trim().toLocaleLowerCase('sv-SE');
-  const visibleAccounts = useMemo(
-    () => accounts
+  const visibleAccounts = useMemo(() => {
+    const list = accounts
       .filter(a => isYear || a.ct_months > 0) // yearly-only accounts have no monthly curve
       .filter(a => !needle || a.account_name.toLocaleLowerCase('sv-SE').includes(needle))
-      .sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv')),
-    [accounts, needle, isYear]);
+      .sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
+    return needle ? list : selectedFirst(list, selected);
+  }, [accounts, needle, isYear, selected]);
+  const colorOf = (key) => COLORS[selected.indexOf(key) % COLORS.length];
+  const selectedAccounts = selected.map(k => accounts.find(a => a.account_key === k)).filter(Boolean);
 
   const toggle = (key) => setSelected(prev =>
     prev.includes(key) ? prev.filter(k => k !== key) : (prev.length >= MAX_SELECTED ? prev : [...prev, key]));
@@ -106,6 +123,7 @@ export default function LegacyCrowdTangleView() {
     ...s, breakpointMonth: s.breakpoint_month, color: COLORS[selected.indexOf(s.account_key) % COLORS.length] ?? COLORS[i % COLORS.length],
   })), [data, selected]);
 
+  const gapMonths = useMemo(() => new Set(lines.flatMap(l => l.data.map((d, i) => (d.gap ? months[i] : null))).filter(Boolean)), [lines, months]);
   const yAxis = useMemo(() => niceYAxis(lines.flatMap(l => l.data.flatMap(d => [d.value, d.ghost]))), [lines]);
   const xOf = (i) => X0 + (i / Math.max(1, months.length - 1)) * (X1 - X0);
   const yOf = (v) => Y_BOTTOM - (v / yAxis.max) * (Y_BOTTOM - Y_TOP);
@@ -188,6 +206,19 @@ export default function LegacyCrowdTangleView() {
                 <button className="text-xs underline text-muted-foreground cursor-pointer" onClick={() => setSelected([])}>Rensa val</button>
               )}
             </div>
+            {selectedAccounts.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2" aria-label="Valda konton">
+                <span className="text-xs font-medium">Valda konton:</span>
+                {selectedAccounts.map(a => (
+                  <span key={a.account_key} className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 pl-2 pr-1 py-0.5 text-xs">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colorOf(a.account_key) }} />
+                    {a.account_name}
+                    <button type="button" aria-label={`Ta bort ${a.account_name}`} onClick={() => toggle(a.account_key)}
+                      className="rounded-full px-1.5 text-sm leading-none text-muted-foreground hover:bg-muted cursor-pointer">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
             <Input placeholder="Sök konto" value={search} onChange={e => setSearch(e.target.value)} aria-label="Sök konto" />
             <div className="max-h-48 overflow-y-auto border rounded-md divide-y">
               {visibleAccounts.length === 0 && <div className="p-3 text-sm text-muted-foreground">Inga konton hittades.</div>}
@@ -203,9 +234,12 @@ export default function LegacyCrowdTangleView() {
                       {a.account_name}
                       {/* CT has no stable id for IG/Twitter — a handle change splits the series, so show the handle to tell same-named rows apart */}
                       {platform !== 'facebook' && <span className="ml-1 text-xs text-muted-foreground">@{a.account_key}</span>}
+                      {a.former_names?.length > 0 && (
+                        <span className="block text-xs text-muted-foreground">Hette tidigare: {a.former_names.join(', ')}</span>
+                      )}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {isYear ? a.first_year : a.first_month.slice(0, 4)}–{isYear ? a.last_year : a.last_month.slice(0, 4)}{hasMetadbSide && !a.has_metadb ? ' · endast CrowdTangle' : ''}
+                      {isYear ? a.first_year : a.first_month.slice(0, 4)}–{isYear ? a.last_year : (a.has_metadb ? a.last_year : a.last_month.slice(0, 4))}{hasMetadbSide && !a.has_metadb ? ' · endast CrowdTangle' : ''}
                     </span>
                   </label>
                 );
@@ -223,6 +257,7 @@ export default function LegacyCrowdTangleView() {
 
           {isYear && yearLines.length > 0 && (yData?.years ?? []).length > 0 && (
             <>
+              <AccountLegend lines={yearLines} />
               <YearlyChart years={yData.years} lines={yearLines} metricLabel={metricLabel} showMetadbLegend={hasMetadbSide} />
               <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
                 <li>Varje år kommer från <strong>en enda källa</strong>: metaDB där appen har ett helt år, annars CrowdTangle. Källorna summeras eller räknas aldrig ihop. Håll muspekaren över en punkt för att se vilken källa den kommer från.</li>
@@ -231,6 +266,7 @@ export default function LegacyCrowdTangleView() {
                 <li>2020 saknas för de flesta konton eftersom exporterna för januari och februari 2020 saknas. Undantaget är P4-lokalkanalerna, som har en helårsexport för 2020.</li>
                 <li>Instagram räknar bara gilla-markeringar och kommentarer.</li>
                 <li>Det pågående året visas med ihålig markering och är bara värdet hittills i år.</li>
+                <li>Ihåliga punkter med saknade månader beror på att månader saknas i Metas exportfiler (se Importhantering → Öppna luckor). Årssumman är då för låg.</li>
               </ul>
               {platform === 'twitter' && (
                 <p className="text-xs text-muted-foreground">Twitter finns bara i CrowdTangle-materialet (2014–2018). Appen har ingen egen Twitter-data.</p>
@@ -243,6 +279,7 @@ export default function LegacyCrowdTangleView() {
 
           {!isYear && lines.length > 0 && months.length > 0 && (
             <>
+              <AccountLegend lines={lines} />
               <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <svg width="26" height="8" aria-hidden="true"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" strokeWidth="2.5" strokeDasharray="7 4" strokeOpacity="0.45" /></svg>
@@ -275,6 +312,14 @@ export default function LegacyCrowdTangleView() {
                   <g key={m}>
                     <line x1={xOf(i)} y1={Y_BOTTOM} x2={xOf(i)} y2={Y_BOTTOM + 5} stroke="#9ca3af" />
                     <text x={xOf(i)} y={Y_BOTTOM + 22} textAnchor="middle" fontSize="13" fill="#6b7280">{m.slice(0, 4)}</text>
+                  </g>
+                ) : null))}
+
+                {months.map((m, i) => (gapMonths.has(m) ? (
+                  <g key={`gap-${m}`}>
+                    <title>Saknas i Metas export: {ctMonthLabel(m)}</title>
+                    <rect x={xOf(i) - 4} y={Y_TOP} width="8" height={Y_BOTTOM - Y_TOP} fill="#9ca3af" fillOpacity="0.15" />
+                    <circle cx={xOf(i)} cy={Y_BOTTOM} r="3" fill="#9ca3af"><title>Saknas i Metas export: {ctMonthLabel(m)}</title></circle>
                   </g>
                 ) : null))}
 

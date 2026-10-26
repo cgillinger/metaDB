@@ -53,3 +53,34 @@ export const isCtYearSource = (source) => source === 'crowdtangle_months' || sou
 export function ctYearLabel(year, partial) {
   return partial ? `${year} (hittills i år)` : String(year);
 }
+
+/** ['2024-07', '2024-11'] → 'juli och november 2024' (months must share a year or are listed with years). */
+export function ctMissingMonthsText(months) {
+  const list = months || [];
+  const years = new Set(list.map(m => m.slice(0, 4)));
+  const names = list.map(m => (years.size === 1 ? MONTH_NAMES_SV[Number(m.slice(5)) - 1] : ctMonthLabel(m)));
+  const joined = names.length > 1 ? `${names.slice(0, -1).join(', ')} och ${names.at(-1)}` : (names[0] ?? '');
+  return years.size === 1 ? `${joined} ${[...years][0]}` : joined;
+}
+
+/** Tooltip lines for a yearly point: partial and/or missing months, in that order. */
+export function ctYearNotes(d) {
+  const notes = [];
+  if (d?.incomplete && d.missing_months?.length) notes.push(`Ofullständigt: saknar data för ${ctMissingMonthsText(d.missing_months)}`);
+  if (d?.partial) notes.push('Ofullständigt: hittills i år');
+  return notes;
+}
+
+/** Legend entries: one per selected account, in series order; greyed when it has no value in the range. */
+export function ctLegendEntries(lines) {
+  return (lines || []).map(l => ({
+    key: l.account_key, name: l.account_name, color: l.color,
+    empty: !l.data.some(d => d.value !== null && d.value !== undefined),
+  }));
+}
+
+/** Selected accounts first (keeping the given order inside both groups). */
+export function selectedFirst(accounts, selected) {
+  const on = new Set(selected);
+  return [...accounts.filter(a => on.has(a.account_key)), ...accounts.filter(a => !on.has(a.account_key))];
+}

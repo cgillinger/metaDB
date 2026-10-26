@@ -190,6 +190,44 @@ test('yearly: twitter is CT only; yearly-only accounts are listed; bad input is 
   assert.equal((await get('/yearly?platform=x&metric=posts&accounts=1')).status, 400);
 });
 
+test('accounts: former_names newest first; last_year extended by metaDB', async () => {
+  const acc = (await get('/accounts?platform=facebook')).body.accounts;
+  const a111 = acc.find(a => a.account_key === '111');
+  assert.deepEqual(a111.former_names, ['Radiosporten (gammalt)']);
+  assert.equal(a111.last_year, 2024); // CT ends 2024-01/2023, metaDB 2024
+  assert.deepEqual(acc.find(a => a.account_key === '222').former_names, []);
+  db.prepare("INSERT INTO posts (import_id, post_id, account_id, account_name, publish_time, platform, interactions) VALUES ((SELECT id FROM imports LIMIT 1), 'late', '111', 'Radiosporten', '2026-03-01 10:00:00', 'facebook', 1)").run();
+  const again = (await get('/accounts?platform=facebook')).body.accounts.find(a => a.account_key === '111');
+  assert.equal(again.last_year, 2026);
+  db.prepare("DELETE FROM posts WHERE post_id = 'late'").run();
+  loadRows(db, [ct('facebook', '888', 'Ny tid', '2017-05', 1), ct('facebook', '888', 'Mellan', '2017-03', 1), ct('facebook', '888', 'Gammal', '2017-01', 1)]);
+  const a888 = (await get('/accounts?platform=facebook')).body.accounts.find(a => a.account_key === '888');
+  assert.equal(a888.account_name, 'Ny tid');
+  assert.deepEqual(a888.former_names, ['Mellan', 'Gammal']);
+});
+
+test('gaps: open gaps flag monthly points and mark yearly metaDB points incomplete; resolved ignored', async () => {
+  const gap = db.prepare('INSERT INTO account_gaps (account_name, platform, month, resolved_at) VALUES (?, ?, ?, ?)');
+  gap.run('Radiosporten', 'facebook', '2024-03', null);
+  gap.run('Radiosporten', 'facebook', '2024-07', null);
+  gap.run('Radiosporten', 'facebook', '2024-09', '2026-01-01 00:00:00');
+  gap.run('Radiosporten', 'facebook', '2023-12', null);
+  const m = (await get('/series?platform=facebook&metric=interactions&accounts=111&from=2024-01&to=2024-09')).body.series[0];
+  const flagged = m.data.map((d, i) => (d.gap ? '2024-0' + (i + 1) : null)).filter(Boolean);
+  assert.deepEqual(flagged, ['2024-03', '2024-07']);
+  assert.equal(m.data[2].value, null); // value untouched
+  assert.equal(m.data[0].gap, undefined);
+  const y = (await get('/yearly?platform=facebook&metric=interactions&accounts=111&from=2023&to=2024')).body.series[0];
+  assert.equal(y.data[0].incomplete, undefined); // 2023 is CT-sourced: no gap info
+  assert.deepEqual(y.data[1].missing_months, ['2024-03', '2024-07']);
+  assert.equal(y.data[1].incomplete, true);
+  assert.equal(y.data[1].value, 190); // raw sum, never scaled
+  db.prepare("DELETE FROM account_gaps WHERE month IN ('2024-03', '2024-07')").run();
+  const clean = (await get('/yearly?platform=facebook&metric=interactions&accounts=111&from=2024&to=2024')).body.series[0];
+  assert.deepEqual(clean.data[0].missing_months, []);
+  assert.equal(clean.data[0].incomplete, false);
+});
+
 test('loader: clear Swedish error naming migration 016 when ct_yearly is missing', async () => {
   const { default: Database } = await import('better-sqlite3');
   const bare = new Database(':memory:');

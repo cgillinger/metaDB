@@ -69,6 +69,39 @@ function latestCtName(db, platform, key) {
   return y ? y.account_name : null;
 }
 
+/** Last metaDB year with posts per account name (matched by name, as the series are). */
+function metadbLastYears(db, platform) {
+  if (platform === 'twitter') return new Map();
+  return new Map(db.prepare(`
+    SELECT account_name, MAX(substr(publish_time, 1, 4)) AS y FROM posts
+    WHERE platform = ? AND publish_time IS NOT NULL GROUP BY account_name`).all(platform).map(r => [r.account_name, Number(r.y)]));
+}
+
+/** Other CT display names used for a key, newest first (yearly rows count as December). */
+function formerNames(db, platform, key, current) {
+  return db.prepare(`
+    SELECT account_name FROM (
+      SELECT account_name, month AS p FROM ct_monthly WHERE platform = ? AND account_key = ?
+      UNION ALL
+      SELECT account_name, year || '-12' AS p FROM ct_yearly WHERE platform = ? AND account_key = ?)
+    WHERE account_name != ? GROUP BY account_name ORDER BY MAX(p) DESC`)
+    .all(platform, key, platform, key, current).map(r => r.account_name);
+}
+
+/**
+ * Open gaps (months known to be missing from Meta's exports; resolved_at IS NULL)
+ * per metaDB account name: Map<name, Set<'YYYY-MM'>>. Resolved gaps are ignored.
+ */
+function openGaps(db, platform, names) {
+  const out = new Map();
+  if (platform === 'twitter' || !names.length) return out;
+  const rows = db.prepare(`
+    SELECT account_name, month FROM account_gaps
+    WHERE platform = ? AND resolved_at IS NULL AND account_name IN (${names.map(() => '?').join(',')})`).all(platform, ...names);
+  for (const r of rows) (out.get(r.account_name) ?? out.set(r.account_name, new Set()).get(r.account_name)).add(r.month);
+  return out;
+}
+
 /**
  * Accounts that have CT data (monthly and/or yearly), with display name, CT spans
  * and metaDB link. first_month/last_month/ct_months describe ct_monthly only
@@ -84,6 +117,7 @@ export function listAccounts(db, platform) {
   const yearly = new Map(db.prepare(`
     SELECT account_key, MIN(year) AS first_year, MAX(year) AS last_year, COUNT(*) AS years
     FROM ct_yearly WHERE platform = ? GROUP BY account_key`).all(platform).map(r => [r.account_key, r]));
+  const metaLast = metadbLastYears(db, platform);
   const out = [];
   for (const key of new Set([...monthly.keys(), ...yearly.keys()])) {
     const m = monthly.get(key), y = yearly.get(key);
@@ -91,12 +125,13 @@ export function listAccounts(db, platform) {
     const name = linked || latestCtName(db, platform, key);
     if (hidden.has(name)) continue;
     const firstYear = [m?.first_month.slice(0, 4), y?.first_year].filter(Boolean).sort()[0];
-    const lastYear = [m?.last_month.slice(0, 4), y?.last_year].filter(Boolean).sort().at(-1);
+    const lastYear = [m?.last_month.slice(0, 4), y?.last_year, linked ? metaLast.get(name) : null]
+      .filter(Boolean).map(Number).sort((a, b) => a - b).at(-1);
     out.push({
       account_key: key, account_name: name,
       first_month: m?.first_month ?? null, last_month: m?.last_month ?? null, ct_months: m?.months ?? 0,
-      first_year: Number(firstYear), last_year: Number(lastYear), ct_years: y?.years ?? 0,
-      has_metadb: !!linked,
+      first_year: Number(firstYear), last_year: lastYear, ct_years: y?.years ?? 0,
+      has_metadb: !!linked, former_names: formerNames(db, platform, key, name),
     });
   }
   return out.sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv'));
@@ -148,12 +183,14 @@ export function buildSeries(db, { platform, metric, accounts, from, to }) {
   if (!lo || !hi || lo > hi) return { months: [], series: [] };
   const axis = monthRange(lo, hi);
 
+  const gaps = openGaps(db, platform, linkedNames);
   const series = [];
   for (const key of keys) {
     if (!ct[key] && !meta[key]) continue;
     const name = names.get(key) || ctName[key] || key;
     if (hidden.has(name)) continue;
     const s = spliceAccountSeries(axis, ct[key], meta[key]);
+    const gapMonths = gaps.get(names.get(key));
     const label = (src) => (src === 'legacy' ? 'crowdtangle' : src === 'viewers' ? 'metadb' : null);
     // CT is closed-ended (no later backfill), so the switch is simply the first
     // metaDB month after a CT month. spliceAccountSeries anchors its marker on the
@@ -165,7 +202,12 @@ export function buildSeries(db, { platform, metric, accounts, from, to }) {
     }
     series.push({
       account_key: key, account_name: name,
-      data: s.data.map(d => ({ value: d.value, source: label(d.source), ghost: d.ghost })),
+      data: s.data.map((d, i) => {
+        const point = { value: d.value, source: label(d.source), ghost: d.ghost };
+        // Month known to be missing from Meta's export (display flag only; value untouched).
+        if (gapMonths?.has(axis[i])) point.gap = true;
+        return point;
+      }),
       breakpoint_month: breakpoint,
       splice_status: s.splice_status === 'legacy_only' ? 'crowdtangle_only'
         : s.splice_status === 'viewers_only' ? 'metadb_only' : s.splice_status,
@@ -238,6 +280,7 @@ export function buildYearlySeries(db, { platform, metric, accounts, fromYear, to
     if (!ctName[r.account_key] || ctName[r.account_key].p < p) ctName[r.account_key] = { p, name: r.account_name };
   }
 
+  const gaps = openGaps(db, platform, linkedNames);
   const series = [];
   for (const key of keys) {
     if (!meta[key] && !months[key] && !yearly[key] && !ctName[key]) continue;
@@ -246,7 +289,11 @@ export function buildYearlySeries(db, { platform, metric, accounts, fromYear, to
     const data = years.map((y) => {
       const ys = String(y);
       if (fullMetadbYear(y) && meta[key]?.[ys] !== undefined) {
-        return { value: meta[key][ys], source: 'metadb', partial: y === currentYear };
+        const missing = [...(gaps.get(names.get(key)) ?? [])].filter(g => g.startsWith(`${ys}-`)).sort();
+        return {
+          value: meta[key][ys], source: 'metadb', partial: y === currentYear,
+          missing_months: missing, incomplete: missing.length > 0,
+        };
       }
       const m = months[key]?.[ys];
       if (m && m.n === 12) return { value: m.sum, source: 'crowdtangle_months', partial: false };
