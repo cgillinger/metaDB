@@ -19,3 +19,13 @@ test('ctSegments breaks at gaps and takes right-hand source', () => {
   assert.equal(segs.length, 2);
   assert.deepEqual(segs.map(s => s.source), ['crowdtangle', 'metadb']);
 });
+
+test('yearly helpers: source labels, CT detection, partial year label', async () => {
+  const { CT_YEAR_SOURCE_LABEL, isCtYearSource, ctYearLabel } = await import('./ctChart.js');
+  assert.equal(CT_YEAR_SOURCE_LABEL.crowdtangle_months, 'CrowdTangle, summa av 12 månader');
+  assert.equal(CT_YEAR_SOURCE_LABEL.crowdtangle_year, 'CrowdTangle, helårsexport');
+  assert.equal(isCtYearSource('crowdtangle_year'), true);
+  assert.equal(isCtYearSource('metadb'), false);
+  assert.equal(ctYearLabel(2026, true), '2026 (hittills i år)');
+  assert.equal(ctYearLabel(2024, false), '2024');
+});

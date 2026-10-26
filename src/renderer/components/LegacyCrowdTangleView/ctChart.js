@@ -38,3 +38,18 @@ export function ctSegments(points) {
   }
   return segs;
 }
+
+/** Tooltip source text for the yearly view. */
+export const CT_YEAR_SOURCE_LABEL = {
+  metadb: 'metaDB',
+  crowdtangle_months: 'CrowdTangle, summa av 12 månader',
+  crowdtangle_year: 'CrowdTangle, helårsexport',
+};
+
+/** True for every CrowdTangle-sourced point (drawn dashed and faded). */
+export const isCtYearSource = (source) => source === 'crowdtangle_months' || source === 'crowdtangle_year';
+
+/** Year tick label; the current year is marked as year-to-date when partial. */
+export function ctYearLabel(year, partial) {
+  return partial ? `${year} (hittills i år)` : String(year);
+}

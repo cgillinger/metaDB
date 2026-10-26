@@ -16,7 +16,8 @@ const lastDayOfMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 
 /**
  * Parse a leaderboard filename (basename).
- * @returns {{ok: true, platform, list, month, exportedAt: string|null, exportDateSource: 'filename'|null}
+ * Periods: one calendar month ('month') or one full calendar year ('year').
+ * @returns {{ok: true, platform, list, period, month|year, exportedAt: string|null, exportDateSource: 'filename'|null}
  *          | {ok: false, reason: string}}
  */
 export function parseFilename(basename) {
@@ -27,7 +28,8 @@ export function parseFilename(basename) {
   if (!ALLOWED_LISTS.has(list)) return { ok: false, reason: 'excluded_list' };
   const [Y, M, D, EY, EM, ED] = [sy, sm, sd, ey, em, ed].map(Number);
   const isMonth = sd === '01' && Y === EY && M === EM && ED === lastDayOfMonth(EY, EM);
-  if (!isMonth) return { ok: false, reason: 'not_one_month' };
+  const isYear = sm === '01' && sd === '01' && Y === EY && em === '12' && ed === '31';
+  if (!isMonth && !isYear) return { ok: false, reason: 'not_one_month' };
 
   let exportedAt = null;
   const p = PREFIX_RE.exec(basename);
@@ -37,7 +39,9 @@ export function parseFilename(basename) {
     exportedAt = new Date(Date.UTC(y, mo - 1, d, h - off, mi, s)).toISOString();
   }
   return {
-    ok: true, platform, list, month: `${sy}-${sm}`,
+    ok: true, platform, list,
+    period: isYear ? 'year' : 'month',
+    ...(isYear ? { year: sy } : { month: `${sy}-${sm}` }),
     exportedAt, exportDateSource: exportedAt ? 'filename' : null,
   };
 }
@@ -148,21 +152,25 @@ export function parseLeaderboard(text, platform) {
   return rows;
 }
 
-function monthEndMs(month) {
-  const [y, m] = month.split('-').map(Number);
+const periodKey = (c) => c.year ?? c.month;
+
+function periodEndMs(c) {
+  if (c.year) return Date.UTC(Number(c.year), 11, 31, 23, 59, 59);
+  const [y, m] = c.month.split('-').map(Number);
   return Date.UTC(y, m - 1, lastDayOfMonth(y, m), 23, 59, 59);
 }
 
 /**
- * Pick ONE row per platform+account+month. Candidates carry exported_at (ISO)
- * and export_date_source ('filename' | 'mtime'). Rule: smallest exported_at at or
- * after month end; if none, the latest. mtime-dated candidates (may be a copy
- * date) only compete when no filename-dated candidate exists.
+ * Pick ONE row per platform+account+period (month 'YYYY-MM' or year 'YYYY').
+ * Candidates carry exported_at (ISO) and export_date_source ('filename' | 'mtime').
+ * Rule: smallest exported_at at or after period end; if none, the latest.
+ * mtime-dated candidates (may be a copy date) only compete when no
+ * filename-dated candidate exists.
  */
 export function selectRows(candidates) {
   const groups = new Map();
   for (const c of candidates) {
-    const k = `${c.platform}|${c.account_key}|${c.month}`;
+    const k = `${c.platform}|${c.account_key}|${periodKey(c)}`;
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(c);
   }
@@ -170,13 +178,13 @@ export function selectRows(candidates) {
   for (const list of groups.values()) {
     const named = list.filter(c => c.export_date_source === 'filename');
     const pool = named.length ? named : list;
-    const end = monthEndMs(pool[0].month);
+    const end = periodEndMs(pool[0]);
     const t = (c) => Date.parse(c.exported_at);
     const after = pool.filter(c => t(c) >= end).sort((a, b) => t(a) - t(b));
     const best = after.length ? after[0] : [...pool].sort((a, b) => t(b) - t(a))[0];
     picked.push(best);
   }
   return picked.sort((a, b) =>
-    a.platform.localeCompare(b.platform) || a.month.localeCompare(b.month) ||
+    a.platform.localeCompare(b.platform) || periodKey(a).localeCompare(periodKey(b)) ||
     a.account_key.localeCompare(b.account_key));
 }

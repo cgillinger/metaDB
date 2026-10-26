@@ -3,12 +3,14 @@
  * importCrowdtangle.js — two-step import of historic CrowdTangle monthly totals.
  *
  *   node server/scripts/importCrowdtangle.js --archive <dir> --out <file.ndjson>
+ *     Add --period year to pick full-year exports instead of months (default month).
  *     Walks the archive, parses leaderboard CSVs, picks one export per
  *     account+platform+month and writes NDJSON. Runs on the workstation.
  *
  *   node server/scripts/importCrowdtangle.js --load <file.ndjson> --db <path> [--dry-run]
- *     Upserts the NDJSON into ct_monthly in one transaction (migration 015 must
- *     already have run, i.e. the app must have started once on that DB).
+ *     Upserts the NDJSON in one transaction: rows with `year` into ct_yearly
+ *     (migration 016), rows with `month` into ct_monthly (migration 015). The
+ *     app must have started once on that DB so the migrations have run.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,7 +28,7 @@ function* walk(dir) {
   }
 }
 
-function parseArchive(archive) {
+function parseArchive(archive, period = 'month') {
   const skipped = {};
   const skip = (r) => { skipped[r] = (skipped[r] || 0) + 1; };
   const candidates = [];
@@ -37,6 +39,7 @@ function parseArchive(archive) {
     if (!/\.csv$/i.test(base.replace(/ \(\d+\)(?=\.csv$)/i, ''))) { skip('not_csv'); continue; }
     const meta = parseFilename(base);
     if (!meta.ok) { skip(meta.reason); continue; }
+    if (meta.period !== period) { skip(`other_period_${meta.period}`); continue; }
     let text;
     try { text = fs.readFileSync(file, 'utf-8'); } catch { skip('unreadable'); continue; }
     const rows = parseLeaderboard(text, meta.platform);
@@ -45,7 +48,7 @@ function parseArchive(archive) {
     if (!exportedAt) { exportedAt = fs.statSync(file).mtime.toISOString(); source = 'mtime'; }
     filesUsed++;
     for (const r of rows) {
-      candidates.push({ ...r, month: meta.month, source_list: meta.list, source_filename: base,
+      candidates.push({ ...r, [period]: meta[period], source_list: meta.list, source_filename: base,
         exported_at: exportedAt, export_date_source: source });
     }
   }
@@ -60,7 +63,8 @@ function monthsBetween(a, b) {
   return out;
 }
 
-function printCoverage({ selected, candidates, filesUsed, skipped }) {
+function printCoverage({ selected, candidates, filesUsed, skipped }, period = 'month') {
+  if (period === 'year') return printYearlyCoverage({ selected, candidates, filesUsed, skipped });
   console.log(`Filer använda: ${filesUsed}; kandidatrader: ${candidates}; valda rader: ${selected.length}`);
   console.log('Filer hoppade över:', JSON.stringify(skipped));
   for (const p of ['facebook', 'instagram', 'twitter']) {
@@ -79,16 +83,35 @@ function printCoverage({ selected, candidates, filesUsed, skipped }) {
   }
 }
 
+function printYearlyCoverage({ selected, candidates, filesUsed, skipped }) {
+  console.log(`Filer använda: ${filesUsed}; kandidatrader: ${candidates}; valda rader: ${selected.length}`);
+  console.log('Filer hoppade över:', JSON.stringify(skipped));
+  for (const p of ['facebook', 'instagram', 'twitter']) {
+    const rows = selected.filter(r => r.platform === p);
+    if (!rows.length) { console.log(`${p}: inga rader`); continue; }
+    console.log(`${p}: ${rows.length} rader, ${new Set(rows.map(r => r.account_key)).size} konton`);
+    const years = [...new Set(rows.map(r => r.year))].sort();
+    for (const y of years) {
+      const ys = rows.filter(r => r.year === y);
+      const srcs = {};
+      for (const r of ys) srcs[r.export_date_source] = (srcs[r.export_date_source] || 0) + 1;
+      console.log(`  ${y}: ${ys.length} konton, listor ${[...new Set(ys.map(r => r.source_list))].join('+')}, exportdatum ${JSON.stringify(srcs)}`);
+    }
+  }
+}
+
 function main() {
   const { values: a } = parseArgs({ options: {
     archive: { type: 'string' }, out: { type: 'string' }, load: { type: 'string' },
     db: { type: 'string' }, 'dry-run': { type: 'boolean', default: false },
+    period: { type: 'string', default: 'month' },
   } });
 
   if (a.archive && a.out) {
-    const result = parseArchive(a.archive);
+    if (!['month', 'year'].includes(a.period)) { console.error('--period måste vara month eller year.'); process.exitCode = 2; return; }
+    const result = parseArchive(a.archive, a.period);
     fs.writeFileSync(a.out, result.selected.map(r => JSON.stringify(r)).join('\n') + '\n');
-    printCoverage(result);
+    printCoverage(result, a.period);
     console.log(`Skrev ${result.selected.length} rader till ${a.out}`);
   } else if (a.load && a.db) {
     const rows = fs.readFileSync(a.load, 'utf-8').split('\n').filter(Boolean).map(l => JSON.parse(l));
@@ -96,8 +119,9 @@ function main() {
     db.pragma('busy_timeout = 5000');
     try {
       const res = loadRows(db, rows, { dryRun: a['dry-run'] });
-      const total = db.prepare('SELECT COUNT(*) AS n FROM ct_monthly').get().n;
-      console.log(`${a['dry-run'] ? '[dry-run, inget sparat] ' : ''}Nya: ${res.inserted}, uppdaterade: ${res.updated}, rader i filen: ${rows.length}, ct_monthly totalt nu: ${total}`);
+      const table = rows.some(r => r.year) ? 'ct_yearly' : 'ct_monthly';
+      const total = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+      console.log(`${a['dry-run'] ? '[dry-run, inget sparat] ' : ''}Nya: ${res.inserted}, uppdaterade: ${res.updated}, rader i filen: ${rows.length}, ${table} totalt nu: ${total}`);
     } catch (e) {
       console.error(e.message);
       process.exitCode = 1;

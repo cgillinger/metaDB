@@ -30,6 +30,8 @@ export const api = {
     fetchWithRetry(`/api/crowdtangle/accounts?${new URLSearchParams({ platform })}`).then(handleResponse),
   getCtSeries: (params) =>
     fetchWithRetry(`/api/crowdtangle/series?${new URLSearchParams(params)}`).then(handleResponse),
+  getCtYearly: (params) =>
+    fetchWithRetry(`/api/crowdtangle/yearly?${new URLSearchParams(params)}`).then(handleResponse),
 
   // Imports
   getImports: () => fetchWithRetry('/api/imports').then(handleResponse),

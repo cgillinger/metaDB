@@ -3,6 +3,7 @@ import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { api } from '@/utils/apiClient';
 import { distinctBreakpointIndexes, ghostRuns } from '../TrendAnalysisView/splicedLine.js';
+import YearlyChart from './YearlyChart.jsx';
 import { niceYAxis, ctMonthLabel, ctSegments, CT_SOURCE_LABEL } from './ctChart.js';
 
 const PLATFORMS = [
@@ -20,6 +21,7 @@ const COLORS = [
 ];
 const MAX_SELECTED = 12;
 const FIRST_YEAR = 2018;
+const FIRST_YEAR_YEARLY = 2014;
 const X0 = 70, X1 = 930, Y_TOP = 70, Y_BOTTOM = 450;
 
 const selectClass = 'h-10 rounded-md border border-input bg-background px-3 py-2 text-sm';
@@ -30,6 +32,10 @@ export default function LegacyCrowdTangleView() {
   const [metric, setMetric] = useState('interactions');
   const [fromYear, setFromYear] = useState(FIRST_YEAR);
   const [toYear, setToYear] = useState(currentYear);
+  const [view, setView] = useState('month'); // 'month' | 'year'
+  const [yFromYear, setYFromYear] = useState(FIRST_YEAR_YEARLY);
+  const [yToYear, setYToYear] = useState(currentYear);
+  const [yData, setYData] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState('');
@@ -41,19 +47,20 @@ export default function LegacyCrowdTangleView() {
   // Load the account list when the platform changes; preselect the account with the longest history.
   useEffect(() => {
     let cancelled = false;
-    setAccounts([]); setSelected([]); setData(null); setError(null); setSearch('');
+    setAccounts([]); setSelected([]); setData(null); setYData(null); setError(null); setSearch('');
     api.getCtAccounts(platform).then(res => {
       if (cancelled) return;
       setAccounts(res.accounts);
       const best = [...res.accounts].sort((a, b) =>
-        (b.has_metadb - a.has_metadb) || (b.ct_months - a.ct_months))[0];
+        (b.has_metadb - a.has_metadb) || ((b.ct_months + b.ct_years) - (a.ct_months + a.ct_years)))[0];
       if (best) setSelected([best.account_key]);
     }).catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
   }, [platform]);
 
   useEffect(() => {
-    if (!selected.length) { setData(null); return; }
+    if (view !== 'month') return undefined;
+    if (!selected.length) { setData(null); setLoading(false); return undefined; }
     let cancelled = false;
     setLoading(true); setError(null);
     const params = {
@@ -64,15 +71,32 @@ export default function LegacyCrowdTangleView() {
       .catch(e => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [platform, metric, selected, fromYear, toYear, currentYear]);
+  }, [view, platform, metric, selected, fromYear, toYear, currentYear]);
 
-  const years = useMemo(() => Array.from({ length: currentYear - FIRST_YEAR + 1 }, (_, i) => FIRST_YEAR + i), [currentYear]);
+  useEffect(() => {
+    if (view !== 'year') return undefined;
+    if (!selected.length) { setYData(null); setLoading(false); return undefined; }
+    let cancelled = false;
+    setLoading(true); setError(null);
+    api.getCtYearly({ platform, metric, accounts: selected.join(','), from: String(yFromYear), to: String(yToYear) })
+      .then(res => { if (!cancelled) setYData(res); })
+      .catch(e => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [view, platform, metric, selected, yFromYear, yToYear]);
+
+  const isYear = view === 'year';
+  const firstSelectable = isYear ? FIRST_YEAR_YEARLY : FIRST_YEAR;
+  const years = useMemo(() => Array.from({ length: currentYear - firstSelectable + 1 }, (_, i) => firstSelectable + i), [currentYear, firstSelectable]);
+  const curFrom = isYear ? yFromYear : fromYear, curTo = isYear ? yToYear : toYear;
+  const setCurFrom = isYear ? setYFromYear : setFromYear, setCurTo = isYear ? setYToYear : setToYear;
   const needle = search.trim().toLocaleLowerCase('sv-SE');
   const visibleAccounts = useMemo(
     () => accounts
+      .filter(a => isYear || a.ct_months > 0) // yearly-only accounts have no monthly curve
       .filter(a => !needle || a.account_name.toLocaleLowerCase('sv-SE').includes(needle))
       .sort((a, b) => a.account_name.localeCompare(b.account_name, 'sv')),
-    [accounts, needle]);
+    [accounts, needle, isYear]);
 
   const toggle = (key) => setSelected(prev =>
     prev.includes(key) ? prev.filter(k => k !== key) : (prev.length >= MAX_SELECTED ? prev : [...prev, key]));
@@ -85,6 +109,9 @@ export default function LegacyCrowdTangleView() {
   const yAxis = useMemo(() => niceYAxis(lines.flatMap(l => l.data.flatMap(d => [d.value, d.ghost]))), [lines]);
   const xOf = (i) => X0 + (i / Math.max(1, months.length - 1)) * (X1 - X0);
   const yOf = (v) => Y_BOTTOM - (v / yAxis.max) * (Y_BOTTOM - Y_TOP);
+  const yearLines = useMemo(() => (yData?.series ?? []).map((s, i) => ({
+    ...s, breakpointMonth: s.breakpoint_year, color: COLORS[selected.indexOf(s.account_key) % COLORS.length] ?? COLORS[i % COLORS.length],
+  })), [yData, selected]);
   const metricLabel = METRICS.find(m => m.value === metric).label;
   const hasMetadbSide = platform !== 'twitter';
 
@@ -94,8 +121,8 @@ export default function LegacyCrowdTangleView() {
         <CardContent className="pt-6 space-y-3 text-sm leading-relaxed">
           <h3 className="text-lg font-semibold">Legacy CrowdTangle</h3>
           <p className="text-muted-foreground">
-            Här finns historiken från 2018 till 2024, innan appen fick egna inläggsdata. Siffrorna är
-            <strong> månadssummor per konto från CrowdTangle</strong>, inte enskilda inlägg. Det finns ingen räckvidd i
+            Här finns historiken från 2014 till 2024, innan appen fick egna inläggsdata (månadsvyn börjar 2018, årsvyn 2014). Siffrorna är
+            <strong> månads- eller årssummor per konto från CrowdTangle</strong>, inte enskilda inlägg. Det finns ingen räckvidd i
             det här materialet.
           </p>
           <ul className="list-disc pl-5 text-muted-foreground space-y-1">
@@ -115,6 +142,17 @@ export default function LegacyCrowdTangleView() {
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="flex flex-wrap items-end gap-4">
+            <div className="text-sm space-y-1 block">
+              <span className="block font-medium">Visa</span>
+              <div className="inline-flex h-10 rounded-md border border-input overflow-hidden" role="group" aria-label="Visa per månad eller per år">
+                {[['month', 'Per månad'], ['year', 'Per år']].map(([v, label]) => (
+                  <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
+                    className={`px-3 text-sm cursor-pointer ${view === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <label className="text-sm space-y-1 block">
               <span className="block font-medium">Kanal</span>
               <select className={selectClass} value={platform} onChange={e => setPlatform(e.target.value)}>
@@ -129,15 +167,15 @@ export default function LegacyCrowdTangleView() {
             </label>
             <label className="text-sm space-y-1 block">
               <span className="block font-medium">Från år</span>
-              <select className={selectClass} value={fromYear}
-                onChange={e => { const v = Number(e.target.value); setFromYear(v); if (v > toYear) setToYear(v); }}>
+              <select className={selectClass} value={curFrom}
+                onChange={e => { const v = Number(e.target.value); setCurFrom(v); if (v > curTo) setCurTo(v); }}>
                 {years.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </label>
             <label className="text-sm space-y-1 block">
               <span className="block font-medium">Till år</span>
-              <select className={selectClass} value={toYear}
-                onChange={e => { const v = Number(e.target.value); setToYear(v); if (v < fromYear) setFromYear(v); }}>
+              <select className={selectClass} value={curTo}
+                onChange={e => { const v = Number(e.target.value); setCurTo(v); if (v < curFrom) setCurFrom(v); }}>
                 {years.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </label>
@@ -167,7 +205,7 @@ export default function LegacyCrowdTangleView() {
                       {platform !== 'facebook' && <span className="ml-1 text-xs text-muted-foreground">@{a.account_key}</span>}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {a.first_month.slice(0, 4)}–{a.last_month.slice(0, 4)}{hasMetadbSide && !a.has_metadb ? ' · endast CrowdTangle' : ''}
+                      {isYear ? a.first_year : a.first_month.slice(0, 4)}–{isYear ? a.last_year : a.last_month.slice(0, 4)}{hasMetadbSide && !a.has_metadb ? ' · endast CrowdTangle' : ''}
                     </span>
                   </label>
                 );
@@ -183,7 +221,27 @@ export default function LegacyCrowdTangleView() {
           {!error && selected.length === 0 && <p className="text-sm text-muted-foreground">Välj ett eller flera konton för att se kurvan.</p>}
           {loading && <p className="text-sm text-muted-foreground">Hämtar data…</p>}
 
-          {lines.length > 0 && months.length > 0 && (
+          {isYear && yearLines.length > 0 && (yData?.years ?? []).length > 0 && (
+            <>
+              <YearlyChart years={yData.years} lines={yearLines} metricLabel={metricLabel} showMetadbLegend={hasMetadbSide} />
+              <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                <li>Varje år kommer från <strong>en enda källa</strong>: metaDB där appen har ett helt år, annars CrowdTangle. Källorna summeras eller räknas aldrig ihop. Håll muspekaren över en punkt för att se vilken källa den kommer från.</li>
+                <li>CrowdTangle mätte aldrig räckvidd, så måttet finns bara som interaktioner och antal inlägg.</li>
+                <li>CrowdTangle-exporterna togs strax efter periodens slut, så CrowdTangle-nivåerna ligger något lägre än metaDB (ungefär 13 % för Facebook vid mätningen i januari 2024). Jämför formen över tid, inte exakt nivå tvärs Källbyte.</li>
+                <li>2020 saknas för de flesta konton eftersom exporterna för januari och februari 2020 saknas. Undantaget är P4-lokalkanalerna, som har en helårsexport för 2020.</li>
+                <li>Instagram räknar bara gilla-markeringar och kommentarer.</li>
+                <li>Det pågående året visas med ihålig markering och är bara värdet hittills i år.</li>
+              </ul>
+              {platform === 'twitter' && (
+                <p className="text-xs text-muted-foreground">Twitter finns bara i CrowdTangle-materialet (2014–2018). Appen har ingen egen Twitter-data.</p>
+              )}
+            </>
+          )}
+          {isYear && !loading && !error && selected.length > 0 && yData && yearLines.length === 0 && (
+            <p className="text-sm text-muted-foreground">Inga årsvärden hittades för valda konton.</p>
+          )}
+
+          {!isYear && lines.length > 0 && months.length > 0 && (
             <>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">

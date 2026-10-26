@@ -120,7 +120,7 @@ const AboutView = () => (
           </section>
 
           <section>
-            <h4 className="text-base font-semibold mb-2">Legacy CrowdTangle (historik 2018–2024)</h4>
+            <h4 className="text-base font-semibold mb-2">Legacy CrowdTangle (historik 2014–2024)</h4>
             <p className="text-muted-foreground">
               Fliken Legacy CrowdTangle visar månadssummor per konto från det gamla verktyget
               CrowdTangle, från 2018 fram till när appens egna inläggsdata tar vid (Facebook från
@@ -131,6 +131,11 @@ const AboutView = () => (
             <p className="text-muted-foreground mt-2">
               Det är summor per månad, inte enskilda inlägg, och det finns ingen räckvidd. Siffrorna används
               bara i den här fliken och ingår inte i totaler, grupper, År över år eller exporter.
+            </p>
+            <p className="text-muted-foreground mt-2">
+              Med knappen Per år visas historiken från 2014 med ett värde per år. Varje år kommer från en enda källa:
+              metaDB där appen har hela året, annars CrowdTangle (summa av tolv månader eller en helårsexport).
+              Källorna räknas aldrig ihop, och år utan komplett underlag lämnas tomma i stället för att gissas.
             </p>
           </section>
 

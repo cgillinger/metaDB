@@ -124,3 +124,76 @@ test('series: metaDB side follows the account across a page-id switch', async ()
   assert.equal(body.months.at(-1), '2024-08');
   assert.deepEqual(at('2024-08'), { value: 40, source: 'metadb', ghost: null });
 });
+
+// ---- yearly view ----------------------------------------------------------
+
+const cty = (platform, key, name, year, interactions, posts = 100) => ({
+  platform, account_key: key, account_name: name, year, interactions, posts,
+  likes: null, comments: null, shares: null, video_views: null, followers: null,
+});
+
+test('yearly setup: rows route to ct_yearly and ct_monthly by period', () => {
+  const months12 = (key, from) => Array.from({ length: 12 }, (_, i) =>
+    ct('facebook', key, `Konto ${key}`, `${from}-${String(i + 1).padStart(2, '0')}`, 10));
+  const res = loadRows(db, [
+    cty('facebook', '111', 'Radiosporten (gammalt)', '2022', 4000),
+    cty('facebook', '111', 'Radiosporten (gammalt)', '2023', 5000),
+    cty('facebook', '777', 'Dog 2016', '2016', 123),
+    ...months12('444', '2022'),
+    cty('facebook', '444', 'Konto 444', '2022', 999),
+    ...months12('445', '2022').slice(0, 11),
+    cty('facebook', '445', 'Konto 445', '2022', 777),
+    ...months12('446', '2022').slice(0, 11),
+    cty('twitter', 'sr_ekot', 'SR Ekot', '2016', 4321),
+  ]);
+  assert.equal(res.updated, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM ct_yearly').get().n, 6);
+});
+
+test('yearly: metaDB beats CT; 12 CT months beat the year file; 11 months fall back; nothing → null', async () => {
+  const { status, body } = await get('/yearly?platform=facebook&metric=interactions&accounts=111,444,445,446&from=2022&to=2024');
+  assert.equal(status, 200);
+  assert.deepEqual(body.years, [2022, 2023, 2024]);
+  const by = Object.fromEntries(body.series.map(s => [s.account_key, s]));
+  // 111: yearly file 2022/2023, metaDB 2024 (includes the post under the new page id)
+  assert.deepEqual(by['111'].data.map(d => [d.value, d.source]),
+    [[4000, 'crowdtangle_year'], [5000, 'crowdtangle_year'], [190, 'metadb']]);
+  assert.equal(by['111'].breakpoint_year, 2024);
+  assert.equal(by['111'].data[2].partial, false);
+  assert.deepEqual([by['444'].data[0].value, by['444'].data[0].source], [120, 'crowdtangle_months']);
+  assert.deepEqual([by['445'].data[0].value, by['445'].data[0].source], [777, 'crowdtangle_year']);
+  assert.deepEqual(by['446'].data[0], { value: null, source: null, partial: false });
+  assert.equal(by['444'].breakpoint_year, null);
+});
+
+test('yearly: current year from metaDB is partial; years before metaDB platform start are CT only', async () => {
+  const { buildYearlySeries } = await import('../services/crowdtangle/series.js');
+  const r = buildYearlySeries(db, { platform: 'facebook', metric: 'interactions', accounts: ['111'], fromYear: 2023, toYear: 2024, currentYear: 2024 });
+  assert.equal(r.series[0].data[1].partial, true);
+  assert.equal(r.series[0].data[0].partial, false);
+  // IG metaDB starts 2023-08: 2023 is not a full metaDB year, so it is not taken from metaDB
+  const ig = buildYearlySeries(db, { platform: 'instagram', metric: 'interactions', accounts: ['p3nyheter'], fromYear: 2023, toYear: 2023 });
+  assert.equal(ig.series[0].data[0].source, null);
+});
+
+test('yearly: twitter is CT only; yearly-only accounts are listed; bad input is 400', async () => {
+  const tw = (await get('/yearly?platform=twitter&metric=interactions&accounts=sr_ekot&from=2015&to=2017')).body;
+  assert.deepEqual(tw.series[0].data.map(d => [d.value, d.source]), [[null, null], [4321, 'crowdtangle_year'], [null, null]]);
+  const acc = (await get('/accounts?platform=facebook')).body.accounts.find(a => a.account_key === '777');
+  assert.equal(acc.account_name, 'Dog 2016');
+  assert.equal(acc.first_year, 2016);
+  assert.equal(acc.ct_months, 0);
+  assert.equal(acc.first_month, null);
+  assert.equal(acc.has_metadb, false);
+  assert.equal((await get('/yearly?platform=facebook&metric=posts&accounts=1&from=24')).status, 400);
+  assert.equal((await get('/yearly?platform=facebook&metric=posts')).status, 400);
+  assert.equal((await get('/yearly?platform=x&metric=posts&accounts=1')).status, 400);
+});
+
+test('loader: clear Swedish error naming migration 016 when ct_yearly is missing', async () => {
+  const { default: Database } = await import('better-sqlite3');
+  const bare = new Database(':memory:');
+  bare.exec('CREATE TABLE ct_monthly (x)');
+  assert.throws(() => loadRows(bare, [cty('facebook', '1', 'A', '2020', 1)]), /ct_yearly saknas.*migration 016/);
+  bare.close();
+});

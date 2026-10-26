@@ -115,3 +115,54 @@ test('selection: filename-dated beats mtime-dated', () => {
   const r2 = selectRows([cand('2023-09-01T00:00:00Z', 'mtime', 1), cand('2023-09-03T00:00:00Z', 'mtime', 2)]);
   assert.equal(r2[0].interactions, 1);
 });
+
+test('full calendar year is recognised, quarters and shifted years stay rejected', () => {
+  const y = parseFilename('2023-01-16-10-51-25-CET-facebook_leaderboard_Sveriges-Radio_2022-01-01_00-00-00_CET_2022-12-31_23-59-59_CET.csv');
+  assert.equal(y.ok, true);
+  assert.equal(y.period, 'year');
+  assert.equal(y.year, '2022');
+  assert.equal(y.month, undefined);
+  assert.equal(y.exportDateSource, 'filename');
+  const old = parseFilename('facebook_leaderboard_Sveriges_Radio_2014-01-01_00-00-00_CET-2014-12-31_23-59-59_CET.csv');
+  assert.equal(old.period, 'year');
+  assert.equal(old.exportedAt, null);
+  assert.equal(parseFilename('facebook_leaderboard_Sveriges-Radio_2022-01-01_00-00-00_CET_2022-03-31_23-59-59_CEST.csv').reason, 'not_one_month');
+  assert.equal(parseFilename('facebook_leaderboard_Sveriges-Radio_2022-01-01_00-00-00_CET_2022-11-30_23-59-59_CET.csv').reason, 'not_one_month');
+  const m = parseFilename('facebook_leaderboard_Sveriges-Radio_2022-05-01_00-00-00_CET_2022-05-31_23-59-59_CEST.csv');
+  assert.equal(m.period, 'month');
+  assert.equal(m.month, '2022-05');
+});
+
+test('yearly FB/IG/Twitter headers parse (no-followers → null)', () => {
+  const fb = 'Page,Codename,URL,"Total Interactions",Likes,Comments,Shares,"Total Posts","Page Likes"\n' +
+    'Ekot,x,https://www.facebook.com/ekot,"1,234,567","1,000,000","100,000","134,567","2,345","500,000"\n';
+  const [f] = parseLeaderboard(fb, 'facebook');
+  assert.equal(f.interactions, 1234567);
+  assert.equal(f.posts, 2345);
+  assert.equal(f.followers, null); // "Page Likes" is a different measure; not mapped to followers
+  const ig = 'Account,Codename,URL,"Total Interactions",Likes,Comments,Views,"Total Posts",Followers\n' +
+    'p3nyheter,x,https://www.instagram.com/p3nyheter/,"900,000","880,000","20,000",--,300,No followers\n';
+  const [i] = parseLeaderboard(ig, 'instagram');
+  assert.equal(i.account_key, 'p3nyheter');
+  assert.equal(i.interactions, 900000);
+  assert.equal(i.followers, null);
+  const tw = 'Account,Handle,URL,"Total Interactions",Retweets,Likes,"Total Tweets",Followers\n' +
+    'SR Ekot,@sr_ekot,https://twitter.com/sr_ekot,"60,000","20,000","40,000","8,000","82,527"\n';
+  const [t] = parseLeaderboard(tw, 'twitter');
+  assert.equal(t.account_key, 'sr_ekot');
+  assert.equal(t.posts, 8000);
+});
+
+test('selection: yearly candidates group by year and use Dec 31 as period end', () => {
+  const y = (at, src, interactions, year = '2022') => ({ platform: 'facebook', account_key: 'a', year, exported_at: at, export_date_source: src, interactions });
+  const r = selectRows([
+    y('2022-12-20T00:00:00Z', 'filename', 1),
+    y('2023-01-16T00:00:00Z', 'filename', 2),
+    y('2023-06-01T00:00:00Z', 'filename', 3),
+    y('2023-01-16T00:00:00Z', 'filename', 9, '2021'),
+  ]);
+  assert.equal(r.length, 2);
+  assert.equal(r.find(x => x.year === '2022').interactions, 2);
+  const r2 = selectRows([y('2018-03-01T00:00:00Z', 'mtime', 1, '2017'), y('2018-04-01T00:00:00Z', 'mtime', 2, '2017')]);
+  assert.equal(r2[0].interactions, 1);
+});
