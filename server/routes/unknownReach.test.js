@@ -21,16 +21,16 @@ let server, base;
 
 before(async () => {
   const imp = db.prepare("INSERT INTO imports (filename, platform, month) VALUES ('x.csv','facebook','2023-10')").run().lastInsertRowid;
-  const ins = db.prepare(`INSERT INTO posts (import_id, post_id, account_name, platform, publish_time, views, reach, interactions)
-    VALUES (?, ?, ?, 'facebook', ?, ?, ?, 1)`);
+  const ins = db.prepare(`INSERT INTO posts (import_id, post_id, account_name, platform, publish_time, views, reach, interactions, link_clicks, total_clicks, other_clicks, engagement)
+    VALUES (?, ?, ?, 'facebook', ?, ?, ?, 1, ?, ?, ?, ?)`);
   // Mix: AVG(reach) must be over the two known posts only = (100+300)/2 = 200.
-  ins.run(imp, 'a1', 'Mix', '2023-10-02 10:00:00', 1000, 100);
-  ins.run(imp, 'a2', 'Mix', '2023-10-03 10:00:00', 2000, 300);
-  ins.run(imp, 'a3', 'Mix', '2023-10-04 10:00:00', null, null);
+  ins.run(imp, 'a1', 'Mix', '2023-10-02 10:00:00', 1000, 100, 10, 20, 10, 21);
+  ins.run(imp, 'a2', 'Mix', '2023-10-03 10:00:00', 2000, 300, 30, 40, 10, 41);
+  ins.run(imp, 'a3', 'Mix', '2023-10-04 10:00:00', null, null, null, null, null, null);
   // Every post unknown: reach/views must stay NULL, not 0.
-  ins.run(imp, 'b1', 'Allnull', '2023-10-02 10:00:00', null, null);
-  ins.run(imp, 'b2', 'Allnull', '2023-10-03 10:00:00', null, null);
-  ins.run(imp, 'b3', 'Allnull', '2023-11-03 10:00:00', 50, 10);
+  ins.run(imp, 'b1', 'Allnull', '2023-10-02 10:00:00', null, null, null, null, null, null);
+  ins.run(imp, 'b2', 'Allnull', '2023-10-03 10:00:00', null, null, null, null, null, null);
+  ins.run(imp, 'b3', 'Allnull', '2023-11-03 10:00:00', 50, 10, 5, 6, 1, 7);
   const app = express();
   app.use('/api/accounts', accountsRouter);
   app.use('/api/posts', postsRouter);
@@ -104,4 +104,39 @@ test('flat export: all-unknown month gives empty (null) views/reach, mixed month
   const allnull = rows.find(r => r.account_name === 'Allnull' && r.month === '2023-10');
   assert.equal(allnull.views, null);
   assert.equal(allnull.reach, null);
+});
+
+test('accounts: clicks/engagement SUM skip NULL, fully unknown stays NULL; avg_daily_link_clicks null', async () => {
+  const { accounts, totals } = await get('/accounts?fields=link_clicks,engagement&months=2023-10');
+  const mix = accounts.find(a => a.account_name === 'Mix');
+  assert.equal(mix.link_clicks, 40);
+  assert.equal(mix.total_clicks, 60);
+  assert.equal(mix.engagement, 62);
+  const allnull = accounts.find(a => a.account_name === 'Allnull');
+  assert.equal(allnull.link_clicks, null);
+  assert.equal(allnull.engagement, null);
+  assert.equal(allnull.avg_daily_link_clicks, null);
+  assert.equal(mix.avg_daily_link_clicks, Math.round((40 / 31) * 10) / 10);
+  assert.equal(totals.link_clicks, 40);
+});
+
+test('trends: link_clicks month with every post unknown stays null', async () => {
+  const { months, series } = await get('/trends?metric=link_clicks&granularity=month');
+  const s = series.find(x => x.account_name === 'Allnull');
+  assert.equal(s.data[months.indexOf('2023-10')], null);
+  assert.equal(s.data[months.indexOf('2023-11')], 5);
+});
+
+test('flat export: avg_daily_link_clicks empty when link clicks unknown', () => {
+  const ws = buildFlatWorkbook().Sheets.posts_monthly;
+  const header = Object.fromEntries(Object.keys(ws).filter(k => /^[A-Z]+1$/.test(k)).map(k => [ws[k].v, k.replace('1', '')]));
+  const rowOf = (name, month) => {
+    for (let r = 2; ; r++) {
+      if (!ws[`A${r}`]) return null;
+      if (ws[`A${r}`].v === name && ws[`${header.month}${r}`].v === month) return r;
+    }
+  };
+  const r = rowOf('Allnull', '2023-10');
+  assert.equal(ws[`${header.link_clicks}${r}`], undefined);
+  assert.equal(ws[`${header.avg_daily_link_clicks}${r}`], undefined);
 });

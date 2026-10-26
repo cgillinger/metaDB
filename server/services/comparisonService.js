@@ -128,7 +128,8 @@ export function getBesokVsLankklick(accountName, months) {
   return bothImported.map(month => ({
     month,
     seriesA: visitMap.get(month) ?? 0,
-    seriesB: linkClickMap.get(month) ?? 0,
+    // NULL link clicks = unknown (kept null → chart gap); no posts → 0 as before.
+    seriesB: linkClickMap.has(month) ? linkClickMap.get(month) : 0,
   }));
 }
 
@@ -211,7 +212,8 @@ export function getBesokVsLankklickGroup(memberGaNames, months) {
   const data = bothImported.map(month => ({
     month,
     seriesA: visitMap.get(month) ?? 0,
-    seriesB: linkClickMap.get(month) ?? 0,
+    // NULL link clicks = unknown (kept null → chart gap); no posts → 0 as before.
+    seriesB: linkClickMap.has(month) ? linkClickMap.get(month) : 0,
   }));
 
   return { data, matchInfo };

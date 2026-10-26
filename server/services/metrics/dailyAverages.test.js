@@ -45,3 +45,10 @@ test('daysOverMonths sums calendar days (GA-mönster)', () => {
   assert.equal(daysOverMonths([], 30), 30);          // fallback
   assert.equal(daysOverMonths(null, null), null);
 });
+
+test('NULL link_clicks = unknown: no per-day figure, group skips unknown members', () => {
+  assert.equal(accountDailyAverages({ link_clicks: null, post_count: 10 }, 10).avg_daily_link_clicks, null);
+  assert.equal(accountDailyAverages({ link_clicks: 0, post_count: 10 }, 10).avg_daily_link_clicks, 0);
+  assert.equal(groupAvgPerDay([{ link_clicks: null }, { link_clicks: 100 }], 'link_clicks', 10, 1), 10);
+  assert.equal(groupAvgPerDay([{ link_clicks: null }, { link_clicks: null }], 'link_clicks', 10, 1), null);
+});

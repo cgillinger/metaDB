@@ -58,7 +58,7 @@ function postsMonthly(db) {
     month: r.month, month_date: monthDate(r.month),
     post_count: r.post_count, views: r.views, reach: r.reach,
     link_clicks: r.link_clicks, interactions: r.interactions,
-    avg_daily_link_clicks: avgPerDay(r.link_clicks, daysInMonth(r.month), 1),
+    avg_daily_link_clicks: r.link_clicks == null ? null : avgPerDay(r.link_clicks, daysInMonth(r.month), 1),
     posts_per_day: avgPerDay(r.post_count, daysInMonth(r.month), 2),
   }));
 }
@@ -168,7 +168,9 @@ function groupMonthly(groups, accountRows, keyOf, sumFields, avgSpec) {
         member_count: g.members.length,
       };
       for (const f of sumFields) rec[f] = acc[f] ?? null;
-      rec[avgSpec.out] = avgPerDay(acc[avgSpec.from] || 0, daysInMonth(month), 1);
+      rec[avgSpec.out] = acc[avgSpec.from] == null
+        ? (avgSpec.from === 'link_clicks' ? null : 0) // all members unknown → empty cell
+        : avgPerDay(acc[avgSpec.from], daysInMonth(month), 1);
       out.push(rec);
     }
   }

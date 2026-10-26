@@ -136,3 +136,13 @@ test('multi-month: a month with NULL-reach posts is skipped, complete months sti
   const byAcct = getEstimatedUniqueClicksByAccount({ accountNames: ['NMM'], months: ['2026-02', '2026-03'] });
   assert.deepEqual(byAcct['NMM'], { upper: 333, lower: 222, quality: 'ok' });
 });
+
+test('posts with NULL link_clicks suppress the month', () => {
+  seedPosts('NLC', '2026-02', 4, 60, 200);
+  insPost.run(importId, `p${postSeq++}`, 'NLC', '2026-02-11 12:00:00', 60, null, 0);
+  insReach.run('NLC', '2026-02', 100);
+  const [row] = getEstimatedUniqueClicks({ accountNames: ['NLC'], months: ['2026-02'] });
+  assert.equal(row.quality, 'suppressed');
+  assert.equal(row.estimated_unique_upper, null);
+  assert.equal(getEstimatedUniqueClicksByAccount({ accountNames: ['NLC'], months: ['2026-02'] })['NLC'].quality, 'suppressed');
+});

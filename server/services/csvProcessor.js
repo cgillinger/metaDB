@@ -229,6 +229,12 @@ export function parseCSV(csvContent, filename, opts = {}) {
     headers.some((h) => findMatchingColumnKey(h, columnMappings) === key);
   const hasViewsColumn = hasColumn('views');
   const hasReachColumn = hasColumn('reach');
+  // Facebook click columns: absent → unknown (NULL). Instagram has no click
+  // columns by design, so it keeps 0 there.
+  const isFb = platform === 'facebook';
+  const hasTotalClicks = !isFb || hasColumn('total_clicks');
+  const hasLinkClicks = !isFb || hasColumn('link_clicks');
+  const hasOtherClicks = !isFb || hasColumn('other_clicks');
 
   const posts = [];
   const dates = [];
@@ -263,8 +269,9 @@ export function parseCSV(csvContent, filename, opts = {}) {
 
     let engagement;
     if (platform === 'facebook') {
-      const totalClicks = safeInt(mapped.total_clicks);
-      engagement = interactions + totalClicks;
+      // Unknown total_clicks makes engagement unknown too (interactions alone would
+      // understate it and mix two definitions).
+      engagement = hasTotalClicks ? interactions + safeInt(mapped.total_clicks) : null;
     } else {
       const saves = safeInt(mapped.saves);
       const follows = safeInt(mapped.follows);
@@ -304,9 +311,9 @@ export function parseCSV(csvContent, filename, opts = {}) {
       likes,
       comments,
       shares,
-      total_clicks: safeInt(mapped.total_clicks),
-      link_clicks: safeInt(mapped.link_clicks),
-      other_clicks: safeInt(mapped.other_clicks),
+      total_clicks: hasTotalClicks ? safeInt(mapped.total_clicks) : null,
+      link_clicks: hasLinkClicks ? safeInt(mapped.link_clicks) : null,
+      other_clicks: hasOtherClicks ? safeInt(mapped.other_clicks) : null,
       saves: safeInt(mapped.saves),
       follows: safeInt(mapped.follows),
       interactions,

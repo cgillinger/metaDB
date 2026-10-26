@@ -35,7 +35,8 @@ export function avgPerDay(total, days, decimals = 1) {
  */
 export function accountDailyAverages(row, days) {
   return {
-    avg_daily_link_clicks: avgPerDay(row.link_clicks, days, 1),
+    // NULL link_clicks = unknown → no per-day figure (never 0).
+    avg_daily_link_clicks: row.link_clicks == null ? null : avgPerDay(row.link_clicks, days, 1),
     posts_per_day: avgPerDay(row.post_count, days, 2),
   };
 }
@@ -49,7 +50,10 @@ export function accountDailyAverages(row, days) {
  * @param {number} [decimals=1]
  */
 export function groupAvgPerDay(memberRows, field, days, decimals = 1) {
-  const total = memberRows.reduce((sum, a) => sum + (a[field] || 0), 0);
+  // NULL = unknown: skipped; all members unknown → null.
+  const known = memberRows.filter(a => a[field] != null);
+  if (known.length === 0 && memberRows.length > 0) return null;
+  const total = known.reduce((sum, a) => sum + a[field], 0);
   return avgPerDay(total, days, decimals);
 }
 

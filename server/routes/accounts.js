@@ -334,7 +334,7 @@ router.get('/', (req, res) => {
     for (const row of accounts) {
       Object.assign(row, accountDailyAverages(row, days));
     }
-    totals.avg_daily_link_clicks = avgPerDay(totals.link_clicks, days, 1);
+    totals.avg_daily_link_clicks = totals.link_clicks == null ? null : avgPerDay(totals.link_clicks, days, 1);
   } else {
     for (const row of accounts) {
       row.posts_per_day = 0;

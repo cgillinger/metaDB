@@ -285,13 +285,13 @@ router.post('/', uploadLimiter, upload.single('file'), (req, res) => {
           likes = excluded.likes,
           comments = excluded.comments,
           shares = excluded.shares,
-          total_clicks = excluded.total_clicks,
-          link_clicks = excluded.link_clicks,
-          other_clicks = excluded.other_clicks,
+          total_clicks = COALESCE(excluded.total_clicks, posts.total_clicks),
+          link_clicks = COALESCE(excluded.link_clicks, posts.link_clicks),
+          other_clicks = COALESCE(excluded.other_clicks, posts.other_clicks),
           saves = excluded.saves,
           follows = excluded.follows,
           interactions = excluded.interactions,
-          engagement = excluded.engagement
+          engagement = COALESCE(excluded.engagement, posts.engagement)
       `);
 
       let inserted = 0;

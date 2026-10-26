@@ -224,3 +224,48 @@ test('parseCSV: reach column present but views column missing -> only views NULL
 test('parseCSV still rejects the daily breakdown when views column is missing', () => {
   assert.throws(() => parseCSV(buildDailyBreakdownCsv(), 'daily.csv'), /daglig nedbrytning/);
 });
+
+// --- NULL = unknown: FB click columns absent (Meta 2023 re-exports) ---
+test('parseCSV: FB without click columns -> clicks NULL and engagement NULL', () => {
+  const csv = [
+    'Publicerings-id,Sidnamn,Publiceringstid,Reaktioner,Kommentarer,Delningar',
+    '800,Radio Romano,02/01/2026 12:00,10,2,1',
+    '801,Radio Romano,02/02/2026 12:00,8,1,0',
+  ].join('\n');
+  const { posts } = parseCSV(csv, 'no-clicks.csv');
+  for (const p of posts) {
+    assert.equal(p.total_clicks, null);
+    assert.equal(p.link_clicks, null);
+    assert.equal(p.other_clicks, null);
+    assert.equal(p.engagement, null);
+  }
+  assert.equal(posts[0].interactions, 13); // interactions unaffected
+});
+
+test('parseCSV: FB click columns present keep 0 and engagement = interactions + clicks', () => {
+  const csv = [
+    'Publicerings-id,Sidnamn,Publiceringstid,Reaktioner,Kommentarer,Delningar,Totalt antal klick,Länkklick,Övriga klick',
+    '810,Radio Romano,02/01/2026 12:00,10,2,1,0,0,0',
+    '811,Radio Romano,02/02/2026 12:00,8,1,0,5,3,2',
+  ].join('\n');
+  const { posts } = parseCSV(csv, 'clicks.csv');
+  const byId = Object.fromEntries(posts.map(p => [p.post_id, p]));
+  assert.equal(byId['810'].total_clicks, 0);
+  assert.equal(byId['810'].link_clicks, 0);
+  assert.equal(byId['810'].engagement, 13);
+  assert.equal(byId['811'].link_clicks, 3);
+  assert.equal(byId['811'].engagement, 14);
+});
+
+test('parseCSV: per-column rule — only link_clicks present', () => {
+  const csv = [
+    'Publicerings-id,Sidnamn,Publiceringstid,Reaktioner,Länkklick',
+    '820,Radio Romano,02/01/2026 12:00,10,4',
+    '821,Radio Romano,02/02/2026 12:00,8,6',
+  ].join('\n');
+  const { posts } = parseCSV(csv, 'link-only.csv');
+  assert.equal(posts[0].link_clicks, 4);
+  assert.equal(posts[0].total_clicks, null);
+  assert.equal(posts[0].other_clicks, null);
+  assert.equal(posts[0].engagement, null);
+});

@@ -26,8 +26,11 @@ function resolveSeriesMonths(spanMonths, monthSet, granularity) {
  * Only metrics listed here are accepted; anything else returns 400.
  * account_reach is handled separately (own table, own query path).
  */
-// Post metrics whose per-month value can be NULL ("unknown") rather than 0.
-const UNKNOWN_AWARE_METRICS = new Set(['views', 'reach', 'average_reach']);
+// Post metrics whose per-month value can be NULL ("unknown") rather than 0
+// (views/reach/clicks/engagement are not delivered in some Meta re-exports).
+const UNKNOWN_AWARE_METRICS = new Set([
+  'views', 'reach', 'average_reach', 'total_clicks', 'link_clicks', 'other_clicks', 'engagement',
+]);
 
 const METRIC_SQL_MAP = {
   views:          'SUM(views)',
